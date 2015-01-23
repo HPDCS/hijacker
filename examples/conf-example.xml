@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<instrumentor:IntrumentorRules xmlns:instrumentor="http://www.dis.uniroma1.it/~hpdcs/">
+
+  <instrumentor:Executable reverseDebug="true" entryPoint="foo">
+
+    <instrumentor:Inject file="foo.S" />
+    <instrumentor:Inject file="foo.S" />
+    <instrumentor:Inject file="foo.S" />
+    <instrumentor:Inject file="foo.S" />
+    <instrumentor:Inject file="foo.S" />
+    <instrumentor:Inject file="foo.S" />
+    <instrumentor:Inject file="foo.S" />
+
+
+    <instrumentor:Function name="bar" exactPassess="1" />  <!-- non instrumentare più di una volta -->
+    <instrumentor:Function name="foo" maxPassess="2" />  <!-- puoi instrumentare due volte -->
+    <instrumentor:Function name="foobar" maxPassess="0" />  <!-- ignora la funzione -->
+
+
+    <instrumentor:Instruction instruction="I_MEMWR|I_MEMRD" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+      <instrumentor:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
+    </instrumentor:Instruction>
+
+
+    <instrumentor:Instruction instruction="I_MEMWR|I_MEMRD" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+      <instrumentor:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
+    </instrumentor:Instruction>
+
+
+    <instrumentor:Instruction instruction="I_MEMWR|I_MEMRD" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+      <instrumentor:AddCall where="pre" function="monitor2" arguments="qualcosa" convention="stdcall" />
+    </instrumentor:Instruction>
+
+
+    <instrumentor:Function name="bar" reverseDebug="true" preamble="func_pre" postamble="func_post">
+      <instrumentor:AddCall where="pre" function="monitor" arguments="qualcosa" convention="asmlinkage" />
+      <instrumentor:Instruction instruction="I_JUMP" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+        <instrumentor:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
+      </instrumentor:Instruction>
+    </instrumentor:Function>
+
+
+    <instrumentor:Function name="bar" reverseDebug="false" preamble="func_pre" postamble="func_post">
+      <instrumentor:AddCall where="post" function="monitor3" arguments="qualcosa" convention="asmlinkage" />
+      <instrumentor:Instruction instruction="I_JUMP" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+        <instrumentor:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
+      </instrumentor:Instruction>
+      <instrumentor:Instruction instruction="I_JUMP" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+        <instrumentor:AddCall where="pre" function="monitorrrr" arguments="qualcosa" convention="stdcall" />
+      </instrumentor:Instruction>
+    </instrumentor:Function>
+
+
+    <instrumentor:Range depthCall="true" callRepeatRule="false">
+         <instrumentor:Begin>
+		    <instrumentor:Function name="foobar"/>
+         </instrumentor:Begin>
+         <instrumentor:End>
+		    <instrumentor:Offset value="0xdeadc0de" />
+         </instrumentor:End>
+	 
+	 <instrumentor:Instruction instruction="I_STACK">
+        	<instrumentor:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
+ 	 </instrumentor:Instruction>
+    </instrumentor:Range>
+
+
+  </instrumentor:Executable>
+
+</instrumentor:IntrumentorRules>

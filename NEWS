@@ -1,0 +1,24 @@
+`hijacker' NEWS -- history of user-visible changes.
+Copyright (C) 2001-2013 Alessandro Pellegrini
+Copyright (C) 2001-2013 HPDCS Group @ Sapienza, University of Rome
+
+Please send `hijacker' bug reports, questions, and suggestions to
+<pellegrini@dis.uniroma1.it>.
+
+XXXX-XX-XX  -  Hijacker v1.0.0
+
+    * 
+
+
+0000-00-00  -  Hijacker v0.02
+
+    * Added x86_64 supports
+    * Addes ELF64 supports
+
+
+2008-09-28  -  Hijacker v0.01
+
+    * Prerelease version targeted at ROOT-Sim's memory management support
+    * Full i386 disassembly
+    * ELF32 objects manipulation
+    * Monitoring routines injection

@@ -1,0 +1,4 @@
+instructions/disassemble.o: instructions/disassemble.c \
+ /usr/include/stdc-predef.h
+
+/usr/include/stdc-predef.h:

@@ -1,0 +1,14 @@
+############################
+Riga di comando per hijacker
+############################
+
+Il livello di verbose può arrivare ad un profondità di 5.
+Per quanto riguarda il nome del file di output diverso da quello di defaul è ancora da testare la correttezza.
+
+Step 1:
+hijacker -v[up to 5] -c conf-example.xml -i <input-file> -o <output-file>
+
+Di default Hijacker genera un file instrumentato dal nome 'hijacked.o' ed uno linkato al monitor dal nome ' final.o'
+
+Ste2:
+gcc final.o calqueue.o scheduler.o rgn.o utils.o -lm -o <filename>

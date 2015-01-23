@@ -1,0 +1,4 @@
+instructions/alpha/emit-alpha.o: instructions/alpha/emit-alpha.c \
+ /usr/include/stdc-predef.h
+
+/usr/include/stdc-predef.h:

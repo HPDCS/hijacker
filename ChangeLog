@@ -1,0 +1,112 @@
+2014-10-09  Davide Cingolani  <cingodvd@gmail.com>
+	* Rewrite symbol update function in order to maintain all the parsed symbols; just change inner vaules but references remains inaltered
+	* Remove jump reference update in function 'update_instruction_references' since we use instruction descriptors references, instead
+	* Fix jump short/long displacement
+	* Adjust some insert new instructions' debug print
+
+2014-10-09  Davide Cingolani  <cingodvd@gmail.com>
+	* Cleanup old functions to reverse code in 'reverse-elf.c'
+	* Monitor module finished
+
+2014-09-25  Davide Cingolani  <cingodvd@gmail.com>
+	* Added the file 'handle-elf' to provide utility functions to manipulate parsed ELF structure
+		* Moved into this file the function 'check_symbol_shared' (initially in 'parse-elf.h') to be globally visible
+	* In 'reverse-instrument' is located the function that checks if an instruction writes on memory and call the module
+	* Start to develop a new function in 'insert-insn' file to allow to simply ad a new CALL instruction
+
+2014-07-16 Davide Cingolani <cingodvd@gmail.com>
+	* Instruction inverter started
+
+2014-07-16 Davide Cingolani <cingodvd@gmail.com>
+	* Added a function ('substitute_instruction_with') in insert_insn.c that substitute an instruction
+	* Call in the function 'substitute_instruction_with' the disassemble function to correctly reparse the new instruction
+	* Splitted the updating instructions' jump and relocation references procedure
+
+2014-07-16 Davide Cingolani <cingodvd@gmail.com>
+	* Fixed jump address reference when adding a new instruction node
+
+2014-07-09 Davide Cingolani <cingodvd@gmail.com>
+	* Rule application process started
+
+2014-07-09 Davide Cingolani <cingodvd@gmail.com>
+	* Added a reference field to the section descriptor in order to points to the relocation entries for sections symbols
+	* Added a field in the symbol descriptor in order to keep trace of the relocation's type
+	* Dynamic relocation section builder based and filler
+
+2014-07-01 Davide Cingolani <cingodvd@gmail.com>
+	* Fixed linking issue due to inconsistent index value in symbol table sh_info field
+	* Added field to instruction descriptor in order to handle opcode and jump sizes
+	* Needed to resolve rodata issue: emit phase will not export rodata!
+
+2014-06-23 Davide Cingolani <cingodvd@gmail.com>
+	* Added offset field into insn_info in order to save offset relative to relocation entry
+	* Next step is to implement a duplicate-symobl system in order to decouple instructions from relocation
+
+2014-06-11 -Davide Cingolani <cingodvd@gmail.com>
+	* Fixed .rela.eh_frame emitting by skipping it during parse phase
+	* Start to switch on symbol type in order to recalculate rela addend
+
+2014-05-31 Davide Cingolani <cingodvd@gmail.com>
+	* Removed structure parsed_elf, used program.executable instead (emit-elf and parse-elf)
+	* Fixed relocation info field shift
+	* Adding other symbols type in order to trace rodata
+	* Changed the name of the pointer to hijcaked_elf structure from 'helf' to 'hijacked'
+
+2014-05-12 Davide Cingolani <cingodvd@gmail.com>
+	* Finished first emitter version (completely untested)
+
+2014-05-12 Davide Cingolani <cingodvd@gmail.com>
+	* Added new structure to elf-defs to handle parsed elf file information
+	* Emitter API almost completed but not tested
+	
+2014-05-12 Davide Cingolani <cingodvd@gmail.com>
+	* Elf emitter started: writing core API function
+
+2014-04-24 Davide Cingolani <cingodvd@gmail.com>
+	* Added hexadecimal dump feature
+	* Changed the insn's reference pointer to the symbol description, instead of relocation entry
+
+2014-04-17 Davide Cingolani <cingodvd@gmail.com>
+	* Changed reference in resolving relocations form 'reloc' to 'symbol' descriptor
+	* Added section's dump feature
+
+2014-04-02 Davide Cingolani <cingodvd@gmail.com>
+	* Implementing rel/rela section parser
+	* Finalizing symbol resolution process
+
+2014-03-26	Davide Cingolani <cingodvd@gmail.com>
+	* Symbol solvers written
+	* Function split into chain of instructions
+
+2014-03-21	Davide Cingolani <cingodvd@gmail.com>
+	* Section descriptor structure changed to maintain the section's index
+	* Changed 'add_section' function signature to handle section's index, accordingly
+
+2014-03-21 Davide Cingolani <cingodvd@gmail.com>
+	* Start writing relocation section parser
+
+2012-10-18  Alessandro Pellegrini <pellegrini@dis.uniroma1.it>
+    * Ported to autotools
+    * Paved the way to a full documentation
+
+2012-05-30  Alessandro Pellegrini <pellegrini@dis.uniroma1.it>
+    * ELF executables an i386/x86_64 instruction set parsers have been rewritten!
+    * Working on the intermediate representation of executables...
+
+2012-02-23  Alessandro Pellegrini <pellegrini@dis.uniroma1.it>
+    * Instruction Sets and Executable Formats decoupled from core backend
+    * Some examples have been created
+    * XML rules parser has been completed
+
+2011-12-12  Alessandro Pellegrini <pellegrini@dis.uniroma1.it>
+    * The project is reborn, started a complete rewrite!
+
+0000-00-00  -  Hijacker v0.02  -  Alessandro Pellegrini <pellegrini@dis.uniroma1.it>
+    * Added x86_64 supports
+    * Addes ELF64 supports
+
+2008-09-28  -  Hijacker v0.01  -  Alessandro Pellegrini <pellegrini@dis.uniroma1.it>
+    * Prerelease version targeted at ROOT-Sim's memory management support
+    * Full i386 disassembly
+    * ELF32 objects manipulation
+    * Monitoring routines injection

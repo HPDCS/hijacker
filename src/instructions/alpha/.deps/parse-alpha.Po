@@ -1,0 +1,4 @@
+instructions/alpha/parse-alpha.o: instructions/alpha/parse-alpha.c \
+ /usr/include/stdc-predef.h
+
+/usr/include/stdc-predef.h:

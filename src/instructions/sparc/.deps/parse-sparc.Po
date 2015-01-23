@@ -1,0 +1,4 @@
+instructions/sparc/parse-sparc.o: instructions/sparc/parse-sparc.c \
+ /usr/include/stdc-predef.h
+
+/usr/include/stdc-predef.h:

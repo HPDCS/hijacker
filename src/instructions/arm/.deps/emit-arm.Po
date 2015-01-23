@@ -1,0 +1,4 @@
+instructions/arm/emit-arm.o: instructions/arm/emit-arm.c \
+ /usr/include/stdc-predef.h
+
+/usr/include/stdc-predef.h:

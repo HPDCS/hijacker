@@ -1,0 +1,4 @@
+instructions/ia_64/emit-ia_64.o: instructions/ia_64/emit-ia_64.c \
+ /usr/include/stdc-predef.h
+
+/usr/include/stdc-predef.h:

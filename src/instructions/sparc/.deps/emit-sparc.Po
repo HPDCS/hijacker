@@ -1,0 +1,4 @@
+instructions/sparc/emit-sparc.o: instructions/sparc/emit-sparc.c \
+ /usr/include/stdc-predef.h
+
+/usr/include/stdc-predef.h:
