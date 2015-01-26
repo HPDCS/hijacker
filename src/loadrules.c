@@ -378,62 +378,6 @@ static End *parseEnd(xmlNsPtr ns, xmlNodePtr cur){
 
 }
 
-//Alice
-static Range *parseRange(xmlNsPtr ns, xmlNodePtr cur){
-	
-	Range	*ret = NULL;
-	Begin	*curBegin;
-	End	*curEnd;
-	Instruction *curInstruction;
-
-	// Allocate the struct
-	ret = (Range *) malloc(sizeof(Range));
-	if (ret == NULL) {
-		herror(true, "Out of memory\n");
-		return NULL;
-	}
-
-	memset(ret, 0, sizeof(Range));
-
-	if (cur != NULL) {
-		ret->depthCall = parseTrueFalse(xmlGetProp(cur, (const xmlChar *)"depthCall"));
-		ret->callRepeatRule = parseTrueFalse(xmlGetProp(cur, (const xmlChar *)"callRepeatRule"));
-	
-	}
-
-	cur = cur->xmlChildrenNode;
-	while (cur != NULL) {
-
-		// Begin
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Begin") == 0 && cur->ns == ns) {
-			curBegin = parseBegin(ns, cur);
-			if (curBegin != NULL && ret->begin == NULL) {
-				ret->begin = curBegin;
-			}
-		}
-	
-		// End
-		if (xmlStrcmp(cur->name, (const xmlChar *)"End") == 0 && cur->ns == ns) {
-			curEnd = parseEnd(ns, cur);
-			if (curEnd != NULL && ret->end == NULL) {
-				ret->end = curEnd;
-			}
-		}
-
-		// Instruction
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Instruction") == 0 && cur->ns == ns) {
-			curInstruction = parseInstruction(ns, cur);
-			if (curInstruction != NULL && ret->nInstructions < MAX_CHILDREN) {
-				ret->instructions[ret->nInstructions++] = curInstruction;
-			}
-		}
-
-		cur = cur->next;
-	}
-
-	return ret;
-}
-
 
 static Executable *parseExecutable(char *filename) {
 
@@ -445,8 +389,6 @@ static Executable *parseExecutable(char *filename) {
 	xmlChar *curInject;
 	Instruction *curInstruction;
 	Function *curFunction;
-	// Alice
-	Range *curRange;
 
 
 #ifdef LIBXML_SAX1_ENABLED
@@ -470,13 +412,13 @@ static Executable *parseExecutable(char *filename) {
 
 	ns = xmlSearchNsByHref(doc, cur, (const xmlChar *) "http://www.dis.uniroma1.it/~hpdcs/");
 	if (ns == NULL) {
-		herror(false, "Document of the wrong type, IntrumentorRules Namespace not found\n");
+		herror(false, "Document of the wrong type, hijacker Namespace not found\n");
 		xmlFreeDoc(doc);
 		return NULL;
 	}
 
-	if (xmlStrcmp(cur->name, (const xmlChar *)"IntrumentorRules")) {
-		herror(false, "Document of the wrong type, root node != IntrumentorRules");
+	if (xmlStrcmp(cur->name, (const xmlChar *)"hijackerRules")) {
+		herror(false, "Document of the wrong type, root node != hijackerRules");
 		xmlFreeDoc(doc);
 		return NULL;
 	}
@@ -547,15 +489,6 @@ static Executable *parseExecutable(char *filename) {
 			}
 		}
 
-		//Alice
-		// Range node
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Range") == 0 && cur->ns == ns) {
-			curRange = parseRange(ns, cur);
-			if (curRange != NULL && ret->nRanges < MAX_CHILDREN) {
-				ret->ranges[ret->nRanges++] = curRange;
-			}
-		}
-		
 		cur = cur->next;
 	}
 

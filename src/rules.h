@@ -56,34 +56,6 @@ typedef struct Function {
 	Instruction	*instructions[MAX_CHILDREN];
 } Function;
 
-//Alice
-typedef struct Offset {
-	unsigned long	value;
-} Offset;
-
-//Alice
-typedef struct Begin {
-	Function 	*function;
-	Offset		*offset; 
-} Begin;
-
-//Alice
-typedef struct End {
-	Function 	*function;
-	Offset		*offset;
-} End;
-
-//Alice
-typedef struct Range {
-	bool	depthCall; 
-	bool	callRepeatRule;
-	Begin	*begin;
-	End	*end;
-	int		nInstructions;
-	Instruction	*instructions[MAX_CHILDREN];
-
-} Range;
-
 typedef struct Executable {
 	xmlChar		*entryPoint;
 	int		nInject;
@@ -93,9 +65,6 @@ typedef struct Executable {
 	Instruction	*instructions[MAX_CHILDREN];
 	int		nFunctions;
 	Function	*functions[MAX_CHILDREN];
-	//Alice
-	int		nRanges;
-	Range		*ranges[MAX_CHILDREN];
 } Executable;
 
 

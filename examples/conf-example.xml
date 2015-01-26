@@ -1,70 +1,59 @@
 <?xml version="1.0"?>
-<instrumentor:IntrumentorRules xmlns:instrumentor="http://www.dis.uniroma1.it/~hpdcs/">
+<hijacker:Rules xmlns:hijacker="http://www.dis.uniroma1.it/~hpdcs/">
 
-  <instrumentor:Executable reverseDebug="true" entryPoint="foo">
+  <hijacker:Executable reverseDebug="true" entryPoint="foo">
 
-    <instrumentor:Inject file="foo.S" />
-    <instrumentor:Inject file="foo.S" />
-    <instrumentor:Inject file="foo.S" />
-    <instrumentor:Inject file="foo.S" />
-    <instrumentor:Inject file="foo.S" />
-    <instrumentor:Inject file="foo.S" />
-    <instrumentor:Inject file="foo.S" />
+    <hijacker:Inject file="foo.S" />
 
 
-    <instrumentor:Function name="bar" exactPassess="1" />  <!-- non instrumentare più di una volta -->
-    <instrumentor:Function name="foo" maxPassess="2" />  <!-- puoi instrumentare due volte -->
-    <instrumentor:Function name="foobar" maxPassess="0" />  <!-- ignora la funzione -->
+    <hijacker:Instruction instruction="I_MEMWR|I_MEMRD" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+      <hijacker:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
+    </hijacker:Instruction>
 
 
-    <instrumentor:Instruction instruction="I_MEMWR|I_MEMRD" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
-      <instrumentor:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
-    </instrumentor:Instruction>
+    <hijacker:Instruction instruction="I_MEMWR|I_MEMRD" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+      <hijacker:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
+    </hijacker:Instruction>
 
 
-    <instrumentor:Instruction instruction="I_MEMWR|I_MEMRD" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
-      <instrumentor:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
-    </instrumentor:Instruction>
+    <hijacker:Instruction instruction="I_MEMWR|I_MEMRD" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+      <hijacker:AddCall where="pre" function="monitor2" arguments="qualcosa" convention="stdcall" />
+    </hijacker:Instruction>
 
 
-    <instrumentor:Instruction instruction="I_MEMWR|I_MEMRD" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
-      <instrumentor:AddCall where="pre" function="monitor2" arguments="qualcosa" convention="stdcall" />
-    </instrumentor:Instruction>
+    <hijacker:Function name="bar" reverseDebug="true" preamble="func_pre" postamble="func_post">
+      <hijacker:AddCall where="pre" function="monitor" arguments="qualcosa" convention="asmlinkage" />
+      <hijacker:Instruction instruction="I_JUMP" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+        <hijacker:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
+      </hijacker:Instruction>
+    </hijacker:Function>
 
 
-    <instrumentor:Function name="bar" reverseDebug="true" preamble="func_pre" postamble="func_post">
-      <instrumentor:AddCall where="pre" function="monitor" arguments="qualcosa" convention="asmlinkage" />
-      <instrumentor:Instruction instruction="I_JUMP" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
-        <instrumentor:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
-      </instrumentor:Instruction>
-    </instrumentor:Function>
+    <hijacker:Function name="bar" reverseDebug="false" preamble="func_pre" postamble="func_post">
+      <hijacker:AddCall where="post" function="monitor3" arguments="qualcosa" convention="asmlinkage" />
+      <hijacker:Instruction instruction="I_JUMP" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+        <hijacker:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
+      </hijacker:Instruction>
+      <hijacker:Instruction instruction="I_JUMP" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+        <hijacker:AddCall where="pre" function="monitorrrr" arguments="qualcosa" convention="stdcall" />
+      </hijacker:Instruction>
+    </hijacker:Function>
 
 
-    <instrumentor:Function name="bar" reverseDebug="false" preamble="func_pre" postamble="func_post">
-      <instrumentor:AddCall where="post" function="monitor3" arguments="qualcosa" convention="asmlinkage" />
-      <instrumentor:Instruction instruction="I_JUMP" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
-        <instrumentor:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
-      </instrumentor:Instruction>
-      <instrumentor:Instruction instruction="I_JUMP" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
-        <instrumentor:AddCall where="pre" function="monitorrrr" arguments="qualcosa" convention="stdcall" />
-      </instrumentor:Instruction>
-    </instrumentor:Function>
-
-
-    <instrumentor:Range depthCall="true" callRepeatRule="false">
-         <instrumentor:Begin>
-		    <instrumentor:Function name="foobar"/>
-         </instrumentor:Begin>
-         <instrumentor:End>
-		    <instrumentor:Offset value="0xdeadc0de" />
-         </instrumentor:End>
+    <hijacker:Range depthCall="true" callRepeatRule="false">
+         <hijacker:Begin>
+		    <hijacker:Function name="foobar"/>
+         </hijacker:Begin>
+         <hijacker:End>
+		    <hijacker:Offset value="0xdeadc0de" />
+         </hijacker:End>
 	 
-	 <instrumentor:Instruction instruction="I_STACK">
-        	<instrumentor:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
- 	 </instrumentor:Instruction>
-    </instrumentor:Range>
+	 <hijacker:Instruction instruction="I_STACK">
+        	<hijacker:AddCall where="pre" function="monitor" arguments="qualcosa" convention="stdcall" />
+ 	 </hijacker:Instruction>
+    </hijacker:Range>
 
 
-  </instrumentor:Executable>
+  </hijacker:Executable>
 
-</instrumentor:IntrumentorRules>
+</hijacker:Rules>
