@@ -11,7 +11,7 @@
 #include <prints.h>
 
 
-
+#define DEBUG_XML_PARSER
 #ifdef DEBUG_XML_PARSER
 
 /// Generate spacing for 
@@ -42,7 +42,7 @@ static void traverseFunction(Function *f, int level) {
 	int i;
 
 	SPACES(level); hnotice(3, "Function: '%s'\n", f->name);
-	SPACES(level + 1); hnotice(3, "reverseDebugSupport: %d\n", f->reverseDebugSupport);
+//	SPACES(level + 1); hnotice(3, "reverseDebugSupport: %d\n", f->reverseDebugSupport);
 	SPACES(level + 1); hnotice(3, "preamble: '%s'\n", f->preamble);
 	SPACES(level + 1); hnotice(3, "postamble: '%s'\n", f->postamble);
 	traverseCall(f->call, level + 1);
@@ -56,7 +56,7 @@ static void traverseTree(Executable *e) {
 
 	hnotice(3, "Executable:\n");
 	hnotice(3, "--Entry Point: '%s'\n", e->entryPoint);
-	hnotice(3, "--Reverse Debug Support: %d\n", e->reverseDebugSupport);
+//	hnotice(3, "--Reverse Debug Support: %d\n", e->reverseDebugSupport);
 	
 	for(i = 0; i < e->nInject; i++) {
 		hnotice(3, "--Inject File: '%s'\n", e->injectFiles[i]);
@@ -93,7 +93,6 @@ static inline bool parseTrueFalse(xmlChar *xmlStr) {
 
 
 
-
 static Call *parseCall(/*xmlDocPtr doc, xmlNsPtr ns, */xmlNodePtr cur) {
 	Call *ret = NULL;
 
@@ -104,9 +103,9 @@ static Call *parseCall(/*xmlDocPtr doc, xmlNsPtr ns, */xmlNodePtr cur) {
 	}
 	memset(ret, 0, sizeof(Call));
 
+	// Get the attributes
 	if (cur != NULL) {
-
-		// Get the attributes
+		ret->where = xmlGetProp(cur, (const xmlChar *)"where");
 		ret->function = xmlGetProp(cur, (const xmlChar *)"function");
 		ret->arguments = xmlGetProp(cur, (const xmlChar *)"arguments");
 		ret->convention = xmlGetProp(cur, (const xmlChar *)"convention");
@@ -117,20 +116,41 @@ static Call *parseCall(/*xmlDocPtr doc, xmlNsPtr ns, */xmlNodePtr cur) {
 }
 
 
+static Assembly *parseAssembly(xmlNodePtr cur) {
+	Assembly *ret = NULL;
+
+	// Allocate the struct
+	ret = (Assembly *) malloc(sizeof(Assembly));
+	if (ret == NULL) {
+		herror(true, "Out of memory\n");
+	}
+	memset(ret, 0, sizeof(Assembly));
+
+	// Get the attributes
+	if(cur != NULL) {
+		ret->where = xmlGetProp(cur, (const xmlChar *)"where");
+		ret->instruction = xmlGetProp(cur, (const xmlChar *)"instruction");
+		ret->convention = xmlGetProp(cur, (const xmlChar *)"convention");
+		ret->arch = xmlGetProp(cur, (const xmlChar *)"arch");
+		ret->action = xmlGetProp(cur, (const xmlChar *)"action");
+	}
+
+	return ret;
+}
+
+
 
 static xmlChar *parseInject(/*xmlDocPtr doc, xmlNsPtr ns, */xmlNodePtr cur) {
 	xmlChar *curFile = NULL;
 
-//	cur = cur->xmlChildrenNode;
+	// Get the file's name string
 	if (cur != NULL) {
 
-		// Get the file's string
 		curFile = xmlGetProp(cur, (const xmlChar *)"file");
 	}
 
 	return curFile;
 }
-
 
 
 
@@ -184,6 +204,7 @@ static unsigned int parseInstructionFlags(xmlChar *str) {
 static Instruction *parseInstruction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr cur) {
 	Instruction *ret = NULL;
 	Call *curCall;
+	Assembly *curAssembly;
 
 	// Allocate the struct
 	ret = (Instruction *) malloc(sizeof(Instruction));
@@ -192,6 +213,7 @@ static Instruction *parseInstruction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr 
 	}
 	memset(ret, 0, sizeof(Instruction));
 
+	// Get the instruction's attributes
 	if (cur != NULL) {
 		ret->flags = parseInstructionFlags(xmlGetProp(cur, (const xmlChar *)"instruction"));
 		ret->before = xmlGetProp(cur, (const xmlChar *)"injectBefore");
@@ -200,14 +222,23 @@ static Instruction *parseInstruction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr 
 	}
 
 	// Don't care what the top level element's name is
-	cur = cur->xmlChildrenNode;	
+	// and scan the remainder of the xml tree
+	cur = cur->xmlChildrenNode;
 	while (cur != NULL) {
 
 		// Call
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Call") == 0 && cur->ns == ns) {
+		if (xmlStrcmp(cur->name, (const xmlChar *)"AddCall") == 0 && cur->ns == ns) {
 			curCall = parseCall(/*doc, ns, */cur);
 			if (curCall != NULL && ret->call == NULL) {
 				ret->call = curCall;
+			}
+		}
+
+		// Assembly
+		else if (xmlStrcmp(cur->name, (const xmlChar *)"Assembly") == 0 && cur->ns == ns) {
+			curAssembly = parseAssembly(cur);
+			if (curAssembly != NULL) {
+				ret->assembly = curAssembly;
 			}
 		}
 
@@ -223,6 +254,7 @@ static Function *parseFunction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr cur) {
 	Function *ret = NULL;
 	Call *curCall;
 	Instruction *curInstruction;
+	Assembly *curAssembly;
 
 	// Allocate the struct
 	ret = (Function *) malloc(sizeof(Function));
@@ -231,20 +263,22 @@ static Function *parseFunction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr cur) {
 	}
 	memset(ret, 0, sizeof(Function));
 
+	// Get the function's attributes
 	if (cur != NULL) {
 		ret->name = xmlGetProp(cur, (const xmlChar *)"name");
-		ret->reverseDebugSupport = parseTrueFalse(xmlGetProp(cur, (const xmlChar *)"reverseDebug"));
+//		ret->reverseDebugSupport = parseTrueFalse(xmlGetProp(cur, (const xmlChar *)"reverseDebug"));
 		ret->preamble = xmlGetProp(cur, (const xmlChar *)"preamble");
 		ret->postamble = xmlGetProp(cur, (const xmlChar *)"postamble");
 	}
 
 
 	// Don't care what the top level element's name is
+	// and scan the remainder of the xml tree
 	cur = cur->xmlChildrenNode;
 	while (cur != NULL) {
 
 		// Call
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Call") == 0 && cur->ns == ns) {
+		if (xmlStrcmp(cur->name, (const xmlChar *)"AddCall") == 0 && cur->ns == ns) {
 			curCall = parseCall(/*doc, ns, */cur);
 			if (curCall != NULL && ret->call == NULL) {
 				ret->call = curCall;
@@ -252,131 +286,27 @@ static Function *parseFunction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr cur) {
 		}
 
 		// Instruction
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Instruction") == 0 && cur->ns == ns) {
+		else if (xmlStrcmp(cur->name, (const xmlChar *)"Instruction") == 0 && cur->ns == ns) {
 			curInstruction = parseInstruction(/*doc, */ns, cur);
 			if (curInstruction != NULL && ret->nInstructions < MAX_CHILDREN) {
 				ret->instructions[ret->nInstructions++] = curInstruction;
 			}
 		}
 
-		cur = cur->next;
-	}
-
-	return ret;
-
-}
-
-static Offset *parseOffset(xmlNsPtr ns, xmlNodePtr cur){
-
-	Offset		*ret = NULL;
-	unsigned long	value;
-
-	// Allocate the struct
-	ret = (Offset *) malloc(sizeof(Offset));
-	if (ret == NULL) {
-		herror(true, "Out of memory\n");
-		return NULL;
-	}
-
-	memset(ret, 0, sizeof(Offset));
-
-	if (cur != NULL) {
-		ret->value = xmlGetProp(cur, (const xmlChar *)"value");
-	}
-
-	return ret;
-
-}
-
-
-static Begin *parseBegin(xmlNsPtr ns, xmlNodePtr cur){
-	
-	Begin		*ret = NULL;
-	Function	*function;
-	Offset	  	*offset;
-
-	// Allocate the struct
-	ret = (Begin *) malloc(sizeof(Begin));
-	if (ret == NULL) {
-		herror(true, "Out of memory\n");
-		return NULL;
-	}
-
-	memset(ret, 0, sizeof(Begin));
-
-	if (cur != NULL) {
-		cur = cur->xmlChildrenNode;
-	}
-	
-	while (cur != NULL) {
-		
-		// Function
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Function") == 0 && cur->ns == ns) {
-			function = parseFunction(ns, cur);
-			if (function != NULL && ret->function == NULL) {
-				ret->function = function;
-			}
-		}
-
-		// Offset (ma questo forse non serve: una porzione transazionale può iniziare solo con una function)
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Offset") == 0 && cur->ns == ns) {
-			offset = parseOffset(ns, cur);
-			if (offset != NULL && ret->offset == NULL) {
-				ret->offset = offset;
-			}
-		}
-	
-		cur = cur->next;
-	}
-
-	return ret;
-
-}
-
-static End *parseEnd(xmlNsPtr ns, xmlNodePtr cur){
-	
-	End		*ret = NULL;
-	Function	*function;
-	Offset	  	*offset;
-
-	// Allocate the struct
-	ret = (End *) malloc(sizeof(End));
-	if (ret == NULL) {
-		herror(true, "Out of memory\n");
-		return NULL;
-	}
-
-	memset(ret, 0, sizeof(End));
-
-	if (cur != NULL) {
-		cur = cur->xmlChildrenNode;
-	}
-	
-	while (cur != NULL) {
-		
-		// Function
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Function") == 0 && cur->ns == ns) {
-			function = parseFunction(ns, cur);
-			if (function != NULL && ret->function == NULL) {
-				ret->function = function;
-			}
-		}
-
-		// Offset
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Offset") == 0 && cur->ns == ns) {
-			offset = parseOffset(ns, cur);
-			if (offset != NULL && ret->offset == NULL) {
-				ret->offset = offset;
+		// Assembly
+		else if (xmlStrcmp(cur->name, (const xmlChar *)"Assembly") == 0 && cur->ns == ns) {
+			curAssembly = parseAssembly(cur);
+			if (curAssembly != NULL && ret->nAssembly < MAX_CHILDREN) {
+				ret->assembly[ret->nAssembly++] = curAssembly;
 			}
 		}
 
 		cur = cur->next;
-		
 	}
 
 	return ret;
-
 }
+
 
 
 static Executable *parseExecutable(char *filename) {
@@ -418,7 +348,7 @@ static Executable *parseExecutable(char *filename) {
 	}
 
 	if (xmlStrcmp(cur->name, (const xmlChar *)"hijackerRules")) {
-		herror(false, "Document of the wrong type, root node != hijackerRules");
+		herror(false, "Document of the wrong type, root node != hijackerRules\n");
 		xmlFreeDoc(doc);
 		return NULL;
 	}
@@ -448,7 +378,7 @@ static Executable *parseExecutable(char *filename) {
 		return NULL;
 	}
 	if ((xmlStrcmp(cur->name, (const xmlChar *)"Executable") != 0) || (cur->ns != ns)) {
-		herror(false, "Document of the wrong type, was '%s', Executable expected", cur->name);
+		herror(false, "Document of the wrong type, was '%s', Executable expected\n", cur->name);
 
 		xmlFreeDoc(doc);
 		free(ret);
@@ -456,8 +386,8 @@ static Executable *parseExecutable(char *filename) {
 	}
 
 
-	// Get and store the attributes, if any
-	ret->reverseDebugSupport = parseTrueFalse(xmlGetProp(cur, (const xmlChar *)"reverseDebug"));
+	// Get and store the executable's attributes, if any
+//	ret->reverseDebugSupport = parseTrueFalse(xmlGetProp(cur, (const xmlChar *)"reverseDebug"));
 	ret->entryPoint = xmlGetProp(cur, (const xmlChar *)"entryPoint");
 
 
@@ -474,7 +404,7 @@ static Executable *parseExecutable(char *filename) {
 		}
 
 		// Instruction Node
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Instruction") == 0 && cur->ns == ns) {
+		else if (xmlStrcmp(cur->name, (const xmlChar *)"Instruction") == 0 && cur->ns == ns) {
 			curInstruction = parseInstruction(/*doc, */ns, cur);
 			if (curInstruction != NULL && ret->nInstructions < MAX_CHILDREN) {
 				ret->instructions[ret->nInstructions++] = curInstruction;
@@ -482,7 +412,7 @@ static Executable *parseExecutable(char *filename) {
 		}
 
 		// Function Node
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Function") == 0 && cur->ns == ns) {
+		else if (xmlStrcmp(cur->name, (const xmlChar *)"Function") == 0 && cur->ns == ns) {
 			curFunction = parseFunction(/*doc, */ns, cur);
 			if (curFunction != NULL && ret->nFunctions < MAX_CHILDREN) {
 				ret->functions[ret->nFunctions++] = curFunction;
@@ -494,6 +424,7 @@ static Executable *parseExecutable(char *filename) {
 
 	return ret;
 }
+
 
 
 Executable *parseRuleFile(char *f) {

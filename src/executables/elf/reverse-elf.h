@@ -11,6 +11,8 @@
 #include <instruction.h>
 #include <monitor.h>
 
+#include <x86/reverse-x86.h>
+
 /**
  * Prior to call the <em>monitor</em> module who generates the reverse code, it is needed
  * to push the <em>insn_entry</em> structure used by the monitor into the current stack.

@@ -44,14 +44,14 @@ static void add_nop (function *func, insn_info *insn) {
 /**
  * Given a rule, applies it by calling the correspondent function
  */
-// TODO: per ora inerisce a caso una NOP all'intero del codice chiamando
-// la funzione 'insert_instrucion' che si preoccupa di aggiungere un nodo istruzione
-// aggiornando i puntatori
 void apply_rules() {
 	function *func;
 	insn_info *insn;
 
 	hprint("Start applying rules...\n");
+
+	//TODO: da aggiungere una struttura switch per ciascun tipo di
+	//regola supportata che chiami la relativa funzione
 
 	reverse_monitor();
 }

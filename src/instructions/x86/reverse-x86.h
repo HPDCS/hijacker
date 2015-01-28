@@ -20,7 +20,7 @@
  * @param entry A pointer to the monitor structure descriptor
  *
  */
-void push_insn_entry (function *func, insn_info *target, insn_entry *entry);
+void push_x86_insn_entry (function *func, insn_info *target, insn_entry *entry);
 
 /**
  * In order to properly save the stack in the instrumented code
@@ -45,6 +45,6 @@ void get_x86_memwrite_info (insn_info *insn, insn_entry *entry);
  *
  * @return A pointer to the newly created CALL instruction
  */
-insn_info *insert_x86_call_instruction (function *func, insn_info *target);
+insn_info * insert_x86_call_instruction (function *func, insn_info *target);
 
 #endif /* REVERSE_X86_H_ */

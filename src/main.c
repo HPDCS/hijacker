@@ -112,6 +112,20 @@ static bool parse_cmd_line(int argc, char **argv) {
 
 
 
+void load_rules (char *filename) {
+	Executable *rules;
+	
+	hprint("Parsing XML rules\n");
+
+	rules = parseRuleFile(filename);
+	if(rules == NULL) {
+		herror(true, "Invalid instrumentation rule set\n");
+	}
+
+	config.rules = rules;
+}
+
+
 
 int main(int argc, char **argv) {
 
@@ -130,6 +144,9 @@ int main(int argc, char **argv) {
 
 	// Load executable and build a map in memory
 	load_program(config.input);	
+
+	// Load instrumentation rules
+	load_rules(config.rules_file);
 
 	// Process executable
 	apply_rules();

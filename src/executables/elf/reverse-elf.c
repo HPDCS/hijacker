@@ -52,7 +52,7 @@ static void add_call_monitor (function *func, insn_info *target, symbol *referen
 
 	switch (PROGRAM(insn_set)) {
 		case X86_INSN:
-			call = (insn_info *) insert_x86_call_instruction (func, target, reference);
+			call = (insn_info *) insert_x86_call_instruction (func, target);
 		break;
 	}
 
