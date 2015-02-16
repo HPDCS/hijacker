@@ -39,7 +39,7 @@ typedef struct Call {
 typedef struct Assembly {
 	xmlChar	*where;
 	xmlChar	*instruction;
-	xmlChar	*convention;
+	xmlChar	*syntax;
 	xmlChar	*arch;
 	xmlChar	*action;
 } Assembly;
@@ -48,7 +48,8 @@ typedef struct Assembly {
 typedef struct Instruction {
 	unsigned int	flags;
 	Call		*call;
-	Assembly	*assembly;
+	int		nAssembly;
+	Assembly	*assembly[MAX_CHILDREN];
 	xmlChar		*before;
 	xmlChar		*after;
 	xmlChar		*replace;
@@ -57,9 +58,6 @@ typedef struct Instruction {
 
 typedef struct Function {
 	xmlChar		*name;
-//	bool		reverseDebugSupport;
-	xmlChar		*preamble;
-	xmlChar		*postamble;
 	Call		*call;
 	int		nInstructions;
 	Instruction	*instructions[MAX_CHILDREN];
@@ -70,9 +68,8 @@ typedef struct Function {
 
 typedef struct Executable {
 	xmlChar		*entryPoint;
-	int		nInject;
+	int		nInjects;
 	xmlChar		*injectFiles[MAX_CHILDREN];
-//	bool		reverseDebugSupport;
 	int		nInstructions;
 	Instruction	*instructions[MAX_CHILDREN];
 	int		nFunctions;
@@ -80,7 +77,7 @@ typedef struct Executable {
 } Executable;
 
 
-Executable *parseRuleFile(char *f);
+int parseRuleFile(char *f, Executable ***rules);
 
 #endif /* _INTRUMENTOR_RULES_H */
 

@@ -1,4 +1,0 @@
-instructions/arm/parse-arm.o: instructions/arm/parse-arm.c \
- /usr/include/stdc-predef.h
-
-/usr/include/stdc-predef.h:

@@ -14,14 +14,15 @@
 #include <monitor.h>
 
 #include "reverse-elf.h"
+#include "handle-elf.h"
 
 
-static void push_insn_entry (function *func, insn_info *target, insn_entry *entry) {
+static void push_insn_entry (insn_info *target, insn_entry *entry) {
 	// choose which subfunction use to fill the structure properly
 	// according to the executable file type
 	switch (PROGRAM(insn_set)) {
 		case X86_INSN:
-			push_x86_insn_entry (func, target, entry);
+			push_x86_insn_entry (target, entry);
 		break;
 	}
 
@@ -47,21 +48,52 @@ static void get_memwrite_info (insn_info *insn, insn_entry *entry) {
 }
 
 
-static void add_call_monitor (function *func, insn_info *target, symbol *reference) {
+static void add_call_monitor (insn_info *target, symbol *reference) {
 	insn_info *call;
 
 	switch (PROGRAM(insn_set)) {
 		case X86_INSN:
-			call = (insn_info *) insert_x86_call_instruction (func, target);
+			call = (insn_info *) insert_x86_call_instruction (target);
 		break;
 	}
 
 	hnotice(4, "Creating the RELA reference to the monitor...\n");
-	create_rela_node(reference, call);
+	instruction_rela_node(reference, call, RELOCATE_RELATIVE_64);
 }
 
 
-inline void prepare_monitor_call (function *func, insn_info *target, symbol *monitor) {
+
+void monitor_prepare (insn_info *target, char *func) {
+	insn_entry entry;
+	symbol *sym;
+	
+	// Retrieve information to fill the structure
+	hnotice(4, "Retrieve meta-info about target MOV instruction...\n");
+	get_memwrite_info(target, &entry);
+
+	// Adds the pointer to the function that the monitor module has to call at runtime
+	// The idea is to generalize the calling method, the aforementioned
+	// symbol will be properly relocated to whichever function the user has
+	// specified in the rules files in the AddCall tag's 'function' field
+	hnotice(4, "Push function pointer to the monitor structure <%#08lx>\n", func);
+	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
+
+	// Once the structure has been created, it is possbile
+	// to generate the push instructions and add them to the code
+	hnotice(4, "Push monitor structure into stack before the target MOV...\n");
+	push_insn_entry(target, &entry);
+	
+	// Now, we have either the function symbol to be called and the stack filled up;
+	// the only thing that remains to do is to adds a relocation entry from the last
+	// long-word of the pushed entry towards the new function symbol.
+	// Note that 'target' actually is the 2nd MOV instruction being instrumented, therefore
+	// in order to make the correct relocation we have to look for its predecessor (twice)
+	// which (should) be the last MOV that should pushes the calling address on the stack
+	instruction_rela_node(sym, target->prev->prev, RELOCATE_ABSOLUTE_64);
+}
+
+
+inline void prepare_monitor_call (insn_info *target, symbol *monitor) {
 	insn_entry entry;
 
 	// retrieve information to fill the structure
@@ -71,11 +103,11 @@ inline void prepare_monitor_call (function *func, insn_info *target, symbol *mon
 	// once the structure has been created, it is possbile
 	// to generate the push instructions and add them to the code
 	hnotice(4, "Push monitor structure into stack before the target MOV...\n");
-	push_insn_entry(func, target, &entry);
+	push_insn_entry(target, &entry);
 
 	// add the call to the monitor
 	hnotice(4, "Add CALL instruction to the montor...\n");
-	add_call_monitor(func, target, monitor);
+	add_call_monitor(target, monitor);
 
 	hnotice(2, "MOV instruction at <%#08lx> moved to <%#08lx>\n", target->orig_addr, target->new_addr);
 	hnotice(2, "Monitor instrumented for MOV instruction at <%#08lx>\n\n", target->new_addr);

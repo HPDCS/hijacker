@@ -5,6 +5,13 @@
 #include <executable.h>
 #include <instruction.h>
 
+#define RELOCATE_RELATIVE_32	0
+#define RELOCATE_RELATIVE_64	1
+#define RELOCATE_ABSOLUTE_32	2
+#define RELOCATE_ABSOLUTE_64	3
+
+symbol * find_symbol (char *name);
+
 /**
  * In order to be linkable, new relocation nodes can be created in case
  * genereted instructions have to be referenced.
@@ -12,19 +19,27 @@
  * @param sym Symbol descriptor of the symbol that will be referenced to
  * @param insn The pointer to the descritpor of the instruction who need to be relocated
  */
-void create_rela_node (symbol *sym, insn_info *insn);
+void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type) ;
+
+
+void create_rela_node (symbol *sym, long long offset, long addend, char *secname) ;
 
 
 /**
- * Help in manipulating parsed ELF structure by adding a new symbol node.
+ * Given the 'name' of a symbol, it look wheter it exists in the list
+ * and, in case, it returns this symbol. Otherwise the funciton will
+ * create a new symbol with the specified attributes.
+ * Note that the attributes passed are only used if a new symbol has
+ * to be created from scratch.
  *
  * @param name A pointer to the string that represents the symbol's name
- * @param type The type of the new symbol
- * @param bind The optional binding flag (by default LOCAL binding is used)
+ * @param type Integer representing the constant for the internal symbol's type
+ * @param bind Integer representing the constant for the internal symbol's binding
+ * @param size The size in bytes of the symbol, if present
  *
- * @return The pointer to the new created symbol descriptor
+ * @return The pointer to a symbol matching the name requested.
  */
-symbol * create_symbol_node (char *name, int type, int bind);
+symbol * create_symbol_node (char *name, int type, int bind, int size);
 
 
 /**
@@ -44,5 +59,17 @@ symbol * create_symbol_node (char *name, int type, int bind);
  * in case no sharing happened.
  */
 symbol * symbol_check_shared (symbol *sym);
+
+
+/**
+ * Switches to the given executable version. If the version passed is grater than the
+ * max version available, than a new executable version to instrument is created from scratch.
+ * Note that max 256 versions are currently supported.
+ * 
+ * @param version The integer representing the version to switch
+ * 
+ * @return An integer representing the current instrumenting version.
+ */
+int switch_executable_version (int version);
 
 #endif /* HANDLE_ELF_ */

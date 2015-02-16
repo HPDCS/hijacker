@@ -1,4 +1,0 @@
-instructions/mips/parse-mips.o: instructions/mips/parse-mips.c \
- /usr/include/stdc-predef.h
-
-/usr/include/stdc-predef.h:

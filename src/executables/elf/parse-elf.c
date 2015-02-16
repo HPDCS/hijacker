@@ -1313,6 +1313,7 @@ static section *relocs;			/// List of all relocations sections parsed
 static section *symbols;		/// List of all symbols parsed
 static section *code;			/// List of whole code sections parsed
 static function *functions;		/// List of resolved functions
+static section *data;			/// List of all raw data sections
 static char *strings;			/// Array of strings
 
 // FIXME: redundancy with 'add_section'
@@ -1332,6 +1333,9 @@ static void add_sec(int type, int secndx, void *payload, section **first) {
 
 	// Create and populate the new node
 	section *new = (section *)malloc(sizeof(section));
+	if(!new){
+		herror(true, "Out of memory!\n");
+	}
 	bzero(new, sizeof(section));
 
 	new->type = type;
@@ -1576,12 +1580,14 @@ static void elf_symbol_section(int sec) {
 			sym->extra_flags = symbol_info(s, st_info);
 			sym->secnum = symbol_info(s, st_shndx);
 			sym->index = sym_count;
-			sym->position = symbol_info(s, st_value);
+			sym->initial = symbol_info(s, st_value);
 			sym->bind = bind;
 
 			hnotice(2, "[%d] %s: '%s' in section %d :: %ld\n", sym->index, (sym->type == SYMBOL_FUNCTION ? "Function" :
-					(sym->type == SYMBOL_UNDEF ? "Undefined"
-							: "Variable")), sym->name, sym->secnum, sym->position);
+					(sym->type == SYMBOL_UNDEF ? "Undefined" :
+						sym->type == SYMBOL_SECTION ? "Section" :
+							sym->type == SYMBOL_FILE ? "File" :
+								"Variable")), sym->name, sym->secnum, sym->position);
 
 			// insert symbol
 			sym->next = (symbol *) malloc(sizeof(symbol));
@@ -1876,7 +1882,7 @@ static void link_jump_instruction(function *func) {
 				sym = callee->symbol;
 
 				// The instruction object will be binded to the proper symbol
-				create_rela_node(sym, insn);
+				instruction_rela_node(sym, insn, RELOCATE_RELATIVE_32);
 
 				// CALL instruction embedded offset must be reinitialize to zero
 				switch(PROGRAM(insn_set)) {
@@ -2003,65 +2009,9 @@ static void resolve_symbols() {
 	hsuccess();
 }
 
-// ====================================================================================
-/**
- * Verifies if the passed symbol is a shared.
- * In case the symbol is shared among multiple relocation
- * entries, then a copy of it will be created in order to save
- * the new offset. During the emit phase, each additional copy
- * of the symbol will be skipped but the relative offset
- * added to a new relocation entry whose the symbol refers to.
- *
- * Note: The function will update the list of symbols by adding
- * the possible duplicate.
- *
- * @param sym Symbol descriptor to check
- *
- * @return The symbol descriptor of the new symbol, or the symbol passed
- * in case no sharing happened.
- */
-/*symbol* symbol_check_shared (symbol *sym) {
-	symbol *prev, *curr;
-
-	// Check if the field offset is not empty, in this case the symbol
-	// is shared and we must create and link a new copy of to store
-	// the new relocation offset.
-	if(sym->referenced) {
-
-		hnotice(5, "Multiple reference, duplicating symbol...\n");
-
-		// seek the end of the collision list starting from
-		// passed symbol
-		prev = curr = sym;
-		while(curr->next && curr->next->index == sym->index) {
-			prev = curr;
-			curr = curr->next;
-		}
-
-		// copy the last symbol copy
-		symbol *s = (symbol *) malloc(sizeof(symbol));
-		memcpy(s, sym, sizeof(symbol));
-
-		// this symbol is marked as a copy
-		s->duplicate = 1;
-
-		// update the list
-		s->next = prev->next;
-		prev->next = s;
-
-		// return the new created duplicate
-		return s;
-	}
-
-	// no duplicates, return the symbol itself
-	return sym;
-}*/
-// ====================================================================================
-
-
 
 /**
- * Third phase parser which resolves relocation.
+ * Third phase which resolves relocation.
  * Resolves each relocation entry stored in previous phase, by looking for each symbol name and binding them
  * with the relative reference. In particular, in functions each instruction descriptor handles a 'reference'
  * void pointer which can represent either a variable or a call instruction to a specific address.
@@ -2091,20 +2041,10 @@ static void resolve_relocation(){
 
 		hnotice(2, "Parsing next relocation section\n\n");
 
+		// Retrieve relocation's metadata
 		target = sec_field(sec->index, sh_info);
 		flags = sec_field(target, sh_flags);
 
-		/*if(!(flags & SHF_EXECINSTR)) {
-			hnotice(3, "Relocation section does not refer to a text section, resolve skipped\n");
-
-			// add to the target section references to by the relocation, the relocation itself
-			// in order to allow emitter to write entry correctly
-			tarsec = find_section(target);
-			tarsec->reference = sec;
-
-			sec = sec->next;
-			continue;
-		}*/
 
 		// Retrieve the payload and cycles on each relocation entry
 		rel = sec->payload;
@@ -2139,8 +2079,9 @@ static void resolve_relocation(){
 				// the relocation applies to an instruction
 				hnotice(3, "Looking up for address <%#08lx>\n", rel->offset);
 
-				// Search in the function list the one which starts at the
-				// closest address to one relocation refers to
+				// Search in the function list the one containing the right instruction.
+				// This is simply done by looking for the function whose starting offset
+				// is the closest address to one relocation refers to.
 				func = functions;
 				insn = NULL;
 				while(func->next){
@@ -2152,7 +2093,7 @@ static void resolve_relocation(){
 				}
 
 				if(func) {
-					hnotice(3, "Relocation found to be in function at <%#08lx> (%s)\n", func->orig_addr, func->name);
+					hnotice(3, "Relocation is found to be in function at <%#08lx> (%s)\n", func->orig_addr, func->name);
 					insn = func->insn;
 				}
 
@@ -2161,6 +2102,8 @@ static void resolve_relocation(){
 				// Now we have to look for the right instruction pointed to by the offset.
 				// in order to do that is sufficient to look up for the instructions whose
 				// address is the closest to the one relocation refers to.
+				// Note that '>' is because the relocation actually does not refer to
+				// the instruction's address itself, but it is shifted by the opcode size.
 				while(insn->next) {
 					if(insn->next->orig_addr > (unsigned long long)rel->offset){
 						break;
@@ -2169,7 +2112,7 @@ static void resolve_relocation(){
 					insn = insn->next;
 				}
 
-				// if insn is NULL, uuh...
+				// if insn is NULL, uuh...something is going wrong!
 				if(insn) {
 					hnotice(3, "Instruction pointed to by relocation: <%#08lx> '%s'\n", insn->orig_addr,
 							insn->i.x86.mnemonic);
@@ -2179,10 +2122,13 @@ static void resolve_relocation(){
 					// Check for relocation duplicates
 					sym_2 = symbol_check_shared(sym);
 					sym_2->referenced = 1;
-					sym_2->offset = rel->addend;
-					sym_2->reloc_type = rel->type;
+					sym_2->relocation.addend = rel->addend;
+					sym_2->relocation.type = rel->type;
+					sym_2->relocation.secname = ".text";
 
-					// The instruction object will be binded to the proper symbol
+					// The instruction object will be binded to the proper symbol.
+					// This reference is read by the specific machine code emitter
+					// that is in charge to proper handle the relocation.
 					insn->reference = sym_2;
 
 					hnotice(2, "Symbol reference added\n\n");
@@ -2191,19 +2137,24 @@ static void resolve_relocation(){
 					herror(true, "Relocation cannot be applied, reference not found\n\n");
 				}
 			} else {
-				// the relocation applies not to an instruction but to another symbol
+				// If the section's flags are not EXEC_INSTR, then this means that
+				// the relocation does not apply to an instruction but to another symbol;
+				// e.g. a SECTION symbol, in case of generic references (.data, .bss, .rodata)
+				
+				// If we are here, the relocation is SECTION->SECTION, otherwise
+				// an instruction would be found in the previous branch.
 
 				// TODO: now there is the create_rela_node function, so use it!
 				// Check for relocation duplicates
 				sym_2 = symbol_check_shared(sym);
 				sym_2->referenced = 1;
-				sym_2->offset = rel->addend;
-				sym_2->position = rel->offset;
-				sym_2->reloc_type = rel->type;
+				sym_2->relocation.addend = rel->addend;
+				sym_2->relocation.offset = rel->offset;
+				sym_2->relocation.type = rel->type;
+				sym_2->relocation.secname = sec->name;
+				
 
-				rel->symbol = sym_2;
-
-				hnotice(2, "Added symbol reference to <%#08lx> + %d\n", sym_2->position, sym_2->offset);
+				hnotice(2, "Added symbol reference to <%#08lx> + %d\n", rel->offset, rel->addend);
 			}
 
 			rel = rel->next;
@@ -2215,43 +2166,6 @@ static void resolve_relocation(){
 	hsuccess();
 }
 
-/////////////////////////////////////////////////////////////////////////
-// =========================== DEBUG ONLY ============================ //
-/// List ELF structure parsed by hijacker
-static void test_elf_map(int flag){
-	function *func;
-	insn_info *insn;
-	symbol *sym;
-	void *rel;
-
-	if(!flag)
-		return;
-		
-	hnotice(1, "ELF parsing completed! Report:\n");
-
-	func = functions;
-	// scan functions and show their content
-	while(func) {
-		hnotice(2, "<%#08lx> '%s':\n", func->orig_addr, func->name);
-
-		insn = func->insn;
-
-		while(insn) {
-			hnotice(3, "<%#08lx>: %s\n", insn->orig_addr, insn->i.x86.mnemonic);
-
-			rel = insn->reference;
-			if(rel) {
-				hnotice(3, "Reference %lx\n", rel);
-			}
-
-			rel = sym = NULL;
-			insn = insn->next;
-		}
-
-		func = func->next;
-	}
-}
-/////////////////////////////////////////////////////////////////////////
 
 void elf_create_map(void) {
 	unsigned int size;
@@ -2315,10 +2229,14 @@ void elf_create_map(void) {
 			break;
 
 		case SHT_RELA:
-			if(!strcmp(sec_name(sec), ".rela.eh_frame"))	// TODO: .rela.eh_frame has to be skipped??
-				break;
-
-			elf_rela_section(sec);
+			if(!strcmp(sec_name(sec), ".rela.text"))
+				elf_rela_section(sec);
+			else if(!strcmp(sec_name(sec), ".rela.data"))
+				elf_rela_section(sec);
+			else if(!strcmp(sec_name(sec), ".rela.rodata"))
+				elf_rela_section(sec);
+			else if(!strcmp(sec_name(sec), ".rela.bss"))
+				elf_rela_section(sec);
 			break;
 
 		case SHT_STRTAB:
@@ -2335,8 +2253,6 @@ void elf_create_map(void) {
 
 	resolve_symbols();
 	resolve_relocation();
-
-	test_elf_map(0);  //TODO: debug purpose (flag=1 => test enabled; flag=0 => test disabled)
 
 	PROGRAM(symbols) = symbols->payload;
 	PROGRAM(code) = functions;

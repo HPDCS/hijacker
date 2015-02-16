@@ -94,6 +94,20 @@
 	} while(0)
 
 
+  #define execute(what, ...) do {\
+	int status;\
+	if(fork() != 0) {\
+				wait(&status);\
+		} else {\
+				if(execlp(what, what, __VA_ARGS__, (char *)NULL) == -1) {\
+					herror(true, "Unable to launch '%s'\n", what);\
+				}\
+		}\
+		if(status != 0) {\
+			herror(true, "Error executing '%s' (error %d: '%s')\n", what, status, strerror(status));\
+		}\
+	} while(0)
+
 
 
 #else

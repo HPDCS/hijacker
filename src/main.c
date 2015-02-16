@@ -8,6 +8,7 @@
 #include <options.h>
 #include <rules.h>
 #include <prints.h>
+#include <compile.h>
 #include <rules/apply-rules.h>
 
 
@@ -48,15 +49,10 @@ static void process_configuration(char **argv) {
 		herror(true, "Configuration-rules file must be specified\n");
 	}
 
+	// Load the configuration file
+	hnotice(1, "Loading configuration file '%s'... \n", config.rules_file);
+	config.nExecutables = parseRuleFile(config.rules_file, &config.rules);
 
-	// Load the configuration file  TODO reinserire dopo che si è modificato loadrules.c
-/*	hnotice(1, "Loading configuration file '%s'... ", config.rules_file);
-	config.rules = parseRuleFile(config.rules_file);
-	if(config.rules == NULL) {
-		hfail();
-		herror(true, "Unable to open configuration file '%s'\n", config.rules_file);
-	}
-*/
 	hsuccess();
 }
 
@@ -107,29 +103,26 @@ static bool parse_cmd_line(int argc, char **argv) {
 		}
 	}
 
+	if(!config.output) {
+		config.output = "final.o";
+	}
+
 	return true;
 }
 
 
-
-void load_rules (char *filename) {
-	Executable *rules;
-	
-	hprint("Parsing XML rules\n");
-
-	rules = parseRuleFile(filename);
-	if(rules == NULL) {
-		herror(true, "Invalid instrumentation rule set\n");
-	}
-
-	config.rules = rules;
+/**
+ * Links all the additional modules that can be found in the
+ * current working directory.
+ */
+static void link_modules() {
+	hnotice(3, "Link additional modules in '%s' to the output instrumented file 'hijacked.o'\n", TEMP_PATH);
+	link("-r", TEMP_PATH"*.o", "-o", config.output);
+	hsuccess();
 }
 
 
-
 int main(int argc, char **argv) {
-
-	bzero(&config, sizeof(configuration));
 
 	// Welcome! :)
 	hhijacker();
@@ -141,24 +134,18 @@ int main(int argc, char **argv) {
 
 	// Process the specified command-line configuration
 	process_configuration(argv);
-
+	
 	// Load executable and build a map in memory
-	load_program(config.input);	
-
-	// Load instrumentation rules
-	load_rules(config.rules_file);
+	load_program(config.input);
 
 	// Process executable
 	apply_rules();
-
+	
 	// Write back executable
-	output_object_file(config.output, 0);
+	output_object_file("hijacked.o", 0);
 
-	// finalize the output file by linking the module
-	link_module();
-
-	// TODO: Free Rules (?)
-	// TODO: Free Executable
+	// Finalize the output file by linking the module
+	//link_modules();
 
 	exit(EXIT_SUCCESS);
 }

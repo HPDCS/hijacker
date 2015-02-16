@@ -91,12 +91,13 @@ monitor:
 
 	# Controllo per vedere se siamo nello stack
 	cmp 	%rdi, %rsp		# Nello stack?
-	call	increment_stack_mov_count  # Chiama la funzione per il calcolo delle stack mov
+	#call	increment_stack_mov_count  # Chiama la funzione per il calcolo delle stack mov
 	jb	.Fine				# Se %esp è minore di %edi
 
 	# La calling convention del System V ABI prevede che vengano passati
 	# per primi i registri %rdi e %rsi, in questa sequenza
-	call	reverse_code_generator		# Chiama la funzione che si preoccupa della generazione del codice inverso
+	# call	reverse_code_generator		# Chiama la funzione che si preoccupa della generazione del codice inverso
+	call *16(%rdx)			# Chiama la funzione specificata nelle regole XML, contenuta nell'ultimo campo della struttura di monitor
 
 
 	.Fine:

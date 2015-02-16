@@ -20,8 +20,8 @@ int foo(int a, int b) {
 void bar(void) {
 	static int count = 0;
 	
-	printf("Iterazione %d\n");
-	printf("Var=%c\n", var);
+	printf("Iterazione %d:\n", count++);
+	printf("Var = %x\n", var);
 }
 
 int foobar(void) {

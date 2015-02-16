@@ -84,7 +84,7 @@
 		fprintf(stderr, "[");\
 		fprintf(stderr, (fatal ? "\e[1;31mFATAL ERROR\e[0m" : "\e[1;33mWARNING\e[0m")); \
 		set_style(RESET);\
-		fprintf(stderr, "] ");\
+		fprintf(stderr, "] %s:%d: ", __FILE__, __LINE__);\
 		fprintf(stderr, __VA_ARGS__);\
 		if(fatal) {\
 			exit(EXIT_FAILURE);\
@@ -95,7 +95,7 @@
 
 #define hnotice(verb_level, ...) do {\
 		if(config.verbose >= (verb_level)) {\
-			printf("%*s", verb_level, "");\
+			printf("%*s", verb_level, " ");\
 			yellow_arrow();\
 			printf(__VA_ARGS__);\
 		}\
@@ -153,6 +153,7 @@
 		printf("\n");\
 	}\
 } while(0)
+
 
 #endif /* _PRINTS_H */
 

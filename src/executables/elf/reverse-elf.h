@@ -33,6 +33,6 @@
 //void get_memwrite_info (insn_info *insn, insn_entry *entry);
 
 
-void prepare_monitor_call (function *func, insn_info *target, symbol *reference);
+void prepare_monitor_call (insn_info *target, symbol *reference);
 
 #endif /* REVERSE_ELF_H_ */

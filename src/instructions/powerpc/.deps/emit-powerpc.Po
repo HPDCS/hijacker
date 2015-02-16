@@ -1,4 +1,0 @@
-instructions/powerpc/emit-powerpc.o: instructions/powerpc/emit-powerpc.c \
- /usr/include/stdc-predef.h
-
-/usr/include/stdc-predef.h:

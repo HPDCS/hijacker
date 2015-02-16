@@ -273,7 +273,7 @@ static inline int is_address_referenced (void *address) {
 void reverse_code_generator (void *address, unsigned int size) {
 	uint64_t value;
 	
-	//~ printf("\n=== Reverse code generator ===\n");
+	printf("\n=== Reverse code generator ===\n");
 
 	// check if the address is already be referenced, in that case it is not necessary
 	// to compute again the reverse instruction, since the former MOV is the one
@@ -308,7 +308,6 @@ void reverse_code_generator (void *address, unsigned int size) {
 	// restore the previous value 'value' stored in the memory address
 	// based on the operand size selects the proper MOV instruction bytes
 	create_reverse_instruction(value, size);
-	
 	
 	//dump_revwin();
 	

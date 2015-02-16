@@ -30,7 +30,7 @@ long write_x86_code(function *func, section *text, section *reloc) {
 
 			offset = insn->new_addr + x86->opcode_size;
 
-			elf_write_reloc(reloc, sym, offset, sym->offset);
+			elf_write_reloc(reloc, sym, offset, sym->relocation.addend);
 		}
 
 		// copy the instruction

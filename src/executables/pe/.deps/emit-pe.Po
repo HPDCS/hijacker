@@ -1,4 +1,0 @@
-executables/pe/emit-pe.o: executables/pe/emit-pe.c \
- /usr/include/stdc-predef.h
-
-/usr/include/stdc-predef.h:

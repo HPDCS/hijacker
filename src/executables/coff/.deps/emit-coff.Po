@@ -1,4 +1,0 @@
-executables/coff/emit-coff.o: executables/coff/emit-coff.c \
- /usr/include/stdc-predef.h
-
-/usr/include/stdc-predef.h:

@@ -9,6 +9,7 @@
 #include <instruction.h>
 #include <rules.h>
 
+
 #define SYMBOL_VARIABLE	1
 #define SYMBOL_FUNCTION	2
 #define SYMBOL_UNDEF	3
@@ -20,18 +21,24 @@
 #define SYMBOL_WEAK		2
 
 typedef struct _symbol {
-	int 		type;			// The hijacker's local type specification of the symbol
-	int			bind;			// The hijacker's local bind specification of the symbol
-	char		*name;
-	unsigned int	size;
-	int 		secnum;
-	int 		index;
-	long long	position;
-	long		offset;			// Represent the addend in the relocation entry
-	int			reloc_type;		// Type of the relocation entry
-	bool		duplicate;		// Flag that tells if symbol is a duplicate
-	bool		referenced;		// Flag indicating the symbol has been resolved
-	long		extra_flags;	// Maintains the info field of the ELF's symbol (either bind and type)
+	int 		type;			/// The hijacker's local type specification of the symbol
+	int			bind;			/// The hijacker's local bind specification of the symbol
+	char		*name;			/// Pointer to the buffer holding the symbol's name
+	unsigned int	size;		/// Size of the symbol, could be zero (e.g. for SYMBOL_UNDEF)
+	int 		secnum;			/// Index of the section the symbol belongs to
+	int 		index;			/// Symbol's index within the symbol table
+	long long	position;		/// Offset positioning within the symbol section
+	long long	initial;		/// Initialization symbol's value
+	struct {
+		struct _symbol *from;		/// Symbol from which the relocation applies
+		long long offset;			/// The offset from the reference symbol's position
+		long addend;				/// The offset from the target symbol
+		unsigned char type;			/// The type of the relocation
+		unsigned char *secname;		/// Name of the relocation section where to add the entry
+	} relocation;
+	bool		duplicate;		/// Flag that tells if symbol is a duplicate
+	bool		referenced;		/// Flag indicating the symbol has been resolved
+	long		extra_flags;	/// Maintains the info field of the ELF's symbol (either bind and type) # ridondante
 	struct _symbol	*next;
 } symbol;
 
@@ -42,8 +49,8 @@ typedef struct _function {
 	unsigned long long	orig_addr;
 	unsigned long long	new_addr;
 	insn_info		*insn;
+	symbol 			*symbol;	// [DC] Added reference to the relative symbol
 	Function		**passed;
-	symbol 			*symbol; // [DC] Added reference to the relative symbol
 	struct _function *next;
 } function;
 
@@ -68,11 +75,11 @@ typedef struct _reloc {
 typedef struct _section {
 	int		type;
 	int		index;
+	char	*name;
 	void		*header;
 	void		*payload;
-	void		*ptr;		// [DC] Payoad's file pointer
-	void 		*reference;	// [DC] May represent a reference to a relocation entry
-	char	*name;
+	void		*ptr;		// [DC] Payoad's file pointer (emit stage)
+	void 		*reference;	// [DC] May represent a reference to a relocation entry (emit stage)
 	struct _section	*next;
 } section;
 
@@ -82,6 +89,7 @@ typedef struct _section {
 #define EXECUTABLE_ELF	1
 #define EXECUTABLE_PE	2
 #define EXECUTABLE_COFF	3
+#define MAX_VERSIONS	256
 
 typedef struct _executable {
 	int type;
@@ -91,6 +99,9 @@ typedef struct _executable {
 		coff_file	coff;
 		pe_file		pe;
 	} e;
+	symbol		*v_symbols[MAX_VERSIONS];
+	function	*v_code[MAX_VERSIONS];
+	int			version;
 	void 		*metadata;
 	unsigned int	symnum;
 	symbol		*symbols;

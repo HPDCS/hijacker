@@ -9,7 +9,8 @@
 typedef struct _configuration {
 	int		verbose;
 	char		*rules_file;
-	Executable	*rules;
+	Executable	**rules;
+	int		nExecutables;
 	char	  	*input;
 	char		*output;
 	char		*inject_path;

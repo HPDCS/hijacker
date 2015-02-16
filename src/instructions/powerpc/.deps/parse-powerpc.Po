@@ -1,4 +1,0 @@
-instructions/powerpc/parse-powerpc.o: \
- instructions/powerpc/parse-powerpc.c /usr/include/stdc-predef.h
-
-/usr/include/stdc-predef.h:

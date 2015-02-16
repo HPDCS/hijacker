@@ -53,7 +53,7 @@ void reverse_monitor () {
 	// no duplicate symbols or useless compiling would be made
 	if (!monitor) {
 		// no symbol are found, create it
-		monitor = create_symbol_node("monitor", SYMBOL_UNDEF, STB_GLOBAL);
+		monitor = create_symbol_node("monitor", SYMBOL_UNDEF, STB_GLOBAL, 0);
 
 		// if no symbol was found meas that neither was compiled the module
 		// thus, compile 'monitor64.S' module
@@ -88,7 +88,7 @@ void reverse_monitor () {
 					// stack the value of the 'monitor' structure needed by 'monitor'
 					// module to generate the reverse code
 
-					prepare_monitor_call(func, insn, monitor);
+					prepare_monitor_call(insn, monitor);
 
 					//entry = (insn_entry *) malloc(sizeof(insn_entry));
 					//get_memwrite_info(insn, entry);
@@ -112,9 +112,9 @@ void reverse_monitor () {
 }
 
 
-void link_module () {
+/*void link_module () {
 	// Stage 3: link the original code together with the compiled module
 	hnotice(1, "Linking monitor module to the original code...\n");
 	link("-r", "hijacked.o", "monitor64.o", "reverse-generator.o", "-o", "final.o");
 	hsuccess();
-}
+}*/

@@ -10,10 +10,6 @@
 #include <instruction.h>
 #include <prints.h>
 
-
-#define DEBUG_XML_PARSER
-#ifdef DEBUG_XML_PARSER
-
 /// Generate spacing for 
 #define SPACES(level) 	{int i;\
 			for(i = 0; i < level; i++) {\
@@ -35,16 +31,16 @@ static void traverseInstruction(Instruction *i, int level) {
 	SPACES(level + 1); hnotice(3, "before: '%s'\n", i->before);
 	SPACES(level + 1); hnotice(3, "after: '%s'\n", i->after);
 	SPACES(level + 1); hnotice(3, "replace: '%s'\n", i->replace);
-	traverseCall(i->call, level + 1);
+	if(i->call != NULL)
+		traverseCall(i->call, level + 1);
 }
 
 static void traverseFunction(Function *f, int level) {
 	int i;
 
 	SPACES(level); hnotice(3, "Function: '%s'\n", f->name);
-//	SPACES(level + 1); hnotice(3, "reverseDebugSupport: %d\n", f->reverseDebugSupport);
-	SPACES(level + 1); hnotice(3, "preamble: '%s'\n", f->preamble);
-	SPACES(level + 1); hnotice(3, "postamble: '%s'\n", f->postamble);
+//	SPACES(level + 1); hnotice(3, "preamble: '%s'\n", f->preamble);
+//	SPACES(level + 1); hnotice(3, "postamble: '%s'\n", f->postamble);
 	traverseCall(f->call, level + 1);
 	for(i = 0; i < f->nInstructions; i++) {
 		traverseInstruction(f->instructions[i], level + 1);
@@ -54,11 +50,9 @@ static void traverseFunction(Function *f, int level) {
 static void traverseTree(Executable *e) {
 	int i;
 
-	hnotice(3, "Executable:\n");
 	hnotice(3, "--Entry Point: '%s'\n", e->entryPoint);
-//	hnotice(3, "--Reverse Debug Support: %d\n", e->reverseDebugSupport);
 	
-	for(i = 0; i < e->nInject; i++) {
+	for(i = 0; i < e->nInjects; i++) {
 		hnotice(3, "--Inject File: '%s'\n", e->injectFiles[i]);
 	}
 
@@ -73,7 +67,12 @@ static void traverseTree(Executable *e) {
 
 
 
-#endif
+
+
+
+
+/* Actual parsing */
+
 
 
 static inline bool parseTrueFalse(xmlChar *xmlStr) {
@@ -130,7 +129,7 @@ static Assembly *parseAssembly(xmlNodePtr cur) {
 	if(cur != NULL) {
 		ret->where = xmlGetProp(cur, (const xmlChar *)"where");
 		ret->instruction = xmlGetProp(cur, (const xmlChar *)"instruction");
-		ret->convention = xmlGetProp(cur, (const xmlChar *)"convention");
+		ret->syntax = xmlGetProp(cur, (const xmlChar *)"syntax");
 		ret->arch = xmlGetProp(cur, (const xmlChar *)"arch");
 		ret->action = xmlGetProp(cur, (const xmlChar *)"action");
 	}
@@ -145,7 +144,7 @@ static xmlChar *parseInject(/*xmlDocPtr doc, xmlNsPtr ns, */xmlNodePtr cur) {
 
 	// Get the file's name string
 	if (cur != NULL) {
-
+		
 		curFile = xmlGetProp(cur, (const xmlChar *)"file");
 	}
 
@@ -215,7 +214,7 @@ static Instruction *parseInstruction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr 
 
 	// Get the instruction's attributes
 	if (cur != NULL) {
-		ret->flags = parseInstructionFlags(xmlGetProp(cur, (const xmlChar *)"instruction"));
+		ret->flags = parseInstructionFlags(xmlGetProp(cur, (const xmlChar *)"type"));
 		ret->before = xmlGetProp(cur, (const xmlChar *)"injectBefore");
 		ret->after = xmlGetProp(cur, (const xmlChar *)"injectAfter");
 		ret->replace = xmlGetProp(cur, (const xmlChar *)"replace");
@@ -238,7 +237,7 @@ static Instruction *parseInstruction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr 
 		else if (xmlStrcmp(cur->name, (const xmlChar *)"Assembly") == 0 && cur->ns == ns) {
 			curAssembly = parseAssembly(cur);
 			if (curAssembly != NULL) {
-				ret->assembly = curAssembly;
+				ret->assembly[ret->nAssembly++] = curAssembly;
 			}
 		}
 
@@ -266,9 +265,8 @@ static Function *parseFunction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr cur) {
 	// Get the function's attributes
 	if (cur != NULL) {
 		ret->name = xmlGetProp(cur, (const xmlChar *)"name");
-//		ret->reverseDebugSupport = parseTrueFalse(xmlGetProp(cur, (const xmlChar *)"reverseDebug"));
-		ret->preamble = xmlGetProp(cur, (const xmlChar *)"preamble");
-		ret->postamble = xmlGetProp(cur, (const xmlChar *)"postamble");
+//		ret->preamble = xmlGetProp(cur, (const xmlChar *)"preamble");
+//		ret->postamble = xmlGetProp(cur, (const xmlChar *)"postamble");
 	}
 
 
@@ -309,152 +307,168 @@ static Function *parseFunction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr cur) {
 
 
 
-static Executable *parseExecutable(char *filename) {
+static int parseExecutable(char *filename, Executable ***rules) {
+	
+	int nExecutables = 0;
 
 	xmlDocPtr doc;
 	xmlNsPtr ns;
 	xmlNodePtr cur;
+	xmlNodePtr execNode;
 
-	Executable *ret;
 	xmlChar *curInject;
 	Instruction *curInstruction;
 	Function *curFunction;
-
+	Executable *exec;
+	Executable **execPtr;
 
 #ifdef LIBXML_SAX1_ENABLED
 	// build an XML tree from the file
 	doc = xmlParseFile(filename);
 	if (doc == NULL)
-		return NULL;
+		return -1;
 #else
 	// Library compiled without needed interfaces, unable to parse...
-	return NULL;
+	herror(true, "XML SAX Library is compiled without required supports. Please reinstall the library.\n");
 #endif	/* LIBXML_SAX1_ENABLED */
 
 
 	// Check if the document is of the right kind
 	cur = xmlDocGetRootElement(doc);
 	if (cur == NULL) {
-		herror(false, "Empty rule file\n");
 		xmlFreeDoc(doc);
-		return NULL;
+		herror(true, "Empty rule file\n");
 	}
 
 	ns = xmlSearchNsByHref(doc, cur, (const xmlChar *) "http://www.dis.uniroma1.it/~hpdcs/");
 	if (ns == NULL) {
-		herror(false, "Document of the wrong type, hijacker Namespace not found\n");
 		xmlFreeDoc(doc);
-		return NULL;
+		herror(true, "Document of the wrong type, hijacker Namespace not found\n");
 	}
 
-	if (xmlStrcmp(cur->name, (const xmlChar *)"hijackerRules")) {
-		herror(false, "Document of the wrong type, root node != hijackerRules\n");
+	if (xmlStrcmp(cur->name, (const xmlChar *)"Rules")) {
 		xmlFreeDoc(doc);
-		return NULL;
+		herror(true, "Document of the wrong type, root node != Rules\n");
 	}
 
 	// Allocate the structure to be returned
-	ret = (Executable *)malloc(sizeof(Executable));
-	if (ret == NULL) {
-		herror(false, "Out of memory\n");
+	execPtr = (Executable **) malloc(sizeof(Executable *) * MAX_CHILDREN);
+	if (execPtr == NULL) {
 		xmlFreeDoc(doc);
-		return NULL;
+		herror(true, "Out of memory\n");
 	}
-	memset(ret, 0, sizeof(Executable));
-
+	memset(execPtr, 0, sizeof(Executable *) * MAX_CHILDREN);
+	*rules = execPtr;
 
 	/*
 	 * Now, walk the tree.
 	 */
-
-	// First level we expect just Executable
-	cur = cur->xmlChildrenNode;
-	while (cur && xmlIsBlankNode(cur)) {
-		cur = cur->next;
-	}
-	if (cur == 0) {
-		xmlFreeDoc(doc);
-		free(ret);
-		return NULL;
-	}
-	if ((xmlStrcmp(cur->name, (const xmlChar *)"Executable") != 0) || (cur->ns != ns)) {
-		herror(false, "Document of the wrong type, was '%s', Executable expected\n", cur->name);
-
-		xmlFreeDoc(doc);
-		free(ret);
-		return NULL;
-	}
-
-
-	// Get and store the executable's attributes, if any
-//	ret->reverseDebugSupport = parseTrueFalse(xmlGetProp(cur, (const xmlChar *)"reverseDebug"));
-	ret->entryPoint = xmlGetProp(cur, (const xmlChar *)"entryPoint");
-
-
-	// Parse second level and call other parsers depending on the node type
-	cur = cur->xmlChildrenNode;
-	while (cur != NULL) {
-
-		// Inject Node
-		if (xmlStrcmp(cur->name, (const xmlChar *)"Inject") == 0 && cur->ns == ns) {
-			curInject = parseInject(/*doc, ns, */cur);
-			if (curInject != NULL && ret->nInject < MAX_CHILDREN) {
-				ret->injectFiles[ret->nInject++] = curInject;
-			}
+	// First level we expect just Executables
+	execNode = cur->xmlChildrenNode;
+	while(execNode) {
+			
+		while (execNode && xmlIsBlankNode(cur)) {
+			execNode = execNode->next;
+		}
+		if (execNode == 0) {
+			xmlFreeDoc(doc);
+			break;
 		}
 
-		// Instruction Node
-		else if (xmlStrcmp(cur->name, (const xmlChar *)"Instruction") == 0 && cur->ns == ns) {
-			curInstruction = parseInstruction(/*doc, */ns, cur);
-			if (curInstruction != NULL && ret->nInstructions < MAX_CHILDREN) {
-				ret->instructions[ret->nInstructions++] = curInstruction;
-			}
+		if ((xmlStrcmp(execNode->name, (const xmlChar *)"Executable") != 0) || (execNode->ns != ns)) {
+			execNode = execNode->next;
+			continue;
 		}
 
-		// Function Node
-		else if (xmlStrcmp(cur->name, (const xmlChar *)"Function") == 0 && cur->ns == ns) {
-			curFunction = parseFunction(/*doc, */ns, cur);
-			if (curFunction != NULL && ret->nFunctions < MAX_CHILDREN) {
-				ret->functions[ret->nFunctions++] = curFunction;
-			}
-		}
+		// Get memory for the current set of instrumentation rules
+		(*rules)[nExecutables++] = exec = (Executable *) malloc(sizeof(Executable));
+		bzero(exec, sizeof(Executable));
 
-		cur = cur->next;
+		// Get and store the executable's attributes, if any
+		exec->entryPoint = xmlGetProp(execNode, (const xmlChar *)"entryPoint");
+
+
+		// Parse second level and call other parsers depending on the node type
+		cur = execNode->xmlChildrenNode;
+		while (cur != NULL) {
+
+			// Inject Node
+			if (xmlStrcmp(cur->name, (const xmlChar *)"Inject") == 0 && cur->ns == ns) {
+				curInject = parseInject(/*doc, ns, */cur);
+				if (curInject != NULL && exec->nInjects < MAX_CHILDREN) {
+					exec->injectFiles[exec->nInjects++] = curInject;
+				}
+			}
+
+			// Instruction Node
+			else if (xmlStrcmp(cur->name, (const xmlChar *)"Instruction") == 0 && cur->ns == ns) {
+				curInstruction = parseInstruction(/*doc, */ns, cur);
+				if (curInstruction != NULL && exec->nInstructions < MAX_CHILDREN) {
+					exec->instructions[exec->nInstructions++] = curInstruction;
+				}
+			}
+
+			// Function Node
+			else if (xmlStrcmp(cur->name, (const xmlChar *)"Function") == 0 && cur->ns == ns) {
+				curFunction = parseFunction(/*doc, */ns, cur);
+				if (curFunction != NULL && exec->nFunctions < MAX_CHILDREN) {
+					exec->functions[exec->nFunctions++] = curFunction;
+				}
+			}
+
+			cur = cur->next;
+		}
+		
+		execNode = execNode->next;
 	}
 
-	return ret;
+	// Once the parsing is finished the document is disposed
+	xmlFreeDoc(doc);
+
+	// Check if some executable node has been met
+	if (!nExecutables) {
+		herror(false, "Document of the wrong type, was '%s', Executable expected\n", execNode->name);
+	//	xmlFreeDoc(doc);
+		return -1;
+	}
+	
+	// nExecutables is used as offset so far
+	return nExecutables;
 }
 
 
 
-Executable *parseRuleFile(char *f) {
-	Executable *cur;
-
+int parseRuleFile(char *f, Executable ***rules) {
+	int size;
+	register unsigned int i;
+	
 	// Early check on file existence to avoid ugly error messages
 	if(!file_exists(f)) {
-		return NULL;
+		return -1;
 	}
 
 	// Do not generate nodes for formatting spaces
 	LIBXML_TEST_VERSION xmlKeepBlanksDefault(0);
 
 	// Parse the requested file
-	cur = parseExecutable(f);
+	size = parseExecutable(f, rules);
+	if(size == -1) {
+		hfail();
+		herror(true, "Unable to parse configuration file '%s'\n", config.rules_file);
+	}
 
 	// Clean up everything
 	xmlCleanupParser();
-	
-	if (!cur) {
-		return NULL;
+
+	if(config.verbose > 10) {
+		hnotice(3, "Found %d executable versions\n", size);
+		for(i = 0; i < size; i++) {
+			hnotice(3, "Executable version %d:\n", i+1);
+			traverseTree((*rules)[i]);
+		}
 	}
 
-	#ifdef DEBUG_XML_PARSER
-	if(config.verbose > 2) {
-		traverseTree(cur);
-	}
-	#endif
-
-	return cur;
+	return size;
 }
 
 

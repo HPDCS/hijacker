@@ -13,7 +13,6 @@
 #define has_idx(f)		((f) & IDX)
 
 
-/* Entry per la tabella delle istruzioni */
 typedef struct {
 	unsigned int size;		// Dimensione in byte della scrittura
 	char flags;			// I flag riguardanti l'indirizzamento di quest'istruzione
@@ -21,6 +20,7 @@ typedef struct {
 	char idx;			// Il valore dell'idx (0x00 - 0x0f)
 	char scala;			// Scala dell'indice (0, 1, 2 o 4)
 	long long offset;		// Il displacement dell'istruzione
+	long long pointer;		// The pointer to the function that has to be called
 } insn_entry;
 
 #endif

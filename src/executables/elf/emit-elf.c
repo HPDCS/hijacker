@@ -501,7 +501,7 @@ unsigned long elf_write_code(section *sec, function *func) {
  * Provided the rela section, the symbol and the relocation address (offset),
  * it builds the rela entry to be stored.
  *
- * @param sec Section descriptor
+ * @param sec Pointer to the section descriptor
  * @param index Is the symbol index within the symtab section, to which the relocation refers
  * @param addr The explicit address to which apply the relocation
  * @param addend Explicit addend to write in the RELA entry
@@ -533,13 +533,13 @@ long elf_write_reloc(section *sec, symbol *sym, unsigned long long addr, long ad
 	if(ELF(is64)) {
 		// TODO: how to recalculate the relocation type
 
-		rela->rel64.r_info = ELF64_R_INFO(sym->index, sym->reloc_type);
+		rela->rel64.r_info = ELF64_R_INFO(sym->index, sym->relocation.type);
 		rela->rel64.r_offset = addr;
 		rela->rel64.r_addend = addend;
 	} else {
 		// TODO: how to recalculate the relocation type
 
-		rela->rel32.r_info = ELF32_R_INFO(sym->index, sym->reloc_type);
+		rela->rel32.r_info = ELF32_R_INFO(sym->index, sym->relocation.type);
 		rela->rel32.r_offset = addr;
 		rela->rel32.r_addend = addend;
 	}
@@ -549,9 +549,13 @@ long elf_write_reloc(section *sec, symbol *sym, unsigned long long addr, long ad
 	memcpy(sec->ptr, rela, sizeof(Elf_Rela));
 	sec->ptr += sizeof(Elf_Rela);
 
+	// Marks the symbol as unreferenced, since it is resolved;
+	// in this way we prevent that subsequent parsing will
+	// create same entries
+	sym->referenced = 0;
+
 	hnotice(3, "Written relocation entry at offset <%#08lx> to symbol '%s' %+d\n", addr, sym->name, addend);
 
-	//hsuccess();
 
 	return addr;
 }
@@ -1125,7 +1129,7 @@ static void elf_fill_sections() {
 	// update symbol references and indexes
 	elf_update_symbol_list(sym);
 
-	// 1
+	// ==== 1 ====
 	// Fill text and reloc sections with the code in stored
 	// in the function list with the relative relocation entries
 	hnotice(2, "Fill text and relocations...\n");
@@ -1135,18 +1139,17 @@ static void elf_fill_sections() {
 
 		offset = elf_write_code(text, func);
 
-		// update the symbol positino reference in the .text
+		// update the symbol position reference in the .text
 		// in order to correctly been processed in filling
 		// symbol and data tables
 		func->symbol->position = offset;
 
 		func = func->next;
-
-		hsuccess();
 	}
+	hsuccess();
 
-	// 2
-	// Fill symtab section, strtab names and data section with the
+	// ==== 2 ====
+	// Fill symtab section, strtab names and data sections with the
 	// information provided with the registered symbols
 	hnotice(2, "Fill symtab, stratb and data...\n");
 	while(sym) {
@@ -1158,12 +1161,12 @@ static void elf_fill_sections() {
 			continue;
 		}
 
-		elf_write_symbol(symtab, sym, strtab, data);
+		sym->index = elf_write_symbol(symtab, sym, strtab, data);
 
 		sym = sym->next;
 	}
 
-	// fill rodata
+	// Fill rodata/bss sections
 	hnotice(2, "Fill rodata/bss data sections...\n");
 	sec = PROGRAM(sections);
 	while(sec) {
@@ -1179,7 +1182,7 @@ static void elf_fill_sections() {
 
 		sec = sec->next;
 	}
-
+/*
 	// write the other relocation entries
 	sec = hijacked.sections;
 	while(sec) {
@@ -1195,6 +1198,34 @@ static void elf_fill_sections() {
 			}
 		}
 		sec = sec->next;
+	}*/
+
+	sym = PROGRAM(symbols);
+	while(sym) {
+		// For all the symbols still to be relocated...
+		if(!sym->referenced) {
+			sym = sym->next;
+			continue;
+		}
+		
+		if(!strcmp(sym->relocation.secname, ".text")) {
+			sec = rela_text;
+		} else if(!strcmp(sym->relocation.secname, ".rodata")) {
+			sec = rela_rodata;
+		} else if(!strcmp(sym->relocation.secname, ".data")) {
+			sec = rela_data;
+		} else {
+			herror(false, "The relocation entry has specified a non valid section name: ignored\n");
+			sym = sym->next;
+			continue;
+		}
+		
+		hprint("Da applicare una rilocazione di tipo %d al simbolo '%s' +%0lx (offset %0x) nella sezione '%s'\n",
+			sym->relocation.type, sym->name, sym->relocation.addend, sym->relocation.offset, sym->relocation.secname);
+		
+		elf_write_reloc(sec, sym, sym->relocation.offset, sym->relocation.addend);
+		
+		sym = sym->next;
 	}
 
 	hsuccess();

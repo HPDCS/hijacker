@@ -6,40 +6,288 @@
 #include <elf/reverse-elf.h>
 #include <hijacker.h>
 #include <prints.h>
+#include <compile.h>
 
 #include "insert_insn.h"
+#include "rules.h"
+#include "apply-rules.h"
 
-// FIXME: only debug!
-static int count = 14;
 
 /**
- * Debug function that insert siples NOPs
+ * The Inject tag simply identifies a file that has to be compiled togeter
+ * with the remainder of the program. Therefore, once the filename is retrieved,
+ * this function simply compile and mark as 'to be linked' the resulting ELF.
+ *
+ * @param tagInject Pointer to the Ibject XML tag descriptor
  */
-static void add_nop (function *func, insn_info *insn) {
-	if(!count--) {
-		char bytes[15];
+static void apply_rule_link (char *filename) {
+	FILE *fp;
+	int len;
+	char *objname;
+	char *path;
+	
+	hnotice(2, "Entering Inject scope: compiling and linking module '%s'\n", filename);
 
-		// add NOP instruction at this point
-		bzero(bytes, 15);
-		bytes[0] = 0x90;
-		bytes[1] = 0xff;
+	// Note that 'filename' is the assembly source
+	// therefore it must be firstly translated into
+	// a binary file in order to pass it to disassemble function
 
-		// call the function 'insert_instrution_at' to create
-		// a new node and inserting it into the instructions chain
-		insert_instruction_at(func, insn, bytes, 2, INSERT_AFTER);
+	// Check if the file really exists and compile the assmbly into the 'bin' file
+	len = strlen(filename);
+	
+	objname = (char *) malloc(len * sizeof(char));
+	strcpy(objname, filename);
+	objname[len-1] = 'o';
+
+	path = (char *) malloc(256 * sizeof(char));
+	bzero(path, strlen(path));
+	strcpy(path, TEMP_PATH);
+	strcpy(path+strlen(TEMP_PATH), objname);
+	
+	hnotice(6, "Compiling assembly file in '%s'\n", path);
+	if(!file_exists(filename)) {
+		herror(true, "The XML rules file has specified a file that does not exists!\n");
+	}
+
+	// Just compile the given module's source.
+	// The resulting object file will be linked in the final stage.
+	compile(filename, "-c", "-o", path);
+}
 
 
-		// and then will substitute the newly created NOP with a multi-byte NOP
-		bytes[0] = 0x66;
-		bytes[1] = 0x0f;
-		bytes[2] = 0x1f;
-		bytes[3] = 0x84;
+/**
+ * Retrieve the content from the file name passed as argument and
+ * injects its content into the current entity (Function or Instruction),
+ * according with the rule's specification.
+ * 
+ * @param filename Pointer to the file string name
+ */
+static void apply_rule_inject (char *filename, insn_info *target, int where) {
+	FILE *fp;
+	int fsize;
+	char *fcontent;
+	int pos;
+	char flags;
+	insn_info *insn;
 
-		// call the function 'insert_instrution_at' to create
-		// a new node and inserting it into the instructions chain
-		substitute_instruction_with(func, insn->next, bytes, 9);
+	// Note that 'filename' is the assembly source
+	// therefore it must be firstly translated into
+	// a binary file in order to pass it to disassemble function
+
+	// Compile the assmbly into the 'bin' file
+	hnotice(6, "Compiling assembly file into binary file 'bin'\n");
+
+	// Check the file actually exists
+	if(!file_exists(filename)) {
+		herror(true, "The XML rules file has specified an inject file that does not exists!\n");
+	}
+	compile(filename, "-c", "-o", "obj");
+	execute("objcopy", "-O", "binary", "obj", "bin");
+
+	// Open the file in reading mode
+	hnotice(6, "Opening assembly binary file 'bin'\n");
+	fp = fopen("bin", "r");
+
+	// Get the file size
+	fseek(fp, 0, SEEK_END);
+	fsize = ftell(fp);
+	rewind(fp);
+
+	// Allocate the memory buffer for the file
+	fcontent = (char *) malloc(sizeof(char) * fsize);
+	if(!fcontent) {
+		execute("rm", "obj");
+		execute("rm", "bin");
+		herror(true, "Out of memory!\n");
+	}
+	
+	// Copy the file into the buffer
+	if(fread(fcontent, 1, fsize, fp) != fsize) {
+		execute("rm", "obj");
+		execute("rm", "bin");
+		herror(true, "Unable to read the file!\n");
+	}
+
+
+	// TODO: verificare la correttezza del contenuto rispetto alle specifiche (architettura, sintassi, convenzioni, etc.)
+
+	if(where == SUBSTITUTE)
+		substitute_instruction_with(target, fcontent, fsize, &insn);
+	else
+		insert_instructions_at(target, fcontent, fsize, where, &insn);
+
+	fclose(fp);
+	execute("rm", "obj");
+	execute("rm", "bin");
+	free(fcontent);
+
+	hsuccess();
+}
+
+
+/**
+ * Creates and adds to the text section a new CALL instruction to the
+ * referenced symbol name.
+ *
+ * @param tagCall Pointer to the Call tag
+ */
+static apply_rule_addcall (Call *tagCall, insn_info *target) {
+	symbol *monitor;
+	int where;
+	void (*func)(void *, unsigned int);
+
+	if(tagCall->where) {
+		if(!strcmp(tagCall->where, ATTRIB_WHERE_BEFORE))
+			where = INSERT_BEFORE;
+		else if(!strcmp(tagCall->where, ATTRIB_WHERE_AFTER))
+			where = INSERT_AFTER;
+		else // Default
+			where = INSERT_BEFORE;
+	} else {
+		// Default value
+		where = INSERT_BEFORE;
+	}
+	
+	// Check the AddCall arguments:
+	if(tagCall->arguments) {
+
+		// 'target' means that the instrumentation has
+		// build up the insn_entry stack structure
+		// embedding into it a pointer to the functions
+		// to be called at runtime.
+		if(!strcmp(tagCall->arguments, "target")){
+			hnotice(6, "Specified a 'target' argument to '%s' function, preparing the monitor structure\n", tagCall->function);
+
+			// Prepare the monitor structure on the stack
+			monitor_prepare(target, tagCall->function);
+
+			// Creates and adds a new CALL to the monitor function with respect to the 'target' one
+			add_call_instruction(target, "monitor", where);
+		}
+	} else {
+		// Creates and adds a new CALL  with respect to the 'target' one
+		add_call_instruction(target, tagCall->function, where);
+	}
+
+	hnotice(2, "Adding a call instruction to symbol '%s'\n", tagCall->function);
+}
+
+
+/**
+ * Given a XML instruction tag, it will apply the relative rule to the current
+ * internal binary representation of the ELF file.
+ *
+ * @param: tagInstruction Pointer to the XML instruction tag maintaining the rule
+ */
+static void apply_rule_instruction (Instruction *tagInstruction) {
+	int tag;
+
+	function *func;
+	insn_info *insn;
+
+	Assembly *tagAssembly;
+	Call *tagCall;
+
+	func = PROGRAM(code);
+	insn = func->insn;
+
+	hnotice(2, "Entering Instruction scope; searching for instruction of type %d\n", tagInstruction->flags);
+	while(insn) {
+		// Check whether the instruction's type match to the rule
+		if (insn->flags & tagInstruction->flags) {
+			// If this is the case, the rules applies.
+			hnotice(3, "Instruction matching the rule specification is found:\n");
+			hnotice(4, "Instrumenting '%s' at %#08lx...\n", insn->i.x86.mnemonic, insn->new_addr);
+		
+			
+			// Instruction tags may be composed of several Assembly tags
+			for(tag = 0; tag < tagInstruction->nAssembly; ++tag) {
+				// Retrieve the next assembly tag and process it
+				hnotice(2, "Assembly tag met, applying the rule\n");
+				tagAssembly = tagInstruction->assembly[tag];
+			
+			
+				hnotice(3, "Parse instruction bytes '%s'\n...", tagAssembly->instruction);
+				// TODO: chiamare la funzione parse_insn_bytes()
+				// TODO: chiamare la funzione insert_instruction_at()
+			}
+			
+			// Check if the Instruction tag has a Call node
+			if(tagInstruction->call) {
+				tagCall = tagInstruction->call;
+				apply_rule_addcall(tagCall, insn);
+			}
+
+			// Check injectBefore attribute
+			if(tagInstruction->before) {
+				apply_rule_inject(tagInstruction->before, insn, INSERT_BEFORE);
+			}
+
+			// Check injectAfter attribute
+			if(tagInstruction->after) {
+				apply_rule_inject(tagInstruction->after, insn, INSERT_AFTER);
+			}
+
+			// Check replace attribute
+			if(tagInstruction->replace) {
+				apply_rule_inject(tagInstruction->replace, insn, SUBSTITUTE);
+			}
+		}
+		
+		insn = insn->next;
 	}
 }
+
+
+/**
+ * Given a XML function tag, it will apply the relative rule to the current
+ * internal binary representation of the ELF file. A function tag define the
+ * instrument scope for embraced sub-tags, therefore a single function likely
+ * has different instruction tags beneath.
+ * Once the function has been identified, the instrumentation process of the
+ * other sub-tags will take place.
+ *
+ * @param: tagFunction Pointer to the XML function tag maintaining the rule
+ */
+static void apply_rule_function (Function *tagFunction) {
+	function *func;
+	int tag;
+
+	Instruction *tagInstruction;
+	Call *tagCall;
+
+	hnotice(2, "Entering Function scope: searching '%s' function", tagFunction->name);
+	
+	func = PROGRAM(code);
+	while(func) {
+		// Look for the right function to which to apply the rule
+		if(!strcmp(func->name, tagFunction->name)) {
+			hnotice(4, "Function matching '%s' the rule name found\n", func->name);
+			
+			// Retrieve the sub tags: a function may be composed of
+			// several Instruction or Assembly tags
+			
+			// Iterates all over the Instruction sub-tags
+			for(tag = 0; tag < tagFunction->nInstructions; tag++) {
+				// Retrive the next instruction tag and process it
+				hnotice(2, "Instruction tag met, applying the rule\n");
+				tagInstruction = tagFunction->instructions[tag];
+				hnotice(3, "Looking for the instruction with flags %x\n", tagInstruction->flags);
+				apply_rule_instruction(tagInstruction);
+			}
+
+			// Check if a Call tag has been specified
+			if(tagFunction->call) {
+				tagCall = tagFunction->call;
+				apply_rule_addcall(tagCall, func->insn);
+			}
+
+		}
+
+		func = func->next;
+	}
+}
+
 
 /**
  * Given a rule, applies it by calling the correspondent function
@@ -47,11 +295,64 @@ static void add_nop (function *func, insn_info *insn) {
 void apply_rules() {
 	function *func;
 	insn_info *insn;
+	
+	int tag;
+	int version;
+
+	char *module;
+	Executable *exec;
+	Instruction *tagInstruction;
+	Function *tagFunction;
+	Assembly *tagAssemgly;
+	Call *tagCall;
 
 	hprint("Start applying rules...\n");
 
-	//TODO: da aggiungere una struttura switch per ciascun tipo di
-	//regola supportata che chiami la relativa funzione
+	// Create a temporary directory to place object files;
+	//execute("mkdir", "-p", TEMP_PATH);
 
-	reverse_monitor();
+	// Iterates over the executable versions
+	for (version = 0; version < config.nExecutables; version++) {
+		hnotice(1, "Executable version %d\n", version);
+		
+		// Clone the intermediate binary representation
+		//version = switch_executable_version(version);
+		
+		// Get the new vesion executable's rules
+		exec = config.rules[version];
+
+		// Iterates all over the XML inject tag in the Executable
+		/*for (tag = 0; tag < exec->nInjects; tag++) {
+			// Retrive the next inject tag and process it
+			hnotice(2, "Instruction tag met, applying the rule\n");
+			module = exec->injectFiles[tag];
+			hnotice(3, "Looking for the instruction with flags '%s'\n", module);
+			apply_rule_link(module);
+		}*/
+		
+		// Iterates all over the instructions in the Executable XML tag
+		for (tag = 0; tag < exec->nInstructions; tag++) {
+			// Retrive the next instruction tag and process it
+			hnotice(2, "Instruction tag met, applying the rule\n");
+			tagInstruction = exec->instructions[tag];
+			hnotice(3, "Looking for the instruction with flags %x\n", tagInstruction->flags);
+			apply_rule_instruction(tagInstruction);
+		}
+
+		for (tag = 0; tag < exec->nFunctions; tag++) {
+			// Retrieve the next function tag and process it
+			hnotice(2, "Function tag met, applying the rule\n");
+			tagFunction = exec->functions[tag];
+			hnotice(3, "Looking for the function '%s'\n", tagFunction->name);
+			apply_rule_function(tagFunction);
+		}
+		
+		
+	}
+
+	// Once all the instrumentation rules have been parsed,
+	// proceed to update functions' and instructions' addresses, once
+	// TODO: update_instruction_reference();
+	
+	hsuccess();
 }
