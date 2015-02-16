@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<hijacker:Rules xmlns:hijacker="http://www.dis.uniroma1.it/~hpdcs/">
+
+	<hijacker:Executable entryPoint="foo">
+
+		<hijacker:Inject file="module.s" /> 
+
+		<hijacker:Instruction type="I_MEMWR" injectBefore="inject.s" />
+
+		<hijacker:Instruction type="I_MEMWR">
+			<hijacker:AddCall function="reverse_code_generator" arguments="target" convention="stdcall" />
+		</hijacker:Instruction>
+	
+		<!--<hijacker:Instruction type="I_MEMWR">
+			<hijacker:AddCall function="printf" arguments="Prova instrumentazione printf" convention="stdcall"/>
+		</hijacker:Instruction>-->
+
+
+<!--		<hijacker:Function name="ProcessEvent">
+			<hijacker:AddCall where="after" function="monitor3" arguments="qualcosa" convention="asmlinkage" />
+			
+			<hijacker:Instruction type="I_JUMP">
+				<hijacker:AddCall where="before" function="monitor" arguments="qualcosa" convention="stdcall" />
+			</hijacker:Instruction>
+			
+			<hijacker:Instruction type="I_JUMP" injectBefore="foo.S" injectAfter="foo.S" replace="foo.S">
+				<hijacker:AddCall where="before" function="monitorrrr" arguments="qualcosa" convention="stdcall" />
+			</hijacker:Instruction>
+		</hijacker:Function>
+-->
+	</hijacker:Executable>
+	
+	<hijacker:Executable>
+		<hijacker:Instruction type="I_JUMP" injectBefore="inject2.s" />
+	</hijacker:Executable>
+
+</hijacker:Rules>
