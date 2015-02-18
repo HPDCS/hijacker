@@ -123,8 +123,8 @@ static section *shstrtab;
 static section *strtab;
 static section *symtab;
 static section *rodata;
-static section *text;
-static section *rela_text;
+static section *text[MAX_VERSIONS];
+static section *rela_text[MAX_VERSIONS];
 static section *rela_rodata;
 static section *rela_data;
 static section *data;
@@ -311,6 +311,7 @@ long elf_write_data(section *sec, void *buffer, int size) {
  * @return Symbol index within the symbol table of the written entry
  */
 int elf_write_symbol(section *symtab, symbol *sym, section *strtab, section *data) {
+	static int index = 0;
 	Elf_Sym *entry;
 	Elf64_Sym *sym64;
 	Elf32_Sym *sym32;
@@ -326,6 +327,8 @@ int elf_write_symbol(section *symtab, symbol *sym, section *strtab, section *dat
 	shndx = sym->secnum;		// TODO: here?
 	bzero(entry, size);
 
+	sym->index = index++;
+
 	hdr = (Section_Hdr *) symtab->header;
 
 	if(ELF(is64)) {
@@ -334,7 +337,7 @@ int elf_write_symbol(section *symtab, symbol *sym, section *strtab, section *dat
 		switch(sym->type) {
 		case SYMBOL_FUNCTION:
 			// its starting offset it is already been evaluated in a previous pass
-			shndx = text->index;	// TODO: it must be updated in order to support multiple .text sections
+			shndx = text[sym->version]->index;	// TODO: it must be updated in order to support multiple .text sections
 			break;
 
 		case SYMBOL_VARIABLE:
@@ -373,7 +376,7 @@ int elf_write_symbol(section *symtab, symbol *sym, section *strtab, section *dat
 
 		// write the symbol name into the strtab and get the offset to store in st_name
 		sym64->st_name = elf_write_string(strtab, sym->name);
-		sym64->st_value = sym->position;
+		sym64->st_value = sym->initial;
 		sym64->st_size = sym->size;
 		sym64->st_info = ELF64_ST_INFO(sym->bind, sym->type);
 		sym64->st_shndx = shndx;
@@ -384,7 +387,7 @@ int elf_write_symbol(section *symtab, symbol *sym, section *strtab, section *dat
 		switch(sym->type) {
 		case SYMBOL_FUNCTION:
 			// its starting offset it is already been evaluated in a previous pass
-			shndx = text->index;	// TODO: it must be updated in order to support multiple .text sections
+			shndx = text[sym->version]->index;	// TODO: it must be updated in order to support multiple .text sections
 			break;
 
 		case SYMBOL_VARIABLE:
@@ -433,10 +436,11 @@ int elf_write_symbol(section *symtab, symbol *sym, section *strtab, section *dat
 	// copy the information handled by symbol hjacker's descriptor into the elf's entry
 	memcpy(symtab->ptr, entry, size);
 	ptr = symtab->ptr;
+	sym->position = (ptr - symtab->payload);
 	symtab->ptr += size;
 
 	hnotice(3, "Symbol [%u] '%s' (type %d and bind %d) written into section %u at offset <%#08lx>\n", sym->index, sym->name,
-			sym->type, sym->bind, symtab->index, (ptr - symtab->payload));
+			sym->type, sym->bind, symtab->index, sym->position);
 
 	return sym->index;
 }
@@ -483,14 +487,14 @@ unsigned long elf_write_code(section *sec, function *func) {
 		break;
 
 	case EM_X86_64:
-		written += write_x86_code(func, sec, rela_text);
+		written += write_x86_code(func, sec, rela_text[PROGRAM(version)]);
 		break;
 
 	default:
 		herror(true, "Architecture type not recognized!\n");
 	}
 
-	hnotice(3, "Function '%s' copied (%u bytes)\n", func->name, written);
+	hnotice(3, "Function '%s' copied (%u bytes) in section '%s'\n", func->name, written, sec->name);
 
 	return offset;
 }
@@ -654,7 +658,11 @@ inline static void elf_name_section(section *sec, char *name) {
 	Elf64_Shdr *hdr64;
 	Elf32_Shdr *hdr32;
 
-	sec->name = name;
+	sec->name = (char *) malloc(sizeof(char) * strlen(name));
+	if(!sec->name) {
+		herror(true, "Out of memroy!\n");
+	}
+	strcpy(sec->name, name);
 
 	hdr = sec->header;
 	if(ELF(is64)) {
@@ -774,11 +782,12 @@ static void elf_build_eheader() {
 
 static elf_build() {
 	long size;
+	int ver;
 	symbol *sym, *prev;
 	function *func;
+	char secname[32];
 
 	sym = PROGRAM(symbols);
-	func = PROGRAM(code);
 
 	// build the descriptor for the output elf
 	hijacked.ehdr = malloc(ehdr_size());
@@ -799,15 +808,29 @@ static elf_build() {
 	elf_name_section(strtab, ".strtab");
 	elf_write_string(strtab, "");
 
-	// count the number of the registered functions and creates a
-	// new section with the right dimension
-	size = 0;
-	while(func){
-		size += func->symbol->size;
-		func = func->next;
+
+	for(ver = 0; ver < PROGRAM(versions); ver++) {
+		switch_executable_version(ver);
+		func = PROGRAM(code);
+
+		// count the number of the registered functions and creates a
+		// new section with the right dimension
+		size = 0;
+		while(func){
+			size += func->symbol->size;
+			func = func->next;
+		}
+
+		// Creates as much .text sections as the instrumentation versions
+		text[ver] = elf_create_section(SHT_PROGBITS, size, SHF_EXECINSTR|SHF_ALLOC);
+		bzero(secname, sizeof(secname));
+		strcpy(secname, ".text");
+		if(config.rules[ver]->suffix) {
+			strcat(secname, ".");
+			strcat(secname, config.rules[ver]->suffix);
+		}
+		elf_name_section(text[ver], secname);
 	}
-	text = elf_create_section(SHT_PROGBITS, size, SHF_EXECINSTR|SHF_ALLOC);
-	elf_name_section(text, ".text");
 
 	data = elf_create_section(SHT_PROGBITS, 0, SHF_ALLOC|SHF_WRITE);
 	elf_name_section(data, ".data");
@@ -845,7 +868,7 @@ static elf_build() {
 	section *sec = PROGRAM(sections);
 	section *rela;
 	int target;
-	while(sec) {
+	/*while(sec) {
 		if(sec->type == SECTION_RELOC) {
 			rela = elf_create_section(SHT_RELA, 0, 0);
 			elf_name_section(rela, sec_name(sec->index));
@@ -878,21 +901,27 @@ static elf_build() {
 
 		}
 		sec = sec->next;
-	}
+	}*/
 
 	// at least one rela section is needed, hence if no rela section was created
 	// then create one in order to support monitor instrumentation
-	if(!rela_text) {
+	for(ver = 0; ver < PROGRAM(versions); ver++) {
 		rela = elf_create_section(SHT_RELA, 0, 0);
 
 		set_hdr_info(rela->header, sh_entsize, rela_size());
 		set_hdr_info(rela->header, sh_link, symtab->index);
-		set_hdr_info(rela->header, sh_info, text->index);
+		set_hdr_info(rela->header, sh_info, text[ver]->index);
 
 		rela->reference = 0;
-		elf_name_section(rela, ".rela.text");
+		bzero(secname, sizeof(secname));
+		strcpy(secname, ".rela.text");
+		if(config.rules[ver]->suffix) {
+			strcat(secname, ".");
+			strcat(secname, config.rules[ver]->suffix);
+		}
+		elf_name_section(rela, secname);
 
-		rela_text = rela;
+		rela_text[ver] = rela;
 	}
 
 	hnotice(3, "Allocating ELF header memory\n");
@@ -980,141 +1009,6 @@ static void elf_update_symbol_list(symbol *first) {
 }
 
 
-
-
-/**
- * Remove old unused section's symbols and update indexes accordingly.
- * Besides updating all the symbol with respect to the new ELF file that
- * must be generated, it counts the number of all LOCAL symbols presents
- * in the section. This parameter is essential in order to allow LD to
- * link correctly the object file, otherwise errors could occur.
- *
- * @param first Symbol descriptor of the first symbol in the list
- */
-/*static void elf_update_symbol_list(symbol *first) {
-	int index = 0;
-	int local = 1;		// it starts from 1 cause it takes into account the first null symbol
-	symbol *sym, *prev, *node;
-	section *sec;
-
-	// iterate all over the symbols to purge from the old file
-	// and section symbols that do not hold anymore in the new generated code
-	sym = first;
-	while(sym) {
-		// skip old section and file symbols
-		// warning! relocation could be applied to these symbols
-		// hence is mandatory to update the insn->reference field
-		// accordingly in such a case
-		if(sym->type == SYMBOL_FILE) {// || sym->type == SYMBOL_SECTION) {
-			//prev->next = sym->next;
-			sym->name = hijacked.path;
-			sym->index = index;
-			//sym = prev->next;
-			//continue;
-		} else if(sym->type == SYMBOL_SECTION) {
-			// check if this symbol has been referenced at least one time
-			if(sym->referenced)
-		}
-
-		prev = sym;
-		sym = sym->next;
-	}
-
-
-	// TODO:  since now there is the new function to create a new symbol node, use it!
-	// builds the new filename symbol
-	sym = (symbol *) malloc(sizeof(symbol));
-	bzero(sym, sizeof(symbol));
-	sym->secnum = SHN_ABS;
-	sym->type = SYMBOL_FILE;
-	sym->bind = STB_LOCAL;
-	sym->extra_flags = (ELF(is64) ? ELF64_ST_BIND(STB_LOCAL) : ELF32_ST_BIND(STB_LOCAL));
-	sym->name = hijacked.path;	//TODO: to adjust to only name
-	sym->index = index++;
-
-	sym->next = first->next;
-	first->next = sym;
-	local++;		// filename symbol is LOCAL, thus increment the counter
-
-
-	// all the file and sections symbols are remove, now
-	// we have to add the new ones
-	// populate new sections' symbols
-	sec = hijacked.sections;
-	prev = sym;
-	while(sec) {
-		// check if this section has to have an associated symbol to it
-		if(sec->type != SHT_PROGBITS && sec->type != SHT_NOBITS) {
-			sec = sec->next;
-			continue;
-		}
-
-		sym = (symbol *) malloc(sizeof(symbol));
-		bzero(sym, sizeof(symbol));
-		sym->secnum = sec->index;
-		sym->name = sec_name(sec->index);
-		sym->type = SYMBOL_SECTION;
-		sym->bind = STB_LOCAL;
-		sym->index = index++;
-		local++;			// section symbols are always LOCAL, hence we must increment the counter
-
-		sym->next = prev->next;
-		prev->next = sym;
-		prev = sym;
-
-		hnotice(3, "Section %d (%s) bind to symbol %d\n", sec->index, sym->name, sym->index);
-
-		sec = sec->next;
-	}
-
-	// update existing symbols
-	sym = prev->next;
-	while(sym) {
-
-		// check if the symbol is already present in the section
-		// and if the case, skip it
-		if(sym->duplicate) {
-			sym->index = index - 1;
-
-			hnotice(4, "Duplicate of symbol %d (%s) found; skipped!\n", sym->index, sym->name);
-
-			sym = sym->next;
-			continue;
-		}
-
-		sym->index = index++;
-
-		// increment if the symbol is local (needed for sh_info field)!
-		if (sym->bind == STB_LOCAL) {
-			local++;
-		}
-
-		hnotice(3, "Update symbol '%s' to index %d\n", sym->name, sym->index);
-
-		prev = sym;
-		sym = sym->next;
-	}
-
-
-	// print out all the registerd symbols (no duplicates)
-	sym = first;
-	while(sym) {
-		if(!sym->duplicate) {
-			hnotice(3, "[%d] Symbol '%s' of type %d (%s)\n", sym->index, sym->name, sym->type,
-				sym->bind == STB_LOCAL ? "local" : sym->bind == STB_GLOBAL ? "global" : "weak");
-
-			// TODO: debug
-			hprint("%p\n", sym);
-		}
-		sym = sym->next;
-	}
-
-	// update the section info field the reports the total number of the local symbol registered
-	set_hdr_info(symtab->header, sh_info, local);
-
-	hnotice(4, "%d total symbols registered (%d are local)\n", index, local);
-}*/
-
 static void elf_fill_sections() {
 	symbol *sym;
 	function *func;
@@ -1122,9 +1016,9 @@ static void elf_fill_sections() {
 	long offset;
 	int sym_count;
 	int target, flags;
+	int ver;
 
 	sym = PROGRAM(symbols);
-	func = PROGRAM(code);
 
 	// update symbol references and indexes
 	elf_update_symbol_list(sym);
@@ -1134,17 +1028,26 @@ static void elf_fill_sections() {
 	// in the function list with the relative relocation entries
 	hnotice(2, "Fill text and relocations...\n");
 
-	while(func) {
-		hnotice(3, "Reading function '%s'\n", func->name);
+	for (ver = 0; ver < PROGRAM(versions); ver++) {
+		hnotice(2, "Writing code of version %d\n", ver);
 
-		offset = elf_write_code(text, func);
+		// For each version writes the code of each functions
+		switch_executable_version(ver);
+		func = PROGRAM(code);
 
-		// update the symbol position reference in the .text
-		// in order to correctly been processed in filling
-		// symbol and data tables
-		func->symbol->position = offset;
+		while(func) {
+			hnotice(3, "Reading function '%s'\n", func->name);
+			hnotice(4, "Attempt to write on section '%s' (version %d)\n", text[func->symbol->version]->name, func->symbol->version);
 
-		func = func->next;
+			offset = elf_write_code(text[func->symbol->version], func);
+
+			// update the symbol position reference in the .text
+			// in order to correctly been processed in filling
+			// symbol and data tables
+			func->symbol->position = offset;
+
+			func = func->next;
+		}
 	}
 	hsuccess();
 
@@ -1200,6 +1103,9 @@ static void elf_fill_sections() {
 		sec = sec->next;
 	}*/
 
+
+	// Here we write the remainder of the relocation, therefore
+	// we must used versioned symbols instead of the whole list
 	sym = PROGRAM(symbols);
 	while(sym) {
 		// For all the symbols still to be relocated...
@@ -1209,7 +1115,7 @@ static void elf_fill_sections() {
 		}
 		
 		if(!strcmp(sym->relocation.secname, ".text")) {
-			sec = rela_text;
+			sec = rela_text[sym->version];
 		} else if(!strcmp(sym->relocation.secname, ".rodata")) {
 			sec = rela_rodata;
 		} else if(!strcmp(sym->relocation.secname, ".data")) {
@@ -1219,7 +1125,7 @@ static void elf_fill_sections() {
 			sym = sym->next;
 			continue;
 		}
-		
+
 		hprint("Da applicare una rilocazione di tipo %d al simbolo '%s' +%0lx (offset %0x) nella sezione '%s'\n",
 			sym->relocation.type, sym->name, sym->relocation.addend, sym->relocation.offset, sym->relocation.secname);
 		

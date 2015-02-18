@@ -68,6 +68,7 @@ typedef struct Function {
 
 typedef struct Executable {
 	xmlChar		*entryPoint;
+	xmlChar		*suffix;
 	int		nInjects;
 	xmlChar		*injectFiles[MAX_CHILDREN];
 	int		nInstructions;

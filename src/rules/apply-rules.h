@@ -3,7 +3,7 @@
 #ifndef _APPLY_RULES_H
 #define _APPLY_RULES_H
 
-#define TEMP_PATH ".htemp/"
+#define TEMP_PATH "./"
 
 void apply_rules();
 

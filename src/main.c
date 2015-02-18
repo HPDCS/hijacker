@@ -134,15 +134,15 @@ int main(int argc, char **argv) {
 
 	// Process the specified command-line configuration
 	process_configuration(argv);
-	
+
 	// Load executable and build a map in memory
 	load_program(config.input);
 
 	// Process executable
 	apply_rules();
-	
+
 	// Write back executable
-	output_object_file("hijacked.o", 0);
+	output_object_file(TEMP_PATH"hijacked.o", 0);
 
 	// Finalize the output file by linking the module
 	//link_modules();

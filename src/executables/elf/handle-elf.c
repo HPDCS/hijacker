@@ -14,6 +14,23 @@
 
 #include "handle-elf.h"
 
+int function_size (function *func) {
+	insn_info *insn;
+	int size;
+
+	if(!func)
+		return -1;
+
+	insn = func->insn;
+	size = 0;
+	while(insn) {
+		size += insn->size;
+		insn = insn->next;
+	}
+
+	return size;
+}
+
 symbol * find_symbol (char *name) {
 	symbol *sym;
 	
@@ -169,6 +186,7 @@ symbol * create_symbol_node (char *name, int type, int bind, int size) {
 	node->type = type;
 	node->bind = bind;
 	node->size = size;
+	node->version = PROGRAM(version);
 
 	// add to the symbol list (sym holds the last symbol yet)
 	/*sym = PROGRAM(symbols);
@@ -177,10 +195,51 @@ symbol * create_symbol_node (char *name, int type, int bind, int size) {
 	}*/
 	sym->next = node;
 
-	hnotice(3, "New %s symbol '%s' node of type %d has been created\n",
-		sym->bind == SYMBOL_LOCAL ? "local" : sym->bind == SYMBOL_GLOBAL ?  "global" : "weak", node->name, node->type);
+	hnotice(3, "New %s symbol '%s' node of type %d and size %d bytes has been created\n",
+		sym->bind == SYMBOL_LOCAL ? "local" : sym->bind == SYMBOL_GLOBAL ?  "global" : "weak", node->name, node->type,
+		node->size);
 
 	return node;
+}
+
+
+function * create_function_node (char *name, insn_info *code) {
+	function *func, *list;
+	symbol *sym;
+	insn_info *insn;
+	int size;
+
+	size = 0;
+	insn = code;
+	while(insn) {
+		size += insn->size;
+		insn = insn->next;
+	}
+
+	sym = create_symbol_node(name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, size);
+
+	func = (function *) malloc(sizeof(function));
+	if(!func) {
+		herror(true, "Out of memory!\n");
+	}
+	bzero(func, sizeof(function));
+
+	func->name = name;
+	func->symbol = sym;
+	func->insn = code;
+
+	list = PROGRAM(code);
+	while(list->next) {
+		list = list->next;
+	}
+
+	func->orig_addr = func->new_addr = (list->new_addr + list->symbol->size);
+	func->symbol->position = func->orig_addr;
+	list->next = func;
+
+	hnotice(4, "New function '%s' created\n", name);
+
+	return func;
 }
 
 
@@ -223,28 +282,133 @@ symbol * symbol_check_shared (symbol *sym) {
 }
 
 
+static insn_info * clone_instruction (insn_info *insn) {
+	insn_info *clone;
+
+	clone = (insn_info *) malloc(sizeof(insn_info));
+	if(!clone) {
+		herror(true, "Out of memory!\n");
+	}
+
+	memcpy(clone, insn, sizeof(insn_info));
+
+	clone->jumpto = NULL;
+}
+
+
+/**
+ * Clone the whole instruction list of the function 'func'
+ *
+ */
+static insn_info * clone_instruction_list (insn_info *insn) {
+	insn_info *clone, *head;
+
+	if(!insn)
+		return NULL;
+
+	head = clone = clone_instruction(insn);
+	clone->prev = NULL;
+	insn = insn->next;
+
+	while(insn) {
+		clone->next = clone_instruction(insn);
+		clone->next->prev = clone;
+		clone = clone->next;
+		insn = insn->next;
+	}
+
+	return head;
+}
+
+
+static symbol * clone_symbol (symbol *sym) {
+	symbol *clone;
+
+	clone = (symbol *) malloc(sizeof(symbol));
+	if(!clone) {
+		herror(true, "Out of memory!\n");
+	}
+
+	memcpy(clone, sym, sizeof(symbol));
+
+	return clone;
+}
+
+
 /**
  * Clone the whole symbol list of the internal representation. This is done
  * in order to support future multiversioning of executable and object files.
  *
  * @return The pointer to the first symbol descriptor of the clone list
  */
-static symbol * clone_symbol_list () {
-	symbol *sym, *clone, *head;
+static symbol * clone_symbol_list (symbol *sym) {
+	symbol *clone, *head;
 
-	sym = PROGRAM(symbols);
-	head = clone = (symbol *) malloc(sizeof(symbol));
+	if(!sym)
+		return NULL;
+
+	head = clone = clone_symbol(sym);
+	sym = sym->next;
 
 	while(sym) {
-		memcpy(clone, sym, sizeof(symbol));
-		clone->next = (symbol *) malloc(sizeof(symbol));
+		clone->next = clone_symbol(sym);
 		clone = clone->next;
-		
 		sym = sym->next;
 	}
+
+	//================ DEBUG ================//
+	hprint("Simboli copiati!\n");
+	sym = head;
+	while(sym) {
+		printf("Simbolo '%s' di tipo %d (%p)\n", sym->name, sym->type, sym);
+		sym = sym->next;
+	}
+	//=======================================//
 	
 	return head;
 }
+
+
+static function * clone_function (function *func, char *suffix) {
+	function *clone;
+	char *name;
+	int size;
+
+	if(!func)
+		return NULL;
+
+	// Allocates memory for the new descriptor
+	clone = (function *) malloc(sizeof(function));
+	if(!clone) {
+		herror(true, "Out of memory!\n");
+	}
+
+	// Copies the original descriptor to the new one
+	printf("Copio funzione '%s'\n", func->name);
+	memcpy(clone, func, sizeof(function));
+
+	// Updates the pointer to instruction list
+	clone->insn = clone_instruction_list(func->insn);
+
+	// Updates the symbol pointer (assume that symbols have been already be cloned)
+	size = strlen(func->name) + strlen(suffix);
+	name = (char *) malloc(sizeof(char) * size);
+	bzero(name, size);
+	strcpy(name, func->name);
+	strcat(name, "_");
+	strcat(name, suffix);
+
+	size = function_size(clone);
+	if(size < 0) {
+		hinternal();
+	}
+
+	clone->symbol = create_symbol_node(name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, size);
+	clone->name = name;
+
+	return clone;
+}
+
 
 /**
  * Clone the whole function list of the internal representation. This is done
@@ -253,62 +417,88 @@ static symbol * clone_symbol_list () {
  *
  * @return The pointer to the first function descriptor of the clone list
  */
-static function * clone_function_list () {
-	function *func, *clone, *head;
+static function * clone_function_list (function *func, char *suffix) {
+	function *clone, *head;
 	insn_info *insn, *insn_clone;
-	symbol *sym;
 
-	func = PROGRAM(code);
-	head = clone = (function *) malloc(sizeof(function));
+	if(!func)
+		return NULL;
+
+	head = clone = clone_function(func, suffix);
+	func = func->next;
 
 	while(func) {
-		memcpy(clone, func, sizeof(function));
-		insn_clone = (insn_info *) malloc(sizeof(insn_info));
-		
-		insn = func->insn;
-		clone->insn = insn_clone;
-		
+		clone->next = clone_function(func, suffix);
+		clone = clone->next;
+		func = func->next;
+	}
+
+
+	//================ DEBUG ================//
+	hprint("Istruzioni copiate!\n");
+	func = head;
+	while(func) {
+		printf("Funzione '%s' (%p):\n", func->name, func);
+
+		insn = head->insn;
 		while(insn) {
-			memcpy(insn_clone, insn, sizeof(insn_info));
-			insn_clone->next = (insn_info *) malloc(sizeof(insn_info));
-			insn_clone = insn_clone->next;
-			
+			printf("\t%s <%#08lx> (%p)\n", insn->i.x86.mnemonic, insn->new_addr, insn);
 			insn = insn->next;
 		}
-
-		clone->next = (function *) malloc(sizeof(function));
-		clone = clone->next;
+		printf("\n");
 		
 		func = func->next;
 	}
-	
+	//=======================================//
+
 	return head;
 }
 
 
+function * clone_function_descriptor (function *original, char *name) {
+	function *clone;
+	insn_info *insn;
+
+	insn = clone_instruction_list(original->insn);
+	clone = create_function_node(name, insn);
+
+	hnotice(3, "Clone function '%s' into '%s' (version %d)\n", original->name, name, PROGRAM(version));
+
+	return clone;
+} 
+
+
 int switch_executable_version (int version) {
-	symbol *symbols;
-	function *code;
+	function *func, *code;
+
+	PROGRAM(version) = version;
 	
 	// Checks whether the version is already present in the list
 	// otherwise it creates a new one by cloning symbols and code
-	if(!version || version > PROGRAM(version)) {
+	if(!PROGRAM(v_code)[version]) {
 
-		// Increment the current version and clone symbols and functions
-		version = PROGRAM(version)++;
-		code = clone_function_list();
-		symbols = clone_symbol_list();
+		hnotice(2, "Version not present, cloning metadata for a new one\n");
 
-		hnotice(3, "Version %d of the executable's binary representation created\n", version);
+		// Clones the whole code
+		//SYMBOLS = clone_symbol_list(PROGRAM(symbols));
+		code = func = clone_function_list(PROGRAM(v_code)[0], config.rules[version]->suffix);
+		PROGRAM(v_code)[version] = code;
+		PROGRAM(versions)++;
+
+		// Relink jump instruction
+		// By cloning each instruction will be unreferenced otherwise
+		// we they still points to the old orginal copy which is uncorrect
+		while(func) {
+			link_jump_instruction(func);
+			func = func->next;
+		}
+
+		hnotice(2, "Version %d of the executable's binary representation created\n", version);
 	}
-	// Update pointers to the actual symbol and code lists
-	PROGRAM(v_code)[version] = code;
-	PROGRAM(v_symbols)[version] = symbols;
 
-	PROGRAM(code) = code;
-	PROGRAM(symbols) = symbols;
+	PROGRAM(code) = PROGRAM(v_code)[version];
 	
 	hnotice(2, "Switched to version %d\n", version);
 
-	return version;
+	return PROGRAM(version);
 }

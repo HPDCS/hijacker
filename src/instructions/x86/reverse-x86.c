@@ -26,8 +26,6 @@ void get_x86_memwrite_info (insn_info *insn, insn_entry *entry) {
 	x86 = &(insn->i.x86);
 	bzero(entry, sizeof(insn_entry));
 
-	printf("L'istruzione %s all'indirizzo %#08x ha l'offset pari a %#02x\n", x86->mnemonic, x86->initial, x86->disp);
-
 	// fill the structure
 	entry->size = x86->span;
 	entry->offset = x86->disp;

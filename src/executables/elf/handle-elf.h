@@ -43,6 +43,19 @@ symbol * create_symbol_node (char *name, int type, int bind, int size);
 
 
 /**
+ * Creates a new function descriptor with name 'name' and its
+ * relative symbol. The newly created function is added to the
+ * program's code list (at the end) as a global symbol.
+ *
+ * @param name The buffer pointing to the new name of the function
+ * @param insn The pointer to the list of the instruction's list belonging to the function
+ *
+ * @return The pointer to the new function desciptor
+ */
+function * create_function_node (char *name, insn_info *insn);
+
+
+/**
  * Verifies if the passed symbol is a shared.
  * In case the symbol is shared among multiple relocation
  * entries, then a copy of it will be created in order to save
@@ -59,6 +72,18 @@ symbol * create_symbol_node (char *name, int type, int bind, int size);
  * in case no sharing happened.
  */
 symbol * symbol_check_shared (symbol *sym);
+
+
+/**
+ * Clones the function 'original' into another function descriptor with name 'name'.
+ * The whole instructions' list will be clone as well, in order to allow the instrumentation.
+ *
+ * @param original Pointer to the function's descriptor to copy from
+ * @param name Name of the new function
+ *
+ * @return Pointer to the newly created function's descriptor
+ */
+function * clone_function_descriptor (function *original, char *name);
 
 
 /**

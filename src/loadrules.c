@@ -360,6 +360,11 @@ static int parseExecutable(char *filename, Executable ***rules) {
 	memset(execPtr, 0, sizeof(Executable *) * MAX_CHILDREN);
 	*rules = execPtr;
 
+	// First version is reserved just to save the original copy;
+	// it will not be instrumented at all
+	(*rules)[nExecutables++] = exec = (Executable *) malloc(sizeof(Executable));
+	bzero(exec, sizeof(Executable));
+
 	/*
 	 * Now, walk the tree.
 	 */
@@ -386,6 +391,10 @@ static int parseExecutable(char *filename, Executable ***rules) {
 
 		// Get and store the executable's attributes, if any
 		exec->entryPoint = xmlGetProp(execNode, (const xmlChar *)"entryPoint");
+		exec->suffix = xmlGetProp(execNode, (const xmlChar *)"suffix");
+		if(!strcmp(exec->suffix, "")) {
+			herror(true, "Suffix cannot be empty\n");
+		}
 
 
 		// Parse second level and call other parsers depending on the node type

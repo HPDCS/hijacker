@@ -21,6 +21,9 @@ typedef struct _configuration {
 /// Easily access program flags
 #define PROGRAM(field) (config.program.field)
 
+#define SYMBOLS PROGRAM(v_symbols)[PROGRAM(version)]
+#define CODE PROGRAM(v_code)[PROGRAM(version)]
+
 
 /// Default output name
 #define DEFAULT_OUT_NAME	"hijacked.o"

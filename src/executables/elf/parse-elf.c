@@ -1802,7 +1802,7 @@ static void split_function(symbol *sym, function *func) {
  *
  * @param func A pointer to a valid function's descriptors
  */
-static void link_jump_instruction(function *func) {
+void link_jump_instruction(function *func) {
 	insn_info *insn;				// Current instruction
 	insn_info *dest;				// Destination one
 	function *callee;				// Callee function
@@ -1839,7 +1839,7 @@ static void link_jump_instruction(function *func) {
 			}
 
 			// At this point 'dest' will point to the destination instruction relative to the jump 'insn'
-			insn->reference = dest;
+			insn->jumpto = dest;
 
 			hnotice(2, "Jump instruction at <%#08lx> linked to instruction at <%#08lx>\n",
 					insn->orig_addr, dest->orig_addr);
@@ -2125,6 +2125,7 @@ static void resolve_relocation(){
 					sym_2->relocation.addend = rel->addend;
 					sym_2->relocation.type = rel->type;
 					sym_2->relocation.secname = ".text";
+					sym_2->relocation.ref_insn = insn;
 
 					// The instruction object will be binded to the proper symbol.
 					// This reference is read by the specific machine code emitter
@@ -2255,8 +2256,9 @@ void elf_create_map(void) {
 	resolve_relocation();
 
 	PROGRAM(symbols) = symbols->payload;
-	PROGRAM(code) = functions;
+	PROGRAM(code) = PROGRAM(v_code)[0] = functions;
 	PROGRAM(rawdata) = 0;
+	PROGRAM(versions)++;
 
 	hnotice(1, "ELF parsing terminated\n\n");
 	hsuccess();

@@ -11,7 +11,7 @@
 #include <sparc/instruction.h>
 #include <x86/instruction.h>
 
-
+#include <executable.h>
 
 // [FV] Flags contenenti informazioni utili sul comportamento o la classe delle funzioni
 #define I_MEMRD		0x1	// Legge dalla memoria
@@ -99,7 +99,9 @@ typedef struct instruction {
 		insn_info_sparc		sparc;
 		insn_info_x86		x86;
 	} i;
-	void *reference;			// May represent a reference to either a relocation symbol or an instruction (jump)
+	//void *reference;			// May represent a reference to either a relocation symbol or an instruction (jump)
+	struct instruction *jumpto;
+	struct _symbol *reference;
 	struct instruction *prev;	// Instructions are organized in a chain
 	struct instruction *next;
 } insn_info;

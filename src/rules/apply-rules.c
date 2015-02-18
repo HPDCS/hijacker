@@ -4,6 +4,7 @@
 
 #include <executable.h>
 #include <elf/reverse-elf.h>
+#include <elf/handle-elf.h>
 #include <hijacker.h>
 #include <prints.h>
 #include <compile.h>
@@ -11,7 +12,6 @@
 #include "insert_insn.h"
 #include "rules.h"
 #include "apply-rules.h"
-
 
 /**
  * The Inject tag simply identifies a file that has to be compiled togeter
@@ -39,16 +39,16 @@ static void apply_rule_link (char *filename) {
 	strcpy(objname, filename);
 	objname[len-1] = 'o';
 
-	path = (char *) malloc(256 * sizeof(char));
+	path = (char *) malloc(64 * sizeof(char));
 	bzero(path, strlen(path));
 	strcpy(path, TEMP_PATH);
-	strcpy(path+strlen(TEMP_PATH), objname);
+	strcat(path, objname);
 	
 	hnotice(6, "Compiling assembly file in '%s'\n", path);
 	if(!file_exists(filename)) {
 		herror(true, "The XML rules file has specified a file that does not exists!\n");
 	}
-
+	
 	// Just compile the given module's source.
 	// The resulting object file will be linked in the final stage.
 	compile(filename, "-c", "-o", path);
@@ -131,7 +131,7 @@ static void apply_rule_inject (char *filename, insn_info *target, int where) {
  *
  * @param tagCall Pointer to the Call tag
  */
-static apply_rule_addcall (Call *tagCall, insn_info *target) {
+static void apply_rule_addcall (Call *tagCall, insn_info *target) {
 	symbol *monitor;
 	int where;
 	void (*func)(void *, unsigned int);
@@ -177,29 +177,48 @@ static apply_rule_addcall (Call *tagCall, insn_info *target) {
  * Given a XML instruction tag, it will apply the relative rule to the current
  * internal binary representation of the ELF file.
  *
- * @param: tagInstruction Pointer to the XML instruction tag maintaining the rule
+ * @param tagInstruction Pointer to the XML instruction tag maintaining the rule
+ *
+ * @return The number of instrumented instructions
  */
-static void apply_rule_instruction (Instruction *tagInstruction) {
+static int apply_rule_instruction (Executable *exec, Instruction *tagInstruction, function *func) {
 	int tag;
+	int count;
+	char name[32];
 
-	function *func;
 	insn_info *insn;
 
 	Assembly *tagAssembly;
 	Call *tagCall;
 
-	func = PROGRAM(code);
+	// Since the current function will be instrumented
+	// we must to create a new function descriptor by cloinig
+	// the current one.
+/*	if(func->symbol->version != PROGRAM(version)) {
+		// If the version of the symbol is zero, then
+		// the function is not yet an instrumented clone
+		// and we do clone it
+		sprintf(name, "%s-%s", func->name, exec->suffix);
+		func = clone_function_descriptor(func, name);
+	}*/
+
 	insn = func->insn;
+	count = 0;
 
 	hnotice(2, "Entering Instruction scope; searching for instruction of type %d\n", tagInstruction->flags);
 	while(insn) {
+		hnotice(5, "Checking instruction at <%#08lx>\n", insn->new_addr);
+		
 		// Check whether the instruction's type match to the rule
 		if (insn->flags & tagInstruction->flags) {
 			// If this is the case, the rules applies.
 			hnotice(3, "Instruction matching the rule specification is found:\n");
 			hnotice(4, "Instrumenting '%s' at %#08lx...\n", insn->i.x86.mnemonic, insn->new_addr);
-		
-			
+
+			// Increment the counter of instrumented instructions
+			count++;
+
+
 			// Instruction tags may be composed of several Assembly tags
 			for(tag = 0; tag < tagInstruction->nAssembly; ++tag) {
 				// Retrieve the next assembly tag and process it
@@ -236,6 +255,12 @@ static void apply_rule_instruction (Instruction *tagInstruction) {
 		
 		insn = insn->next;
 	}
+	
+	if(!count) {
+		hnotice(2, "No instruction that matches the rule is found\n");
+	}
+
+	return count;
 }
 
 
@@ -247,14 +272,18 @@ static void apply_rule_instruction (Instruction *tagInstruction) {
  * Once the function has been identified, the instrumentation process of the
  * other sub-tags will take place.
  *
- * @param: tagFunction Pointer to the XML function tag maintaining the rule
+ * @param tagFunction Pointer to the XML function tag maintaining the rule
+ *
+ * @return The number of the instrumented instructions
  */
-static void apply_rule_function (Function *tagFunction) {
+static int apply_rule_function (Executable *exec, Function *tagFunction) {
 	function *func;
 	int tag;
+	int count;
 
 	Instruction *tagInstruction;
 	Call *tagCall;
+	count = 0;
 
 	hnotice(2, "Entering Function scope: searching '%s' function", tagFunction->name);
 	
@@ -263,17 +292,17 @@ static void apply_rule_function (Function *tagFunction) {
 		// Look for the right function to which to apply the rule
 		if(!strcmp(func->name, tagFunction->name)) {
 			hnotice(4, "Function matching '%s' the rule name found\n", func->name);
-			
+
 			// Retrieve the sub tags: a function may be composed of
 			// several Instruction or Assembly tags
-			
+
 			// Iterates all over the Instruction sub-tags
 			for(tag = 0; tag < tagFunction->nInstructions; tag++) {
 				// Retrive the next instruction tag and process it
 				hnotice(2, "Instruction tag met, applying the rule\n");
 				tagInstruction = tagFunction->instructions[tag];
 				hnotice(3, "Looking for the instruction with flags %x\n", tagInstruction->flags);
-				apply_rule_instruction(tagInstruction);
+				count += apply_rule_instruction(exec, tagInstruction, func);
 			}
 
 			// Check if a Call tag has been specified
@@ -286,6 +315,12 @@ static void apply_rule_function (Function *tagFunction) {
 
 		func = func->next;
 	}
+
+	if(!count) {
+		hnotice(2, "No function that matches the rule is found\n");
+	}
+
+	return count;
 }
 
 
@@ -298,6 +333,7 @@ void apply_rules() {
 	
 	int tag;
 	int version;
+	int instrumented;
 
 	char *module;
 	Executable *exec;
@@ -309,26 +345,30 @@ void apply_rules() {
 	hprint("Start applying rules...\n");
 
 	// Create a temporary directory to place object files;
-	//execute("mkdir", "-p", TEMP_PATH);
+	execute("mkdir", "-p", TEMP_PATH);
 
 	// Iterates over the executable versions
 	for (version = 0; version < config.nExecutables; version++) {
 		hnotice(1, "Executable version %d\n", version);
-		
-		// Clone the intermediate binary representation
-		//version = switch_executable_version(version);
-		
+
+		// Reset the counter of the total instruction instrumented
+		instrumented = 0;
+
 		// Get the new vesion executable's rules
 		exec = config.rules[version];
 
+		// Clone the intermediate binary representation
+		// Version 0 is reserved, therefore we have to shift by 1
+		switch_executable_version(version);
+
 		// Iterates all over the XML inject tag in the Executable
-		/*for (tag = 0; tag < exec->nInjects; tag++) {
+		for (tag = 0; tag < exec->nInjects; tag++) {
 			// Retrive the next inject tag and process it
 			hnotice(2, "Instruction tag met, applying the rule\n");
 			module = exec->injectFiles[tag];
 			hnotice(3, "Looking for the instruction with flags '%s'\n", module);
 			apply_rule_link(module);
-		}*/
+		}
 		
 		// Iterates all over the instructions in the Executable XML tag
 		for (tag = 0; tag < exec->nInstructions; tag++) {
@@ -336,7 +376,11 @@ void apply_rules() {
 			hnotice(2, "Instruction tag met, applying the rule\n");
 			tagInstruction = exec->instructions[tag];
 			hnotice(3, "Looking for the instruction with flags %x\n", tagInstruction->flags);
-			apply_rule_instruction(tagInstruction);
+			func = PROGRAM(code);
+			while(func) {
+				instrumented += apply_rule_instruction(exec, tagInstruction, func);
+				func = func->next;
+			}
 		}
 
 		for (tag = 0; tag < exec->nFunctions; tag++) {
@@ -344,15 +388,12 @@ void apply_rules() {
 			hnotice(2, "Function tag met, applying the rule\n");
 			tagFunction = exec->functions[tag];
 			hnotice(3, "Looking for the function '%s'\n", tagFunction->name);
-			apply_rule_function(tagFunction);
+			instrumented += apply_rule_function(exec, tagFunction);
 		}
-		
-		
+
+		hnotice(1, "Instrumentation of executable version %d terminated: %d instructions have been instrumented\n",
+			version, instrumented);
 	}
 
-	// Once all the instrumentation rules have been parsed,
-	// proceed to update functions' and instructions' addresses, once
-	// TODO: update_instruction_reference();
-	
 	hsuccess();
 }

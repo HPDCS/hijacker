@@ -29,6 +29,7 @@ long write_x86_code(function *func, section *text, section *reloc) {
 			sym = (symbol *) insn->reference;
 
 			offset = insn->new_addr + x86->opcode_size;
+			sym->relocation.offset = offset;
 
 			elf_write_reloc(reloc, sym, offset, sym->relocation.addend);
 		}

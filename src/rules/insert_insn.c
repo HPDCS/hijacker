@@ -55,8 +55,6 @@ static void parse_instruction_bytes (char *bytes, unsigned long int *pos, insn_i
 		hnotice(5, "A new '%s' instruction is parsed\n", insn->i.x86.mnemonic);
 		hdump(6, "Raw bytes", insn->i.x86.insn, insn->size);
 		
-		hnotice(6, "INSN: size=%d, opcode+sib+rm_size = %d\n", insn->size, insn->opcode_size);
-		
 		break;
 	}
 	
@@ -146,6 +144,9 @@ static void update_instruction_references(function *func, insn_info *target, int
 
 		foo->new_addr = foo->insn->new_addr;
 		foo->symbol->size = offset;
+
+		hnotice(4, "Function size updated to %d\n", foo->symbol->size);
+
 		foo = foo->next;
 	}
 
@@ -278,7 +279,7 @@ static void update_instruction_references(function *func, insn_info *target, int
 			// Update only those relocation beyond the code affected by current instrumentation
 			if(sym->relocation.addend > target->new_addr) {
 				sym->relocation.addend += shift;
-				
+
 				hnotice(5, "Relocation to symbol %d (%s) at offset %#08lx addend updated %#0lx (%+d)\n",
 					sym->index, sym->name, sym->position, sym->relocation.addend, shift);
 			}
@@ -376,7 +377,7 @@ int insert_instructions_at (insn_info *target, char *binary, size_t size, int fl
 	int count;
 
 	hnotice(4, "Inserting instrucions from raw binary code (%d bytes) %s the instruction at %#08lx\n",
-		size, INSERT_BEFORE ? "before" : "after\n", target->new_addr);
+		size, INSERT_BEFORE ? "before" : "after", target->new_addr);
 	hdump(5, "Binary", binary, size);
 
 	// Pointer 'binary' may contains more than one instruction

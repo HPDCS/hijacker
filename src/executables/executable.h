@@ -30,12 +30,14 @@ typedef struct _symbol {
 	long long	position;		/// Offset positioning within the symbol section
 	long long	initial;		/// Initialization symbol's value
 	struct {
-		struct _symbol *from;		/// Symbol from which the relocation applies
+//		struct _symbol *from;		/// Symbol from which the relocation applies
+		insn_info *ref_insn;		/// Instruction where the relocation is applied
 		long long offset;			/// The offset from the reference symbol's position
 		long addend;				/// The offset from the target symbol
 		unsigned char type;			/// The type of the relocation
 		unsigned char *secname;		/// Name of the relocation section where to add the entry
 	} relocation;
+	unsigned int	version;	/// Integer indicasting to which instrumenting verions it belongs
 	bool		duplicate;		/// Flag that tells if symbol is a duplicate
 	bool		referenced;		/// Flag indicating the symbol has been resolved
 	long		extra_flags;	/// Maintains the info field of the ELF's symbol (either bind and type) # ridondante
@@ -89,6 +91,7 @@ typedef struct _section {
 #define EXECUTABLE_ELF	1
 #define EXECUTABLE_PE	2
 #define EXECUTABLE_COFF	3
+
 #define MAX_VERSIONS	256
 
 typedef struct _executable {
@@ -99,9 +102,10 @@ typedef struct _executable {
 		coff_file	coff;
 		pe_file		pe;
 	} e;
-	symbol		*v_symbols[MAX_VERSIONS];
+	symbol		*orig_syms;
 	function	*v_code[MAX_VERSIONS];
-	int			version;
+	unsigned int	version;	/// Current instrumenting version
+	unsigned int	versions;	/// Number of total versions
 	void 		*metadata;
 	unsigned int	symnum;
 	symbol		*symbols;
