@@ -19,10 +19,6 @@ FINAL_CFLAGS="-pg -ggdb3 -Wall -Wextra -O0 -Wswitch-enum -Wcast-align -Wpointer-
 # Check for languages 
 #----------------------------------------------------------------------------
 AC_LANG([C])
-AC_C_VOLATILE
-AC_C_CHAR_UNSIGNED
-
-
 
 #----------------------------------------------------------------------------
 # Checks for programs.
@@ -33,59 +29,10 @@ AC_PROG_MKDIR_P
 AC_PROG_CC_C_O
 AM_PROG_CC_C_O
 
-
-
-#----------------------------------------------------------------------------
-# Checks for doxygen, if asked to
-#----------------------------------------------------------------------------
-AC_ARG_WITH([doxygen],
-  [AS_HELP_STRING([--with-doxygen], [use doxygen to generate Hijacker documentation.])],
-  [AC_CHECK_PROG([DOXYGEN], [doxygen], [doxygen])
-    case "$withval" in
-    yes) test -z "$DOXYGEN" && AC_MSG_ERROR([doxygen not found.]) ;;
-    no) DOXYGEN="" ;;
-    *)   AC_MSG_ERROR([Bad value ${withval} for --with-doxygen.]) ;;
-   esac])
-AM_CONDITIONAL([HAVE_DOXYGEN], [test -n "$DOXYGEN"])
-
-
-
-
 #----------------------------------------------------------------------------
 # Checks for C header files.
 #----------------------------------------------------------------------------
 AC_HEADER_STDC
-AC_CHECK_HEADERS([fcntl.h stdint.h stdlib.h string.h unistd.h getopt.h])
-
-
-
-#----------------------------------------------------------------------------
-# Checks for typedefs, structures, and compiler characteristics.
-#----------------------------------------------------------------------------
-AC_C_INLINE
-AC_TYPE_INT16_T
-AC_TYPE_INT32_T
-AC_TYPE_INT8_T
-AC_TYPE_PID_T
-AC_TYPE_SIZE_T
-AC_TYPE_UINT16_T
-AC_TYPE_UINT32_T
-AC_TYPE_UINT64_T
-AC_TYPE_UINT8_T
-
-
-
-#----------------------------------------------------------------------------
-# Checks for library functions.
-#----------------------------------------------------------------------------
-AC_FUNC_MALLOC
-AC_FUNC_REALLOC
-AC_FUNC_MEMCMP
-AC_FUNC_STRNLEN
-AC_FUNC_STRTOD
-AC_CHECK_FUNCS([bzero gettimeofday mkdir pow rint sqrt strtol log2])
-
-
 
 #----------------------------------------------------------------------------
 # Checks for LIBXML2
