@@ -1,7 +1,7 @@
 /*
  * reverse-elf.c
  *
- * Here all the function needed by the 'monitor' module to support the
+ * Here all the function needed by the 'trampoline' module to support the
  * reverse code generation.
  *
  *  Created on: 24/lug/2014
@@ -11,7 +11,7 @@
 #include <hijacker.h>
 #include <prints.h>
 #include <instruction.h>
-#include <monitor.h>
+#include <trampoline.h>
 
 #include "reverse-elf.h"
 #include "handle-elf.h"
@@ -42,13 +42,13 @@ static void get_memwrite_info (insn_info *insn, insn_entry *entry) {
 			entry = NULL;
 	}
 
-	hnotice(4, "Instruction entry for monitor module created:\n");
+	hnotice(4, "Instruction entry for trampoline module created:\n");
 	hnotice(4, "MOV %d bytes value to <%#08lx>\n", entry->size,
 		entry->base + entry->idx * entry->scala + entry->offset);
 }
 
 
-static void add_call_monitor (insn_info *target, symbol *reference) {
+static void add_call_trampoline (insn_info *target, symbol *reference) {
 	insn_info *call;
 
 	switch (PROGRAM(insn_set)) {
@@ -57,13 +57,13 @@ static void add_call_monitor (insn_info *target, symbol *reference) {
 		break;
 	}
 
-	hnotice(4, "Creating the RELA reference to the monitor...\n");
+	hnotice(4, "Creating the RELA reference to the trampoline...\n");
 	instruction_rela_node(reference, call, RELOCATE_RELATIVE_64);
 }
 
 
 
-void monitor_prepare (insn_info *target, char *func) {
+void trampoline_prepare (insn_info *target, char *func) {
 	insn_entry entry;
 	symbol *sym;
 	
@@ -71,16 +71,16 @@ void monitor_prepare (insn_info *target, char *func) {
 	hnotice(4, "Retrieve meta-info about target MOV instruction...\n");
 	get_memwrite_info(target, &entry);
 
-	// Adds the pointer to the function that the monitor module has to call at runtime
+	// Adds the pointer to the function that the trampoline module has to call at runtime
 	// The idea is to generalize the calling method, the aforementioned
 	// symbol will be properly relocated to whichever function the user has
 	// specified in the rules files in the AddCall tag's 'function' field
-	hnotice(4, "Push function pointer to the monitor structure <%#08lx>\n", func);
+	hnotice(4, "Push function pointer to the trampoline structure <%#08lx>\n", func);
 	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
 
 	// Once the structure has been created, it is possbile
 	// to generate the push instructions and add them to the code
-	hnotice(4, "Push monitor structure into stack before the target MOV...\n");
+	hnotice(4, "Push trampoline structure into stack before the target MOV...\n");
 	push_insn_entry(target, &entry);
 	
 	// Now, we have either the function symbol to be called and the stack filled up;
@@ -93,7 +93,7 @@ void monitor_prepare (insn_info *target, char *func) {
 }
 
 
-inline void prepare_monitor_call (insn_info *target, symbol *monitor) {
+inline void prepare_trampoline_call (insn_info *target, symbol *trampoline) {
 	insn_entry entry;
 
 	// retrieve information to fill the structure
@@ -102,13 +102,13 @@ inline void prepare_monitor_call (insn_info *target, symbol *monitor) {
 
 	// once the structure has been created, it is possbile
 	// to generate the push instructions and add them to the code
-	hnotice(4, "Push monitor structure into stack before the target MOV...\n");
+	hnotice(4, "Push trampoline structure into stack before the target MOV...\n");
 	push_insn_entry(target, &entry);
 
-	// add the call to the monitor
+	// add the call to the trampoline
 	hnotice(4, "Add CALL instruction to the montor...\n");
-	add_call_monitor(target, monitor);
+	add_call_trampoline(target, trampoline);
 
 	hnotice(2, "MOV instruction at <%#08lx> moved to <%#08lx>\n", target->orig_addr, target->new_addr);
-	hnotice(2, "Monitor instrumented for MOV instruction at <%#08lx>\n\n", target->new_addr);
+	hnotice(2, "trampoline instrumented for MOV instruction at <%#08lx>\n\n", target->new_addr);
 }

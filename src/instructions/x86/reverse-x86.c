@@ -12,7 +12,7 @@
 
 #include <executable.h>
 #include <instruction.h>
-#include <monitor.h>
+#include <trampoline.h>
 #include <insert_insn.h>
 
 #include "x86.h"
@@ -48,7 +48,7 @@ void push_x86_insn_entry (insn_info *insn, insn_entry *entry) {
 	num = size / 4;				// number of the mov instructions needed to copy all the struture fields
 	
 	// Creates bytes array of the main instructions needed to manage
-	// the stack in order to save monitor's structure
+	// the stack in order to save trampoline's structure
 	char sub[4] = {0x48, 0x83, 0xec, (char) size};
 	char mov[8] = {0xc7, 0x44, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00};
 
@@ -68,7 +68,7 @@ void push_x86_insn_entry (insn_info *insn, insn_entry *entry) {
 	}
 
 	/*symbol *sym;
-	sym = create_symbol_node("monitor_function", SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
+	sym = create_symbol_node("trampoline_function", SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
 	sym = symbol_check_shared(sym);
 	sym->position = insn->new_addr + insn->opcode_size;*/
 

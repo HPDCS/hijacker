@@ -1,9 +1,9 @@
 #include "instructions.h"
-#include "monitor.h"
+#include "trampoline.h"
 
 /**
  * Check the whole code looking for all the MOV instructions who access
- * the memory handling them by calling the 'monitor' module which, in turn,
+ * the memory handling them by calling the 'trampoline' module which, in turn,
  * saves on the current stack the values and generates the reversing code.
  * 
  * @param insn The current insntruction descriptor to be checked
@@ -15,10 +15,10 @@ void check_memwrite_instructions (insn_info *insn) {
 		
 		// if the current instruction accesses the memory
 		// then is needed to save the stack and call the
-		// monitor module in order to generate the reverse code
+		// trampoline module in order to generate the reverse code
 		
 		
-		// Save the relevant information neede by the 'monitor'
+		// Save the relevant information neede by the 'trampoline'
 		// module by pushing them into the current stack
 		insn_entry entry;
 		entry.

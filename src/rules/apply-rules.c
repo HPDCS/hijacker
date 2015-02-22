@@ -132,7 +132,7 @@ static void apply_rule_inject (char *filename, insn_info *target, int where) {
  * @param tagCall Pointer to the Call tag
  */
 static void apply_rule_addcall (Call *tagCall, insn_info *target) {
-	symbol *monitor;
+	symbol *trampoline;
 	int where;
 	void (*func)(void *, unsigned int);
 
@@ -156,13 +156,13 @@ static void apply_rule_addcall (Call *tagCall, insn_info *target) {
 		// embedding into it a pointer to the functions
 		// to be called at runtime.
 		if(!strcmp(tagCall->arguments, "target")){
-			hnotice(6, "Specified a 'target' argument to '%s' function, preparing the monitor structure\n", tagCall->function);
+			hnotice(6, "Specified a 'target' argument to '%s' function, preparing the trampoline structure\n", tagCall->function);
 
-			// Prepare the monitor structure on the stack
-			monitor_prepare(target, tagCall->function);
+			// Prepare the trampoline structure on the stack
+			trampoline_prepare(target, tagCall->function);
 
-			// Creates and adds a new CALL to the monitor function with respect to the 'target' one
-			add_call_instruction(target, "monitor", where);
+			// Creates and adds a new CALL to the trampoline function with respect to the 'target' one
+			add_call_instruction(target, "trampoline", where);
 		}
 	} else {
 		// Creates and adds a new CALL  with respect to the 'target' one

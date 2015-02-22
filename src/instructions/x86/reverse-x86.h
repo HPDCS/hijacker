@@ -9,7 +9,7 @@
 #define REVERSE_X86_H_
 
 #include <instruction.h>
-#include <monitor.h>
+#include <trampoline.h>
 
 
 /**
@@ -20,7 +20,7 @@
  * instruction bytes that can be written on the instrumente code.
  *
  * @param target The instruction descriptor of the memwrite MOV
- * @param entry Pointer to the monitor's structure
+ * @param entry Pointer to the trampoline's structure
  *
  */
 void push_x86_insn_entry (insn_info *target, insn_entry *entry);
@@ -28,10 +28,10 @@ void push_x86_insn_entry (insn_info *target, insn_entry *entry);
 
 /**
  * Retrieve the information needed to fill the structure <em>insn_entry</em>
- * used by the monitor module to generate the reverse code.
+ * used by the trampoline module to generate the reverse code.
  *
  * @param insn Instruction descriptor to be parsed
- * @param entry A pointer to the monitor structure descriptor
+ * @param entry A pointer to the trampoline structure descriptor
  *
  */
 void get_x86_memwrite_info (insn_info *insn, insn_entry *entry);

@@ -1,9 +1,9 @@
-.file "monitor64.S"
+.file "trampoline64.S"
 
 .text
-.globl	monitor
-.type	monitor, @function
-monitor:
+.globl	trampoline
+.type	trampoline, @function
+trampoline:
 
 # ESISTE L'ISTRUZIONE PUSHAD che mette nello stack i registri esattamente in quest'ordine.......
 
@@ -39,7 +39,7 @@ monitor:
 
 	# In rdx verrà caricato l'indirizzo del primo campo della struttura
 	# Attualmente rbp punta al valore rax salvato nello stack, ovvero una posizione avanti rispetto all'indirizzo
-	# di ritorno e, quindi, due posizioni avanti rispetto al primo campo 'size' della struttura del monitor
+	# di ritorno e, quindi, due posizioni avanti rispetto al primo campo 'size' della struttura del trampoline
 	
 	lea 16(%rbp), %rdx		# Sommo 16 byte a %rbp per farlo salire di 2 posizioni nello stack. %rdx rappresenta la base della struttura, ora
 
@@ -97,7 +97,7 @@ monitor:
 	# La calling convention del System V ABI prevede che vengano passati
 	# per primi i registri %rdi e %rsi, in questa sequenza
 	# call	reverse_code_generator		# Chiama la funzione che si preoccupa della generazione del codice inverso
-	call *16(%rdx)			# Chiama la funzione specificata nelle regole XML, contenuta nell'ultimo campo della struttura di monitor
+	call *16(%rdx)			# Chiama la funzione specificata nelle regole XML, contenuta nell'ultimo campo della struttura di trampoline
 
 
 	.Fine:
@@ -112,4 +112,4 @@ monitor:
 	pop	%rax
 	ret
 
-.size   monitor, .-monitor
+.size   trampoline, .-trampoline

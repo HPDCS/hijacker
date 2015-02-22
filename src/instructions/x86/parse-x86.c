@@ -3469,7 +3469,7 @@ void grp_7(struct disassembly_state *state) { /* opcode 0F01 */
 			case 001b:
 				switch(lower_bits) {
 					case 000b:
-						strcpy(state->instrument->mnemonic, "monitor");
+						strcpy(state->instrument->mnemonic, "trampoline");
 						break;
 					case 001b:
 						strcpy(state->instrument->mnemonic, "mwait");

@@ -904,7 +904,7 @@ static elf_build() {
 	}*/
 
 	// at least one rela section is needed, hence if no rela section was created
-	// then create one in order to support monitor instrumentation
+	// then create one in order to support trampoline instrumentation
 	for(ver = 0; ver < PROGRAM(versions); ver++) {
 		rela = elf_create_section(SHT_RELA, 0, 0);
 

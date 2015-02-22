@@ -314,7 +314,7 @@ void reverse_code_generator (void *address, unsigned int size) {
 	//~ printf("==============================\n\n");
 }
 
-inline void monitor_initialize () {
+inline void trampoline_initialize () {
 	if(current_era > 0) return;
 
 	//history.size = sizeof(history.era);
