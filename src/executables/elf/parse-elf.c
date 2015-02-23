@@ -1864,6 +1864,9 @@ void link_jump_instruction(function *func) {
 				// look for the relative function called
 				callee = functions;
 				while(callee) {
+					
+					printf("%p, ", callee->orig_addr);
+					
 					if(callee->orig_addr == jmp_addr)
 						break;
 
