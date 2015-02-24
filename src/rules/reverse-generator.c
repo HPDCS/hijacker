@@ -57,7 +57,7 @@ static revwin *window;			//! Represents the pointer to the current active revers
  * value will be used (REVERSE_WIN_SIZE)
  *
  * @return The address of the created window
- * 
+ *
  * Note: mmap is invoked with both write and executable access, but actually
  * it does not to be a good idea since could be less portable and further
  * could open to security exploits.
@@ -66,7 +66,7 @@ static inline revwin *allocate_reverse_window (size_t size) {
 
 //	printf("chiamo allocate_reverse\n");
 	window = malloc(sizeof(revwin));
-	
+
 	window->size = size;
 	window->address = mmap(NULL, size, PROT_EXEC | PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	window->pointer = window->address + size;
@@ -101,7 +101,7 @@ static inline revwin *allocate_reverse_window (size_t size) {
 		abort();
 	}
 
-	
+
 	return window;
 }
 
@@ -154,7 +154,7 @@ static inline void create_reverse_instruction (uint64_t value, size_t size) {
 	char cmp[7];		// compare instruction with the timestamp
 //	int flags = 0;			// TODO: are they necessary? in case move to param
 	size_t mov_size;
-	
+
 	// create the new MOV instruction accordingly to the data size
 	mov[0] = (uint64_t) 0;
 	switch(size) {
@@ -252,13 +252,13 @@ static inline int is_address_referenced (void *address) {
 	// Closure
 	index %= HMAP_SIZE;
 	offset %= 64;
-	
+
 	// if the address is not reference yet, insert it and return 0 (false)
 	if (!hashmap.map[index] >> offset) {
 		hashmap.map[index] |= (1 << offset);
 		return 0;
 	}
-	
+
 	return 1;
 }
 
@@ -266,13 +266,13 @@ static inline int is_address_referenced (void *address) {
 /**
  * Genereate the reverse MOV instruction staring from the knowledge of which
  * memory address will be accessed and the data width of the write.
- * 
+ *
  * @param address The pointer to the memeory location which the MOV refers to
  * @param size The size of data will be written by MOV
  */
 void reverse_code_generator (void *address, unsigned int size) {
 	uint64_t value;
-	
+
 	printf("\n=== Reverse code generator ===\n");
 
 	// check if the address is already be referenced, in that case it is not necessary
@@ -292,7 +292,7 @@ void reverse_code_generator (void *address, unsigned int size) {
 		case 2:
 			value = *((uint16_t *) address);
 			break;
-		
+
 		case 4:
 			value = *((uint32_t *) address);
 			break;
@@ -308,9 +308,9 @@ void reverse_code_generator (void *address, unsigned int size) {
 	// restore the previous value 'value' stored in the memory address
 	// based on the operand size selects the proper MOV instruction bytes
 	create_reverse_instruction(value, size);
-	
+
 	//dump_revwin();
-	
+
 	//~ printf("==============================\n\n");
 }
 

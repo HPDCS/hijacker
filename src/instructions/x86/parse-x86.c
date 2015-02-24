@@ -337,7 +337,7 @@ insn one_byte_opcode_table[] = {
   /* 7C */
   { "jl", { ADDR_J, ADDR_0, ADDR_0 }, { OP_B, OP_0, OP_0 }, NULL, I_JUMP | I_CONDITIONAL },
   /* 7D */
-  { "jge", { ADDR_J, ADDR_0, ADDR_0 }, { OP_B, OP_0, OP_0 }, NULL, I_JUMP | I_CONDITIONAL }, 
+  { "jge", { ADDR_J, ADDR_0, ADDR_0 }, { OP_B, OP_0, OP_0 }, NULL, I_JUMP | I_CONDITIONAL },
   /* 7E */
   { "jle", { ADDR_J, ADDR_0, ADDR_0 }, { OP_B, OP_0, OP_0 }, NULL, I_JUMP | I_CONDITIONAL },
   /* 7F */
@@ -1180,17 +1180,17 @@ void d8_opcode(struct disassembly_state *state) {
 	// [FV] Dichiaro i seguenti campi
 	char *instructions[4][2] = {{"fadd", "fmul"}, {"fcom", "fcomp"}, {"fsub", "fsubr"}, {"fdiv", "fdivr"}};
 	int row, col;
-	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7}; 
-	
+	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7};
+
 	read_modrm(state);
-	
+
 	// [FV] Sono tutte istruzioni I_FPU
 	state->instrument->flags |= I_FPU;
 
 	if(state->modrm > 0xbf) {
 		row = (state->modrm >> 4) - 0xC;	// [FV] 0, 1, 2 o 3, a seconda (vedi tabelle manuale)
 		col = ((state->modrm & 0x0F) < 0x8) ? 0 : 1;
-		
+
 		/* [FV]
 		switch(state->modrm >> 4) {
 			case 0xc: // (state->modrm & 0x0f) < 0x8 ? fadd : fmul
@@ -1202,8 +1202,8 @@ void d8_opcode(struct disassembly_state *state) {
 		*/
 
 		state->addr[0] = floatingPointRegisters[0];
-		state->addr[1] = floatingPointRegisters[state->modrm & 0x07]; // [FV] Errore: nell'originale c'era 0x03!  
-		
+		state->addr[1] = floatingPointRegisters[state->modrm & 0x07]; // [FV] Errore: nell'originale c'era 0x03!
+
 		/* [FV]
 		// Selettore registri
 		switch(state->modrm & 0x03) { // In una tabella di lookup?
@@ -1235,7 +1235,7 @@ void d8_opcode(struct disassembly_state *state) {
 		// Il campo nnn del byte ModR/M seleziona l'istruzione
 		row = ((state->modrm >> 3) & 0x07) / 2;
 		col = ((state->modrm >> 3) & 0x07) % 2;
-		
+
 		switch((state->modrm >> 3) & 0x07) {
 			case 0x0: // fadd
 				strcpy(state->instrument->mnemonic, "fadd");
@@ -1269,10 +1269,10 @@ void d8_opcode(struct disassembly_state *state) {
 		// [FV] Effettua lettura in memoria
 		state->instrument->flags |= I_MEMRD;
 	}
-	
+
 	// [FV] Copio il mnemonico
 	strcpy(state->instrument->mnemonic, instructions[row][col]);
-	
+
 	if(row == 1) {	// [FV] L'istruzione e' una FCOM od una FCOMP
 		state->instrument->flags |= I_CTRL;
 		if(col == 1)	// [FV] L'istruzione e' una FCOMP
@@ -1284,16 +1284,16 @@ void d8_opcode(struct disassembly_state *state) {
  * x87 escape.
  */
 void d9_opcode(struct disassembly_state *state) {
-	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7}; 
-	
+	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7};
+
 	read_modrm(state);
 	state->instrument->flags |= I_FPU;
-	
+
 	if(state->modrm > 0xbf) {
 		switch(state->modrm >> 4) {
 			case 0xc:
 				strcpy(state->instrument->mnemonic, (state->modrm < 0xc8) ? "fld" : "fxch");
-				state->addr[0] = floatingPointRegisters[state->modrm & 0x07]; 
+				state->addr[0] = floatingPointRegisters[state->modrm & 0x07];
 				if(state->modrm < 0x8C)	// [FV] La FLD effettua push di un registro nello FPU register stack
 					state->instrument->flags |= I_PUSHPOP;
 				break;
@@ -1316,7 +1316,7 @@ void d9_opcode(struct disassembly_state *state) {
 					case 0x1: // fabs
 						strcpy(state->instrument->mnemonic, "fabs");
 						state->addr[0] = R_ST0;
-						break;						
+						break;
 					case 0x4: // ftst
 						strcpy(state->instrument->mnemonic, "fchs");
 						state->addr[0] = R_ST0;
@@ -1484,8 +1484,8 @@ void d9_opcode(struct disassembly_state *state) {
  * x87 escape.
  */
 void da_opcode(struct disassembly_state *state) {
-	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7}; 
-	
+	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7};
+
 	read_modrm(state);
 	state->instrument->flags |= I_FPU;
 
@@ -1569,7 +1569,7 @@ void da_opcode(struct disassembly_state *state) {
  */
 void db_opcode(struct disassembly_state *state) {
 	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7};
-	
+
 	read_modrm(state);
 	state->instrument->flags |= I_FPU;
 
@@ -1654,8 +1654,8 @@ void db_opcode(struct disassembly_state *state) {
  * x87 escape.
  */
 void dc_opcode(struct disassembly_state *state) {
-	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7}; 
-	
+	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7};
+
 	read_modrm(state);
 	state->instrument->flags |= I_FPU;
 
@@ -1665,7 +1665,7 @@ void dc_opcode(struct disassembly_state *state) {
 			state->instrument->flags &= ~I_FPU;
 		} else {
 			state->addr[1] = R_ST0;
-			state->addr[0] = floatingPointRegisters[state->modrm & 0x07]; 
+			state->addr[0] = floatingPointRegisters[state->modrm & 0x07];
 
 			switch(state->modrm >> 4) {
 				case 0xc:
@@ -1683,7 +1683,7 @@ void dc_opcode(struct disassembly_state *state) {
 		state->addr[0] = ADDR_M;
 		state->op[0] = OP_Q;
 		state->instrument->flags |= I_MEMRD;
-		
+
 		switch((state->modrm >> 3) & 0x07) {
 			case 0x00:
 				strcpy(state->instrument->mnemonic, "fadd");
@@ -1723,7 +1723,7 @@ void dd_opcode(struct disassembly_state *state) {
 
 	read_modrm(state);
 	state->instrument->flags |= I_FPU;
-	
+
 	if(state->modrm > 0xbf) {
 		if((state->modrm >= 0xc8 && state->modrm <= 0xcf) || state->modrm >= 0xf0) {	// [FV] if(state->modrm < 0xc8 || state->modrm > 0xef) ???
 			strcpy(state->instrument->mnemonic, "ill_dd");
@@ -1733,8 +1733,8 @@ void dd_opcode(struct disassembly_state *state) {
 		else {
 			if(state->modrm > 0xdf && state->modrm < 0xe8)
 				state->addr[1] = R_ST0;
-				
-			state->addr[0] = floatingPointRegisters[state->modrm & 0x07]; 
+
+			state->addr[0] = floatingPointRegisters[state->modrm & 0x07];
 
 			switch(state->modrm >> 4) {
 				case 0xc:
@@ -1810,7 +1810,7 @@ void dd_opcode(struct disassembly_state *state) {
  * x87 escape.
  */
 void de_opcode(struct disassembly_state *state) {
-	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7}; 
+	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7};
 
 	read_modrm(state);
 	state->instrument->flags |= I_FPU;
@@ -1835,7 +1835,7 @@ void de_opcode(struct disassembly_state *state) {
 					break;
 				case 0xc8:
 					strcpy(state->instrument->mnemonic, "fmulp");
-					break;				
+					break;
 				case 0xe0:
 					strcpy(state->instrument->mnemonic, "fsubrp");
 					break;
@@ -1879,7 +1879,7 @@ void de_opcode(struct disassembly_state *state) {
 				break;
 			case 0x07:
 				strcpy(state->instrument->mnemonic, "fidivr");
-				break;			
+				break;
 		}
 	}
 }
@@ -1888,7 +1888,7 @@ void de_opcode(struct disassembly_state *state) {
  * x87 escape.
  */
 void df_opcode(struct disassembly_state *state) {
-	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7}; 
+	enum addr_method floatingPointRegisters[8] = {R_ST0, R_ST1, R_ST2, R_ST3, R_ST4, R_ST5, R_ST6, R_ST7};
 
 	read_modrm(state);
 	state->instrument->flags |= I_FPU;
@@ -1909,7 +1909,7 @@ void df_opcode(struct disassembly_state *state) {
 			state->addr[0] = R_ST0;
 			state->addr[1] = floatingPointRegisters[state->modrm & 0x07];
 			state->instrument->flags |= I_CTRL | I_PUSHPOP;	// [FV] EFALGS modificati
-			strcpy(state->instrument->mnemonic, (state->modrm > 0xef) ? "fcomip" : "fucomip"); 
+			strcpy(state->instrument->mnemonic, (state->modrm > 0xef) ? "fcomip" : "fucomip");
 		}
 	} else {
 		unsigned char enc = (state->modrm >> 3) & 0x07;
@@ -3290,9 +3290,9 @@ void immed_grp_1(struct disassembly_state *state) { /* opcodes 80-83 */
 
 	switch(encoding) {
 
-		
+
 		case 0b000 ... 0b110:	// ADD, ADC, SBB, AND, SUB, XOR ( ... e' una GNU extension)
-		
+
 			state->instrument->flags |= I_MEMRD | I_MEMWR | I_ALU;
 			break;
 		case 0b111:	// CMP
@@ -3313,8 +3313,8 @@ void shift_grp_2(struct disassembly_state *state) { /* opcodes C0-C1, D0-D3 */
 	encoding = (state->modrm >> 3) & 0x07;
 
 	strcpy(state->instrument->mnemonic, instructions[encoding]);
-	
-	if(encoding != 0b110) { 
+
+	if(encoding != 0b110) {
 		state->instrument->flags |= I_MEMRD | I_MEMWR | I_ALU;
 	}
 }
@@ -3342,9 +3342,9 @@ void unary_grp_3(struct disassembly_state *state) { /* opcodes F6-F7 */
 					I_ALU | I_MEMRD,
 					I_ALU | I_MEMRD,
 					I_ALU | I_MEMRD, I_ALU | I_MEMRD};
-								
+
 	read_modrm(state);
-	
+
 	encoding = (state->modrm >> 3) & 0x07;
 	opcode = state->opcode[0] - 0xf6;
 
@@ -3358,7 +3358,7 @@ void grp_4(struct disassembly_state *state) { /* opcode FE */
 	unsigned char encoding;
 
 	read_modrm(state);
-	
+
 	encoding = (state->modrm >> 3) & 0x07;
 	state->instrument->flags = I_MEMRD | I_MEMWR | I_ALU;
 
@@ -3391,7 +3391,7 @@ void grp_5(struct disassembly_state *state) { /* opcode FF */
 
 	encoding = (state->modrm >> 3) & 0x07;
 	strcpy(state->instrument->mnemonic, instructions[encoding]);
-	
+
 	switch(encoding) {
 		case 0x00:
 		case 0x01:
@@ -3424,7 +3424,7 @@ void grp_6(struct disassembly_state *state) { /* opcode 0F00 */
 	unsigned char encoding;
 
 	char *instructions[6] = { "sldt", "str", "lldt", "ltr", "verr", "verw" };
-	
+
 	read_modrm(state);
 
 	encoding = (state->modrm >> 3) & 0x07;
@@ -3432,11 +3432,11 @@ void grp_6(struct disassembly_state *state) { /* opcode 0F00 */
 		strcpy(state->instrument->mnemonic, "ill_grp_6");
 		return;
 	}
-	
+
 	strcpy(state->instrument->mnemonic, instructions[encoding]);
 	state->addr[0] = ADDR_E;
 	state->op[0] = OP_W;	// [FV] Non corretto con dimensione registri per SLDT e STR!!!
-	
+
 	switch(encoding) {
 		case 0x00:	// SLDT
 			state->instrument->flags = I_MEMWR;
@@ -3471,7 +3471,7 @@ void grp_7(struct disassembly_state *state) { /* opcode 0F01 */
 	encoding = (state->modrm >> 3) & 0x07;
 	lower_bits = state->modrm & 0x07;
 	mod_76 = (state->modrm >> 6) & 0x03;
-	
+
 	/*if(mod_76 == 11b && encoding != 100b && encoding |= 110b) {	// [FV] In realtà queste potremmo non gestirle...
 		switch(encoding) {
 			case 000b:
@@ -3535,12 +3535,12 @@ void grp_7(struct disassembly_state *state) { /* opcode 0F01 */
 			default:
 				strcpy(state->instrument->mnemonic, "ill_grp_7");
 				break;
-			//}				
+			//}
 		}
 	}*/
 	//else {
 		strcpy(state->instrument->mnemonic, instructions[encoding]);
-		
+
 		if(encoding == 5)	// ill_grp_7
 			return;
 
@@ -3582,10 +3582,10 @@ void grp_8(struct disassembly_state *state) { /* opcode 0FBA */
 	}
 
 	encoding -= 4; // I valori a 0 a 3 in realtà non sono usati
-	
+
 	strcpy(state->instrument->mnemonic, instructions[encoding]);
 	state->instrument->flags = I_MEMRD;	// Tutte possono leggere dalla memoria
-	
+
 	if(encoding > 0)	// BTS, BTR, BTC
 		state->instrument->flags |= I_MEMWR;
 }
@@ -3646,7 +3646,7 @@ void grp_12(struct disassembly_state *state) { /* opcode 0F71 */
 	unsigned char encoding, mod, sse_prefix;
 	bool illegal = false;
 	char *mnemonic;
-	
+
 	read_modrm(state);
 
 	encoding = (state->modrm >> 3) & 0x07;
@@ -3664,7 +3664,7 @@ void grp_12(struct disassembly_state *state) { /* opcode 0F71 */
 		case 0x06: mnemonic = "psllw"; break;
 		default: illegal = true;
 	}
-	
+
 	if(illegal == false) {
 		strcpy(state->instrument->mnemonic, mnemonic);
 		state->instrument->flags = I_ALU;
@@ -3714,7 +3714,7 @@ void grp_13(struct disassembly_state *state) { /* opcode 0F72 */
 	if(illegal == false) {
 		strcpy(state->instrument->mnemonic, mnemonic);
 		state->instrument->flags = I_ALU;
-		
+
 		state->addr[0] = ADDR_P;
 		state->addr[1] = ADDR_I;
 
@@ -3760,9 +3760,9 @@ void grp_14(struct disassembly_state *state) { /* opcode 0F73 */
 	// [FV] pslldq solo quando encoding == 7
 	mnemonic = (encoding == 2) ? "psrlq" : (encoding == 3) ? "psrldq" : (encoding == 6) ? "psllq" : "pslldq";
 	strcpy(state->instrument->mnemonic, mnemonic);
-	
+
 	state->instrument->flags = I_ALU;
-	
+
 	if(sse_prefix == 0x66) {
 		state->addr[0] = ADDR_W;
 		state->op[0] = OP_DQ;
@@ -3799,7 +3799,7 @@ void grp_15(struct disassembly_state *state) { /* opcode 0FAE */	// [FV] Non tut
 		}
 	} else {
 		state->addr[0] = ADDR_M;
-		
+
 		switch(encoding) {
 			case 0x00: // fxsave
 				mnemonic = "fxsave";
@@ -3827,7 +3827,7 @@ void grp_15(struct disassembly_state *state) { /* opcode 0FAE */	// [FV] Non tut
 				state->op[0] = OP_B;
 				break;
 		}
-		
+
 		strcpy(state->instrument->mnemonic, mnemonic);
 		// Imposto Addr/Op più probabili
 		// [FV] state->addr[0] = ADDR_M;
@@ -3848,7 +3848,7 @@ void grp_16(struct disassembly_state *state) { /* opcode OF18 */
 		strcpy(state->instrument->mnemonic, "ill_grp_16");
 		return;
 	}
-	
+
 	switch(encoding) {
 		case 0x00: mnemonic = "prefetchnta"; break;
 		case 0x01: mnemonic = "prefetcht0"; break;
@@ -3999,7 +3999,7 @@ void format_addr_a (struct disassembly_state *state, enum addr_method addr,
 	// Questo formato è proprio della jmp far e della call far.
 	// La jmp imposta il flag to_instrument a true, mentre la
 	// call no. Pertanto, soltanto la jmp far sarà intercettata.
-	
+
 	// [FV] state->instrument->is_jmp = true;
 
 	uint16_t segment, short_offset;
@@ -4108,7 +4108,7 @@ void format_addr_e (struct disassembly_state *state, enum addr_method addr,
 	enum reg_size reg_size = REG_SIZE_128;
 
 	rm = state->modrm & 0x07;
-	
+
 	switch(op) {
 		case OP_B: /* 1 */
 			reg_size = REG_SIZE_8;
@@ -4150,11 +4150,11 @@ void format_addr_e (struct disassembly_state *state, enum addr_method addr,
 	if(state->modrm >> 6 == 0x3) { // Specifica un registro
 		/* [FV] Potrebbe sia leggere che scrivere la memoria e, se lo fa, e' soltanto tramite questo operando */
 		state->instrument->flags &= ~(I_MEMWR | I_MEMRD);
-		
+
 		if(!state->read_dest) {
 			// È a registro: non scrive in memoria
 			// [FV] state->instrument->to_memory = false;
-		
+
 			// Nel caso di una jump, potrebbe essere una indirect branch:
 			// salva il valore del registro come fosse un registro di base
 			state->instrument->has_base_register = true;
@@ -4179,7 +4179,7 @@ void format_addr_e (struct disassembly_state *state, enum addr_method addr,
 				; // Qui andrebbe esteso il campo reg
 			}
 		}
-		
+
 		if(state->op[0] == 0x0F && state->op[1] == 0xC4)	// [FV] Eccezione istruzioni PINSRW
 			op = OP_W;
 		format_addr_m(state, addr, op); // passa il riferimento a memoria
@@ -4430,7 +4430,7 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
 			mem_ref = (unsigned long)disp16;
 			printf("--------------- %d\n", mem_ref);
 			// if(!state->read_dest)
-		
+
 			state->instrument->addr = mem_ref;
 
 			return;
@@ -4438,7 +4438,7 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
 
 		// Copia il registro di base
 		// [FV] if(!state->read_dest) {
-		
+
 		state->instrument->has_base_register = true;
 		state->instrument->breg = rm;
 		strcpy(state->instrument->breg_mnem, eff_addr[rm]);
@@ -4446,17 +4446,17 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
 		//Alice
 		// Controlla se si sta accedendo a un indirizzo a partire dallo stack
 		if(rm == 0x2 || rm == 0x3 || rm == 0x6) {
-			
+
 			state->instrument->flags |= I_STACK;
 		}
-		
-		
+
+
 		// [FV] }
 
 		// Se Mod è 01b o 10b allora c'è, rispettivamente, uno spiazzamento di 8 o 16 bit
-		
+
 		// [FV] if(!state->read_dest) {
-		
+
 		if(mod == 0x1)	{
 			memcpy (&disp8, state->text + state->disp_offset, 1);
 			state->instrument->addr = (int16_t)disp8;
@@ -4464,9 +4464,9 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
 			memcpy (&disp16, state->text + state->disp_offset, 2);
 			state->instrument->addr = disp16;
 		}
-		
+
 		// [FV] }
-		
+
 	} else { // Indirizzi a 32 o 64 bit
 		uint8_t disp8;
 		uint32_t disp32;
@@ -4489,15 +4489,15 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
 			if(state->mode64) {
 				state->uses_rip = true;
 			} else {
-			
+
 				memcpy (&disp32, state->text + state->disp_offset, 4);
 
 				// Riferimento in memoria
 				mem_ref = (unsigned long)disp32;
 				printf("--------------- %d\n", mem_ref);
-				
+
 				// [FV] if(!state->read_dest)
-				
+
 				state->instrument->addr = mem_ref;
 			}
 
@@ -4548,17 +4548,17 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
 				no_sib_base = true;
 			else {
 				// [FV] if(!state->read_dest) {
-				
+
 				strcpy(state->instrument->breg_mnem, base_r[base]);
 				state->instrument->breg = base;
 				state->instrument->has_base_register = true;
 
 				//Alice
 				if(base == 0x04) {	// esp
-					
+
 					state->instrument->flags |= I_STACK;
 				}
-				
+
 				// [FV] }
 			}
 
@@ -4567,7 +4567,7 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
 
 				// Controlla la scala
 				// [FV] if(!state->read_dest) {
-				
+
 				switch(ss) {
 					case 1:
 						state->instrument->has_scale = true;
@@ -4581,23 +4581,23 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
 						state->instrument->has_scale = true;
 						state->instrument->scale = 8;
 				}
-				
+
 				// [FV] }
 
 				// Copia il registro indice
 				// [FV] if(!state->read_dest) {
-				
+
 				state->instrument->has_index_register = true;
 				state->instrument->ireg = idx;
 				strcat(state->instrument->ireg_mnem, idx_r[idx]);
-					
+
 				//Alice
 				if(idx == 0x05) {	// ebp
-					
+
 					state->instrument->flags |= I_STACK;
 				}
-				
-				
+
+
 				// [FV] }
 			}
 		} else { // Non c'è SIB
@@ -4610,22 +4610,22 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
 			}
 
 			// [FV] if(!state->read_dest) {
-			
+
 			strcpy(state->instrument->breg_mnem, eff_addr[rm]);
 			state->instrument->breg = rm;
 			state->instrument->has_base_register = true;
-				
+
 			//Alice
 			if(rm == 0x05) {	// ebp
-				
+
 
 				state->instrument->flags |= I_STACK;
 			}
-			
-			
+
+
 			// [FV] }
 		}
-		
+
 		// Se Mod è 01b o 10b allora c'è, rispettivamente, uno spiazzamento
 		// di 8 o 32 bit
 
@@ -4658,7 +4658,7 @@ void format_addr_o (struct disassembly_state *state, enum addr_method addr,
 
 	// Determina la dimensione della scrittura/lettura in memoria
 	// [FV] if(!state->read_dest)
-	
+
 	select_operand_size(state, op);
 
 	switch(state->addr_size) {
@@ -4825,10 +4825,10 @@ void format_addr_w (struct disassembly_state *state, enum addr_method addr,
 		    enum operand_type op) {
 	if(state->modrm >> 6 == 0x3) {
 		char reg = (state->modrm >> 3) & 0x07;
-		
+
 		// [FV] Ne' legge, ne' scrive (da verificare)
 		state->instrument->flags &= ~I_MEMRD & ~I_MEMWR;
-		
+
 		if(state->mode64 && REXR(state->rex))
 			reg |= 0x08;
 	} else {
@@ -5065,7 +5065,7 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 	state.addr_size = A64(flags) || A32(flags) ? SIZE_32 : SIZE_16;
 
 	state.mode64 = D64(flags) ? true : false;
-	
+
 	// [FV] Imposto inizialmente a false il flag "uses_rip"
 	state.uses_rip = false;
 
@@ -5090,7 +5090,7 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 	while(true) {
 		//printf("x86.c_POS: %02x\n", state.text[state.pos]);
 		opcode = state.text[state.pos++]; // Legge l'opcode
-		
+
 		if(!is_prefix(opcode)) break; // I prefissi SSE sono anche prefissi normali (con significato diverso)
 
 		// 66, F2, F3 - Prefissi SSE
@@ -5225,7 +5225,7 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 			state.pos += state.disp_size;
 			break;
 	}
-	
+
 	// [DC] Registra la dimensione dell'opcode, del prefisso, R/M e SIB  delle istruzioni per gestire correttamente
 	// la rilocazione nella fase di emissione del file instrumentato
 	state.instrument->opcode_size = (state.pos - state.orig_pos);
@@ -5265,5 +5265,5 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 
 	state.instrument->insn_size = (state.pos - *pos);
 	*pos = state.pos;
-	
+
 }

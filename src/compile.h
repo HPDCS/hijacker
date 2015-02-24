@@ -84,9 +84,6 @@
   #include <sys/wait.h>
   #include <errno.h>
 
-	//~ if(execlp(QUOTE(COMPILER), QUOTE(COMPILER), what, __VA_ARGS__, (char *)NULL) == -1) {\
-			
-
   /// Compile source with several parameters
   #define compile(what, ...) do {\
 	int status;\

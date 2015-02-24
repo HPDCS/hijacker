@@ -34,7 +34,7 @@ int main(int argc char *argv[]) {
 
 	addr = malloc(sizeof(char));
 	*addr = bar(2);
-	
+
 	printf("Addr contains to %d\n", *addr);
 
 	while(var < 20) {

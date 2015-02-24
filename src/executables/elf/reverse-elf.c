@@ -82,7 +82,7 @@ static void add_call_trampoline (insn_info *target, symbol *reference) {
 void trampoline_prepare (insn_info *target, char *func) {
 	insn_entry entry;
 	symbol *sym;
-	
+
 	// Retrieve information to fill the structure
 	hnotice(4, "Retrieve meta-info about target MOV instruction...\n");
 	get_memwrite_info(target, &entry);
@@ -98,7 +98,7 @@ void trampoline_prepare (insn_info *target, char *func) {
 	// to generate the push instructions and add them to the code
 	hnotice(4, "Push trampoline structure into stack before the target MOV...\n");
 	push_insn_entry(target, &entry);
-	
+
 	// Now, we have either the function symbol to be called and the stack filled up;
 	// the only thing that remains to do is to adds a relocation entry from the last
 	// long-word of the pushed entry towards the new function symbol.

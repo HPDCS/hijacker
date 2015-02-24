@@ -137,7 +137,7 @@ typedef struct _executable {
 extern void add_section(int type, int secndx, void *payload);
 extern section *get_section_type(int type);
 extern void load_program(char *path);
-
+extern void output_object_file(char *pathname, int flags);
 
 #endif /* _EXECUTABLE_H */
 

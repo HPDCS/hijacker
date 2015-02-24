@@ -53,7 +53,7 @@ static void check_executable(char *path) {
 
 static void check_instruction_set(void) {
 	bool recognized = false;
-	
+
 	// Switch on file type
 	switch(PROGRAM(type)) {
 

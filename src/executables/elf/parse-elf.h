@@ -19,7 +19,7 @@
 * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *
 * @file parse-elf.h
-* @brief 
+* @brief
 * @author Davide Cingolani
 * @date May 22, 2014
 */

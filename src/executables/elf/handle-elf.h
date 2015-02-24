@@ -115,9 +115,9 @@ function * clone_function_descriptor (function *original, char *name);
  * Switches to the given executable version. If the version passed is grater than the
  * max version available, than a new executable version to instrument is created from scratch.
  * Note that max 256 versions are currently supported.
- * 
+ *
  * @param version The integer representing the version to switch
- * 
+ *
  * @return An integer representing the current instrumenting version.
  */
 int switch_executable_version (int version);

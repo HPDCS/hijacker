@@ -64,7 +64,7 @@
  * @return The pointer to the descriptor of the newly insterted instruction
  */
 //insn_info * insert_instruction_at (function *func, insn_info *offset, char *bytes, size_t num_bytes, int flag);
-int insert_instruction_at (insn_info *target, char *binary, size_t size, int flag, insn_info **insn);
+int insert_instructions_at(insn_info *target, char *binary, size_t size, int flag, insn_info **insn);
 
 
 /**

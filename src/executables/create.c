@@ -27,6 +27,8 @@
 #include <hijacker.h>
 #include <prints.h>
 
+#include "executable.h"
+
 void output_object_file(char *pathname, int flags) {
 	hprint("Generating the new object file...\n");
 

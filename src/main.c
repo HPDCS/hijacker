@@ -109,7 +109,7 @@ static bool parse_cmd_line(int argc, char **argv) {
 			case 'v':	// verbose
 				if (optarg)
 					config.verbose = atoi(optarg);	// --verbose=level
-				else						
+				else
 					config.verbose++;	// -v , --verbose
 				break;
 
@@ -141,7 +141,7 @@ static bool parse_cmd_line(int argc, char **argv) {
  * Links all the additional modules that can be found in the
  * current working directory.
  */
-static void link_modules() {
+static void link_modules(void) {
 	hnotice(3, "Link additional modules in '%s' to the output instrumented file 'hijacked.o'\n", TEMP_PATH);
 	link("-r", TEMP_PATH"*.o", "-o", config.output);
 	hsuccess();

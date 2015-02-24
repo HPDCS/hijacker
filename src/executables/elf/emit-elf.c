@@ -84,7 +84,7 @@ inline static void check_section_size(section *sec, int span) {
 	if(!sec->ptr) {
 		sec->ptr = sec->payload = malloc(size);
 		hnotice(6, "Allocated %d bytes for section %d\n", size, sec->index);
-		
+
 	} else if ((sec->ptr + span) >= (sec->payload + size)) {
 		sec->ptr = sec->payload = realloc(sec->payload, size *= 2);
 		sec->ptr += offset;		// Replace 'ptr' to the original displacement in the newly allocated block
@@ -1037,7 +1037,7 @@ static void elf_fill_sections() {
 			sym = sym->next;
 			continue;
 		}
-		
+
 		if(!strcmp(sym->relocation.secname, ".text")) {
 			sec = rela_text[sym->version];
 		} else if(!strcmp(sym->relocation.secname, ".rodata")) {
@@ -1052,9 +1052,9 @@ static void elf_fill_sections() {
 
 		hprint("Da applicare una rilocazione di tipo %d al simbolo '%s' +%0lx (offset %0x) nella sezione '%s'\n",
 			sym->relocation.type, sym->name, sym->relocation.addend, sym->relocation.offset, sym->relocation.secname);
-		
+
 		elf_write_reloc(sec, sym, sym->relocation.offset, sym->relocation.addend);
-		
+
 		sym = sym->next;
 	}
 

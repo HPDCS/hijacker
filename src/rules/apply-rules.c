@@ -45,11 +45,10 @@
  * @param tagInject Pointer to the Ibject XML tag descriptor
  */
 static void apply_rule_link (char *filename) {
-	FILE *fp;
 	int len;
 	char *objname;
 	char *path;
-	
+
 	hnotice(2, "Entering Inject scope: compiling and linking module '%s'\n", filename);
 
 	// Note that 'filename' is the assembly source
@@ -58,7 +57,7 @@ static void apply_rule_link (char *filename) {
 
 	// Check if the file really exists and compile the assmbly into the 'bin' file
 	len = strlen(filename);
-	
+
 	objname = (char *) malloc(len * sizeof(char));
 	strcpy(objname, filename);
 	objname[len-1] = 'o';
@@ -67,12 +66,12 @@ static void apply_rule_link (char *filename) {
 	bzero(path, strlen(path));
 	strcpy(path, TEMP_PATH);
 	strcat(path, objname);
-	
+
 	hnotice(6, "Compiling assembly file in '%s'\n", path);
 	if(!file_exists(filename)) {
 		herror(true, "The XML rules file has specified a file that does not exists!\n");
 	}
-	
+
 	// Just compile the given module's source.
 	// The resulting object file will be linked in the final stage.
 	compile(filename, "-c", "-o", path);
@@ -83,7 +82,7 @@ static void apply_rule_link (char *filename) {
  * Retrieve the content from the file name passed as argument and
  * injects its content into the current entity (Function or Instruction),
  * according with the rule's specification.
- * 
+ *
  * @param filename Pointer to the file string name
  */
 static void apply_rule_inject (char *filename, insn_info *target, int where) {
@@ -98,7 +97,7 @@ static void apply_rule_inject (char *filename, insn_info *target, int where) {
 	// therefore it must be firstly translated into
 	// a binary file in order to pass it to disassemble function
 
-	// Compile the assmbly into the 'bin' file
+	// Compile the assembly into the 'bin' file
 	hnotice(6, "Compiling assembly file into binary file 'bin'\n");
 
 	// Check the file actually exists
@@ -118,15 +117,15 @@ static void apply_rule_inject (char *filename, insn_info *target, int where) {
 	rewind(fp);
 
 	// Allocate the memory buffer for the file
-	fcontent = (char *) malloc(sizeof(char) * fsize);
+	fcontent = (char *)malloc(sizeof(char) * fsize);
 	if(!fcontent) {
 		execute("rm", "obj");
 		execute("rm", "bin");
 		herror(true, "Out of memory!\n");
 	}
-	
+
 	// Copy the file into the buffer
-	if(fread(fcontent, 1, fsize, fp) != fsize) {
+	if(fread(fcontent, 1, fsize, fp) != (size_t)fsize) {
 		execute("rm", "obj");
 		execute("rm", "bin");
 		herror(true, "Unable to read the file!\n");
@@ -171,7 +170,7 @@ static void apply_rule_addcall (Call *tagCall, insn_info *target) {
 		// Default value
 		where = INSERT_BEFORE;
 	}
-	
+
 	// Check the AddCall arguments:
 	if(tagCall->arguments) {
 
@@ -232,7 +231,7 @@ static int apply_rule_instruction (Executable *exec, Instruction *tagInstruction
 	hnotice(2, "Entering Instruction scope; searching for instruction of type %d\n", tagInstruction->flags);
 	while(insn) {
 		hnotice(5, "Checking instruction at <%#08lx>\n", insn->new_addr);
-		
+
 		// Check whether the instruction's type match to the rule
 		if (insn->flags & tagInstruction->flags) {
 			// If this is the case, the rules applies.
@@ -248,13 +247,13 @@ static int apply_rule_instruction (Executable *exec, Instruction *tagInstruction
 				// Retrieve the next assembly tag and process it
 				hnotice(2, "Assembly tag met, applying the rule\n");
 				tagAssembly = tagInstruction->assembly[tag];
-			
-			
+
+
 				hnotice(3, "Parse instruction bytes '%s'\n...", tagAssembly->instruction);
 				// TODO: chiamare la funzione parse_insn_bytes()
 				// TODO: chiamare la funzione insert_instruction_at()
 			}
-			
+
 			// Check if the Instruction tag has a Call node
 			if(tagInstruction->call) {
 				tagCall = tagInstruction->call;
@@ -276,10 +275,10 @@ static int apply_rule_instruction (Executable *exec, Instruction *tagInstruction
 				apply_rule_inject(tagInstruction->replace, insn, SUBSTITUTE);
 			}
 		}
-		
+
 		insn = insn->next;
 	}
-	
+
 	if(!count) {
 		hnotice(2, "No instruction that matches the rule is found\n");
 	}
@@ -310,7 +309,7 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
 	count = 0;
 
 	hnotice(2, "Entering Function scope: searching '%s' function", tagFunction->name);
-	
+
 	func = PROGRAM(code);
 	while(func) {
 		// Look for the right function to which to apply the rule
@@ -351,10 +350,10 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
 /**
  * Given a rule, applies it by calling the correspondent function
  */
-void apply_rules() {
+void apply_rules(void) {
 	function *func;
 	insn_info *insn;
-	
+
 	int tag;
 	int version;
 	int instrumented;
@@ -393,7 +392,7 @@ void apply_rules() {
 			hnotice(3, "Looking for the instruction with flags '%s'\n", module);
 			apply_rule_link(module);
 		}
-		
+
 		// Iterates all over the instructions in the Executable XML tag
 		for (tag = 0; tag < exec->nInstructions; tag++) {
 			// Retrive the next instruction tag and process it

@@ -29,6 +29,6 @@
 
 #define TEMP_PATH "./"
 
-void apply_rules();
+void apply_rules(void);
 
 #endif /* _APPLY_RULES_H */

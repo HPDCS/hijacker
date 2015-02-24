@@ -211,7 +211,7 @@ inline int get_rel_section_type(elf_file *elf, unsigned int sec) {
 		rel_type = is_relocation_table(elf, i);
 		if(rel_type != NO_REL) {
 			if(ELF(is64)) {
-				if(ELF(sec_hdr)[i]->section64.sh_info == sec) 
+				if(ELF(sec_hdr)[i]->section64.sh_info == sec)
 					return rel_type;
 			} else {
 				if(ELF(sec_hdr)[i]->section32.sh_info == sec)
@@ -604,10 +604,10 @@ void rename_symbol(elf_file *elf, char *old_name, char *new_name) {
 	// Trova la sezione con i simboli
 	for(i = 0; i < ELF(secnum); i++) {
 		if(ELF(is64)) {
-			if(ELF(sec_hdr)[i]->section64.sh_type == SHT_STRTAB) 
+			if(ELF(sec_hdr)[i]->section64.sh_type == SHT_STRTAB)
 				limite = ELF(sec_hdr)[i]->section64.sh_size;
 		} else {
-			if(ELF(sec_hdr)[i]->section32.sh_type == SHT_STRTAB) 
+			if(ELF(sec_hdr)[i]->section32.sh_type == SHT_STRTAB)
 				limite = (int)ELF(sec_hdr)[i]->section32.sh_size;
 		}
 
@@ -678,7 +678,7 @@ int num_functions_to_rename(elf_file *elf) {
 
 		if(ELF(is64)) {
 			if(ELF64_ST_TYPE(sym64->st_info) == STT_FUNC) {
-				if(ELF64_ST_TYPE(sym64->st_shndx) != SHN_UNDEF) 
+				if(ELF64_ST_TYPE(sym64->st_shndx) != SHN_UNDEF)
 					count++;
 			}
 
@@ -686,7 +686,7 @@ int num_functions_to_rename(elf_file *elf) {
 			pos += sizeof(Elf64_Sym);
 		} else {
 			if(ELF32_ST_TYPE(sym32->st_info) == STT_FUNC) {
-				if(ELF32_ST_TYPE(sym32->st_shndx) != SHN_UNDEF) 
+				if(ELF32_ST_TYPE(sym32->st_shndx) != SHN_UNDEF)
 					count++;
 			}
 
@@ -750,7 +750,7 @@ unsigned int *functions_indices(elf_file *elf, int *num_renames, int length) {
 			pos += sizeof(Elf64_Sym);
 		} else {
 			if(ELF32_ST_TYPE(sym32->st_info) == STT_FUNC) {
-				if(ELF32_ST_TYPE(sym32->st_shndx) != SHN_UNDEF) { 
+				if(ELF32_ST_TYPE(sym32->st_shndx) != SHN_UNDEF) {
 					indices[index++] = sym32->st_name;
 					to_rename++;
 				}
@@ -846,10 +846,10 @@ void rename_def_functions(elf_file *elf) {
 	for(i = 0; i < ELF(secnum); i++) {
 		limite = -1;
 		if(ELF(is64)) {
-			if(ELF(sec_hdr)[i]->section64.sh_type == SHT_STRTAB) 
+			if(ELF(sec_hdr)[i]->section64.sh_type == SHT_STRTAB)
 				limite = ELF(sec_hdr)[i]->section64.sh_size;
 		} else {
-			if(ELF(sec_hdr)[i]->section32.sh_type == SHT_STRTAB) 
+			if(ELF(sec_hdr)[i]->section32.sh_type == SHT_STRTAB)
 				limite = ELF(sec_hdr)[i]->section32.sh_size;
 		}
 
@@ -904,12 +904,12 @@ void rename_def_functions(elf_file *elf) {
 		if (strlen(current_strtab) == 0) {
 			current_strtab += 1;
 			pos++;
-			continue;	
+			continue;
 		}
 		printf("%s\n", current_strtab);
 		pos += strlen(current_strtab) + 1;
 		current_strtab += strlen(current_strtab) + 1;
-	} 
+	}
 	 */
 	increment_section_size(elf, i, addition * string_length);
 
@@ -1166,7 +1166,7 @@ unsigned long find_symbol(elf_file *elf, char* name, int occurrences) {
 	Elf64_Sym *sym64_tab;
 	Elf32_Sym *sym32_tab;
 
-	Elf32_Addr addr32;	
+	Elf32_Addr addr32;
 	Elf64_Addr addr64;
 
 
@@ -1806,7 +1806,7 @@ void link_jump_instruction(function *func) {
 	// For each instruction, look for jump ones
 	insn = func->insn;
 	while(insn) {
-		
+
 		if(IS_JUMP(insn)) {
 
 			// Provided a jump instruction, look for the destination address
@@ -1852,18 +1852,18 @@ void link_jump_instruction(function *func) {
 			}
 
 			if(jmp_addr != 0) {
-				
+
 				// Call to local function detected. The format is the same as a jump
 				// XXX: credo che fosse scorretto nel caso delle funzioni locali, infatti non trovava la funzione
 				//~ jmp_addr += insn->orig_addr + insn->size;
 				jmp_addr = insn->orig_addr + insn->i.x86.insn_size + insn->i.x86.jump_dest;
-				
+
 				// look for the relative function called
 				callee = functions;
 				while(callee) {
-					
+
 					printf("%#08x, ", callee->orig_addr);
-					
+
 					if(callee->orig_addr == jmp_addr)
 						break;
 
@@ -2141,7 +2141,7 @@ static void resolve_relocation(){
 				// If the section's flags are not EXEC_INSTR, then this means that
 				// the relocation does not apply to an instruction but to another symbol;
 				// e.g. a SECTION symbol, in case of generic references (.data, .bss, .rodata)
-				
+
 				// If we are here, the relocation is SECTION->SECTION, otherwise
 				// an instruction would be found in the previous branch.
 
@@ -2153,7 +2153,7 @@ static void resolve_relocation(){
 				sym_2->relocation.offset = rel->offset;
 				sym_2->relocation.type = rel->type;
 				sym_2->relocation.secname = sec->name;
-				
+
 
 				hnotice(2, "Added symbol reference to <%#08lx> + %d\n", rel->offset, rel->addend);
 			}

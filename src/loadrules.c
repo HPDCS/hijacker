@@ -37,8 +37,8 @@
 #include <prints.h>
 
 /// Generate spacing to indent the output
-#define SPACES(level) 	{int i;\
-			for(i = 0; i < level; i++) {\
+#define SPACES(level) 	{int __i;\
+			for(__i = 0; __i < level; __i++) {\
 					hnotice(3, "---");\
 			}\
 			}
@@ -77,7 +77,7 @@ static void traverseTree(Executable *e) {
 	int i;
 
 	hnotice(3, "--Entry Point: '%s'\n", e->entryPoint);
-	
+
 	for(i = 0; i < e->nInjects; i++) {
 		hnotice(3, "--Inject File: '%s'\n", e->injectFiles[i]);
 	}
@@ -170,7 +170,7 @@ static xmlChar *parseInject(/*xmlDocPtr doc, xmlNsPtr ns, */xmlNodePtr cur) {
 
 	// Get the file's name string
 	if (cur != NULL) {
-		
+
 		curFile = xmlGetProp(cur, (const xmlChar *)"file");
 	}
 
@@ -191,7 +191,7 @@ static unsigned int parseInstructionFlags(xmlChar *str) {
 
 	// Tokenize the string
 	curSource = source;
-	
+
 
 	while((token = strtok(curSource, "| ")) != NULL) { // space is there to make the parser ignore them
 
@@ -216,7 +216,7 @@ static unsigned int parseInstructionFlags(xmlChar *str) {
 		CHECK_SET_FLAG(STACK);
 		CHECK_SET_FLAG(JUMPIND);
 	}
-	
+
 
 	// Free the copy
 	free(source);
@@ -334,7 +334,7 @@ static Function *parseFunction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr cur) {
 
 
 static int parseExecutable(char *filename, Executable ***rules) {
-	
+
 	int nExecutables = 0;
 
 	xmlDocPtr doc;
@@ -397,7 +397,7 @@ static int parseExecutable(char *filename, Executable ***rules) {
 	// First level we expect just Executables
 	execNode = cur->xmlChildrenNode;
 	while(execNode) {
-			
+
 		while (execNode && xmlIsBlankNode(cur)) {
 			execNode = execNode->next;
 		}
@@ -418,7 +418,7 @@ static int parseExecutable(char *filename, Executable ***rules) {
 		// Get and store the executable's attributes, if any
 		exec->entryPoint = xmlGetProp(execNode, (const xmlChar *)"entryPoint");
 		exec->suffix = xmlGetProp(execNode, (const xmlChar *)"suffix");
-		if(!strcmp(exec->suffix, "")) {
+		if(!strcmp((const char *)exec->suffix, "")) {
 			herror(true, "Suffix cannot be empty\n");
 		}
 
@@ -453,7 +453,7 @@ static int parseExecutable(char *filename, Executable ***rules) {
 
 			cur = cur->next;
 		}
-		
+
 		execNode = execNode->next;
 	}
 
@@ -466,7 +466,7 @@ static int parseExecutable(char *filename, Executable ***rules) {
 	//	xmlFreeDoc(doc);
 		return -1;
 	}
-	
+
 	// nExecutables is used as offset so far
 	return nExecutables;
 }
@@ -475,8 +475,8 @@ static int parseExecutable(char *filename, Executable ***rules) {
 
 int parseRuleFile(char *f, Executable ***rules) {
 	int size;
-	register unsigned int i;
-	
+	register int i;
+
 	// Early check on file existence to avoid ugly error messages
 	if(!file_exists(f)) {
 		return -1;

@@ -101,7 +101,7 @@ void reverse_trampoline () {
 
 				insn = insn->next;
 			}
-			
+
 		func = func->next;
 	}
 

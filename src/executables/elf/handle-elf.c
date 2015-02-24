@@ -52,64 +52,64 @@ int function_size (function *func) {
 
 symbol * find_symbol (char *name) {
 	symbol *sym;
-	
+
 	sym = PROGRAM(symbols);
 	while(sym) {
 		if(!strcmp(sym->name, name))
 			return sym;
 		sym = sym->next;
 	}
-	
+
 	return NULL;
 }
 
 void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type) {
 	symbol *ref;		// a new relocation entry is a duplicate of the referenced symbol;
 	long addend;
-	
+
 	hnotice(3, "Adding a RELA node to '%s'\n", sym->name);
-	
+
 	switch(type) {
 		case RELOCATE_RELATIVE_32:
 		case RELOCATE_RELATIVE_64:
 			addend = (long)insn->opcode_size - (long)insn->size;	// consider that the addend is backward and -(a - b) == (b - a)
 			break;
-		
+
 		case RELOCATE_ABSOLUTE_32:
 		case RELOCATE_ABSOLUTE_64:
 			addend = 0;
 			break;
 	}
-	
+
 	switch(type) {
 		case RELOCATE_RELATIVE_32:
 			type = R_X86_64_PC32;
 			break;
-		
+
 		case RELOCATE_RELATIVE_64:
 			type = R_X86_64_PC64;
 			break;
-		
+
 		case RELOCATE_ABSOLUTE_32:
 			type = R_X86_64_32;
 			break;
-		
+
 		case RELOCATE_ABSOLUTE_64:
 			type = R_X86_64_64;
 			break;
-		
+
 		default:
 			type = R_X86_64_PC32;
 	}
-	
-	// Check if the symbol is already been referenced,
-	// if this is the case, it returns a duplicate
+
+	// Check if the symbol has already been referenced.
+	// If this is the case, it returns a duplicate
 	ref = symbol_check_shared(sym);
 	ref->referenced = 1;
 	ref->relocation.addend = addend;
 	ref->relocation.type = type;
 	ref->relocation.secname = ".text";
-	
+
 	insn->reference = ref;
 
 	hnotice(3, "New RELA node has been created from symbol '%s' %+d to the instruction at address <%#08lx>\n",
@@ -128,7 +128,7 @@ void create_rela_node (symbol *sym, long long offset, long addend, char *secname
 			case SYMBOL_SECTION:
 				type = R_X86_64_32;
 				break;
-			
+
 			default:
 				type = R_X86_64_PC32;
 		}
@@ -166,9 +166,9 @@ void add_data_to_section (symbol *sym, void *data, size_t size) {
 	if(sym->type != SYMBOL_SECTION) {
 		hinternal();
 	}
-	
+
 	hprint("Actually adding data to sections is not yet enabled\n");
-	
+
 	/*data = PROGRAM(rawdata);
 	if(!data) {
 		data = (void *) malloc(sizeof(size));
@@ -312,6 +312,8 @@ static insn_info * clone_instruction (insn_info *insn) {
 	memcpy(clone, insn, sizeof(insn_info));
 
 	clone->jumpto = NULL;
+
+	return clone;
 }
 
 
@@ -383,7 +385,7 @@ static symbol * clone_symbol_list (symbol *sym) {
 		sym = sym->next;
 	}
 	//=======================================//
-	
+
 	return head;
 }
 
@@ -410,7 +412,7 @@ static function * clone_function (function *func, char *suffix) {
 	clone->insn = clone_instruction_list(func->insn);
 
 	// Updates the symbol pointer (assume that symbols have been already be cloned)
-	size = strlen(func->name) + strlen(suffix);
+	size = strlen(func->name) + strlen(suffix) + 2; // one is \0, one is '_'
 	name = (char *) malloc(sizeof(char) * size);
 	bzero(name, size);
 	strcpy(name, func->name);
@@ -465,7 +467,7 @@ static function * clone_function_list (function *func, char *suffix) {
 			insn = insn->next;
 		}
 		printf("\n");
-		
+
 		func = func->next;
 	}
 	//=======================================//
@@ -484,14 +486,14 @@ function * clone_function_descriptor (function *original, char *name) {
 	hnotice(3, "Clone function '%s' into '%s' (version %d)\n", original->name, name, PROGRAM(version));
 
 	return clone;
-} 
+}
 
 
 int switch_executable_version (int version) {
 	function *func, *code;
 
 	PROGRAM(version) = version;
-	
+
 	// Checks whether the version is already present in the list
 	// otherwise it creates a new one by cloning symbols and code
 	if(!PROGRAM(v_code)[version]) {
@@ -516,7 +518,7 @@ int switch_executable_version (int version) {
 	}
 
 	PROGRAM(code) = PROGRAM(v_code)[version];
-	
+
 	hnotice(2, "Switched to version %d\n", version);
 
 	return PROGRAM(version);

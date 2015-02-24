@@ -61,11 +61,10 @@ void push_x86_insn_entry (insn_info *insn, insn_entry *entry) {
 	int num;
 	int idx;
 	int value;
-	char *binary;
 
 	size = sizeof(insn_entry);	// size of the structure
 	num = size / 4;				// number of the mov instructions needed to copy all the struture fields
-	
+
 	// Creates bytes array of the main instructions needed to manage
 	// the stack in order to save trampoline's structure
 	char sub[4] = {0x48, 0x83, 0xec, (char) size};
@@ -101,7 +100,7 @@ insn_info * insert_x86_call_instruction (insn_info *target) {
 	insn_info *call_insn;
 	char call[5] = {0xe8, 0x00, 0x00, 0x00, 0x00};
 	char add[4] = {0x48, 0x83, 0xc4, (char)sizeof(insn_entry)};
-	
+
 	// add the call instruction in the original code to the module
 	insert_instructions_at(target, call, sizeof(call), INSERT_BEFORE, &call_insn);
 
