@@ -22,3 +22,6 @@ core/core.o:
 
 clean:
 	find . -name "*.o" -exec rm {} \;
+
+dump: app
+	objdump -d model/pcs.o | less

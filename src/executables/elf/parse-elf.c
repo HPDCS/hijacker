@@ -1580,6 +1580,11 @@ static void elf_symbol_section(int sec) {
 			sym->extra_flags = symbol_info(s, st_info);
 			sym->secnum = symbol_info(s, st_shndx);
 			sym->index = sym_count;
+
+			// XXX: "initial" was intended here as the initial value, but st_value refers to the position of the instruction.
+			// This was breaking the generation of references in case of local calls.
+			// I don't know if it is safe to remove the "initial" field anyhow
+			sym->position = symbol_info(s, st_value);
 			sym->initial = symbol_info(s, st_value);
 			sym->bind = bind;
 
@@ -1863,18 +1868,19 @@ void link_jump_instruction(function *func) {
 
 			if(jmp_addr != 0) {
 				
-				printf("jump dest: %#08x \n", jmp_addr);
+				// Call to local function detected. The format is the same as a jump
+				//~ jmp_addr += insn->orig_addr + insn->size;
+				jmp_addr = insn->orig_addr + insn->i.x86.insn_size + insn->i.x86.jump_dest;
 				
-				// call to local function detected
-				jmp_addr += insn->orig_addr + insn->size;
+				printf("call dest: %#08x \n", jmp_addr);
 
 				// look for the relative function called
 				callee = functions;
 				while(callee) {
 					
-					printf("%#08x, ", callee->insn->orig_addr);
+					printf("%#08x, ", callee->orig_addr);
 					
-					if(callee->insn->orig_addr == jmp_addr)
+					if(callee->orig_addr == jmp_addr)
 						break;
 
 					callee = callee->next;
