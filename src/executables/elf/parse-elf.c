@@ -1,4 +1,29 @@
-/* started on 19/09/2008 */
+/**
+*                       Copyright (C) 2008-2015 HPDCS Group
+*                       http://www.dis.uniroma1.it/~hpdcs
+*
+*
+* This file is part of the Hijacker static binary instrumentation tool.
+*
+* Hijacker is free software; you can redistribute it and/or modify it under the
+* terms of the GNU General Public License as published by the Free Software
+* Foundation; either version 3 of the License, or (at your option) any later
+* version.
+*
+* Hijacker is distributed in the hope that it will be useful, but WITHOUT ANY
+* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+* A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License along with
+* hijacker; if not, write to the Free Software Foundation, Inc.,
+* 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+*
+* @file parse-elf.c
+* @brief Transforms an ELF object file in the hijacker's intermediate representation
+* @author Alessandro Pellegrini
+* @author Davide Cingolani
+* @date September 19, 2008
+*/
 
 #include <unistd.h>
 #include <stdio.h>
@@ -1782,8 +1807,6 @@ void link_jump_instruction(function *func) {
 	insn = func->insn;
 	while(insn) {
 		
-		printf("insn at %p\n", insn->orig_addr);
-		
 		if(IS_JUMP(insn)) {
 
 			// Provided a jump instruction, look for the destination address
@@ -1831,11 +1854,10 @@ void link_jump_instruction(function *func) {
 			if(jmp_addr != 0) {
 				
 				// Call to local function detected. The format is the same as a jump
+				// XXX: credo che fosse scorretto nel caso delle funzioni locali, infatti non trovava la funzione
 				//~ jmp_addr += insn->orig_addr + insn->size;
 				jmp_addr = insn->orig_addr + insn->i.x86.insn_size + insn->i.x86.jump_dest;
 				
-				printf("call dest: %#08x \n", jmp_addr);
-
 				// look for the relative function called
 				callee = functions;
 				while(callee) {

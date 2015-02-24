@@ -1,105 +1,29 @@
-#if 0
+/**
+*                       Copyright (C) 2008-2015 HPDCS Group
+*                       http://www.dis.uniroma1.it/~hpdcs
+*
+*
+* This file is part of the Hijacker static binary instrumentation tool.
+*
+* Hijacker is free software; you can redistribute it and/or modify it under the
+* terms of the GNU General Public License as published by the Free Software
+* Foundation; either version 3 of the License, or (at your option) any later
+* version.
+*
+* Hijacker is distributed in the hope that it will be useful, but WITHOUT ANY
+* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+* A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License along with
+* hijacker; if not, write to the Free Software Foundation, Inc.,
+* 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+*
+* @file emit-elf.c
+* @brief Code to generate an ELF file from the Intermediate Representation
+* @author Davide Cingolani
+* @date May 20, 2014
+*/
 
-#include <err.h>
-#include <fcntl.h>
-#include <libelf.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sysexits.h>
-#include <unistd.h>
-
-#define LOADADDR    0x08048000
-
-unsigned char code[] = {
-		0xBB, 0x2A, 0x00, 0x00, 0x00, /* movl $42, %ebx */
-		0xB8, 0x01, 0x00, 0x00, 0x00, /* movl $1, %eax */
-		0xCD, 0x80 /* int $0x80 */
-};
-
-unsigned char strtab_ptr[] = {
-		0, '.', 't', 'e', 'x', 't', 0,
-		'.', 's', 'h', 's', 't', 'r', 't', 'a', 'b', 0
-};
-
-int main(int argc, char *argv[]) {
-	int fd;
-	Elf *e;
-	Elf_Scn *scn;
-	Elf_Data *data;
-	Elf64_Ehdr *ehdr;
-	Elf64_Phdr *phdr;
-	Elf64_Shdr *shdr;
-	if (argc != 2)
-		errx(EX_USAGE, "input... ./%s filename\n", argv[0]);
-	if (elf_version(EV_CURRENT) == EV_NONE)
-		errx(EX_SOFTWARE, "elf_version is ev_none, wtf? %s\n",
-				elf_errmsg(-1));
-	if ((fd = open(argv[1], O_WRONLY | O_CREAT, 0777)) < 0)
-		errx(EX_OSERR, "open %s\n", elf_errmsg(-1));
-	if ((e = elf_begin(fd, ELF_C_WRITE, NULL)) == NULL)
-		errx(EX_SOFTWARE, "elf_begin %s\n", elf_errmsg(-1));
-	if ((ehdr = elf64_newehdr(e)) == NULL)
-		errx(EX_SOFTWARE, "elf64_newehdr %s\n", elf_errmsg(-1));
-	/*
-	 without these definitions objdump/readelf/strace/elf loader
-	 will fail to load the binary correctly
-	 be sure to pick them carefully and correctly, preferred exactly like the
-	 ones like the system you are running on (so if you are running x86,
-	 pick the same values you seen on a regular readelf -a /bin/ls
-	 */
-	size_t ehdrsz, phdrsz;
-
-	ehdrsz = elf64_fsize(ELF_T_EHDR, 1, EV_CURRENT);
-	phdrsz = elf64_fsize(ELF_T_PHDR, 1, EV_CURRENT);
-
-	ehdr->e_ident[EI_DATA] = ELFDATA2LSB;
-	ehdr->e_ident[EI_CLASS] = ELFCLASS64;
-	ehdr->e_machine = EM_386;
-	ehdr->e_type = ET_EXEC;
-	ehdr->e_entry = LOADADDR + ehdrsz + phdrsz;
-
-	if ((phdr = elf64_newphdr(e, 1)) == NULL)
-		errx(EX_SOFTWARE, "elf64_newphdr %s\n", elf_errmsg(-1));
-	if ((scn = elf_newscn(e)) == NULL)
-		errx(EX_SOFTWARE, "elf64_newscn %s\n", elf_errmsg(-1));
-
-	if ((data = elf_newdata(scn)) == NULL)
-		errx(EX_SOFTWARE, "elf64_newdata %s\n", elf_errmsg(-1));
-
-	data->d_align = 1;
-	data->d_off = 0LL;
-	data->d_buf = code;
-	data->d_type = ELF_T_BYTE;
-	data->d_size = sizeof(code);
-	data->d_version = EV_CURRENT;
-	if ((shdr = elf64_getshdr(scn)) == NULL)
-		errx(EX_SOFTWARE,"elf64_getshdr %s\n", elf_errmsg(-1));
-
-	shdr->sh_name = 1; /* Offset of ".text", see below. */
-	shdr->sh_type = SHT_PROGBITS;
-	shdr->sh_flags = SHF_EXECINSTR | SHF_ALLOC;
-	shdr->sh_addr = LOADADDR + ehdrsz + phdrsz;
-	if ((phdr = elf64_newphdr(e,1)) == NULL)
-		errx(EX_SOFTWARE,"elf64_newphdr %s\n", elf_errmsg(-1));
-
-	phdr->p_type = PT_LOAD;
-	phdr->p_offset = 0;
-	phdr->p_filesz = ehdrsz + phdrsz + sizeof(code);
-	phdr->p_memsz = phdr->p_filesz;
-	phdr->p_vaddr = LOADADDR;
-	phdr->p_paddr = phdr->p_vaddr;
-	phdr->p_align = 4;
-	phdr->p_flags = PF_X | PF_R;
-	elf_flagphdr(e, ELF_C_SET, ELF_F_DIRTY);
-	if (elf_update(e, ELF_C_WRITE) < 0)
-		errx(EX_SOFTWARE, "elf64_update_2 %s\n", elf_errmsg(-1));
-
-	elf_end(e);
-	close(fd);
-	return 1;
-}
-
-#endif /* 0 */
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>

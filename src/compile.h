@@ -1,14 +1,38 @@
+/**
+*                       Copyright (C) 2008-2015 HPDCS Group
+*                       http://www.dis.uniroma1.it/~hpdcs
+*
+*
+* This file is part of the Hijacker static binary instrumentation tool.
+*
+* Hijacker is free software; you can redistribute it and/or modify it under the
+* terms of the GNU General Public License as published by the Free Software
+* Foundation; either version 3 of the License, or (at your option) any later
+* version.
+*
+* Hijacker is distributed in the hope that it will be useful, but WITHOUT ANY
+* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+* A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License along with
+* hijacker; if not, write to the Free Software Foundation, Inc.,
+* 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+*
+* @file compile.h
+* @brief Compile and Link macros
+* @author Alessandro Pellegrini
+*/
+
 #pragma once
 #ifndef _COMPILE_H
 #define _COMPILE_H
 
-
 #include <prints.h>
 
 
-
+// TODO: move to autotools
 #ifndef COMPILER
-/// What shhall we launch for compiling code?
+/// What shall we launch for compiling code?
 #define COMPILER "gcc"
 #endif
 
@@ -17,12 +41,12 @@
 #endif
 
 
-// We must surround the compiler's name with quotes!
+/// We must surround the compiler's name with quotes!
 #define Q(x) #x
 #define QUOTE(x) Q(x)
 
 
-// Determine which support we have for launching a program
+/// Determine which support we have for launching a program
 #if defined(WIN32) || defined(WIN64)
 
 
@@ -116,8 +140,4 @@
 
 #endif
 
-
-//compile(prova)
-
 #endif /* _COMPILE_H */
-
