@@ -52,7 +52,6 @@ typedef struct _function {
 	unsigned long long	new_addr;
 	insn_info		*insn;
 	symbol 			*symbol;	// [DC] Added reference to the relative symbol
-	Function		**passed;
 	struct _function *next;
 } function;
 

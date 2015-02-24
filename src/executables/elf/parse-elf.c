@@ -1803,17 +1803,20 @@ static void split_function(symbol *sym, function *func) {
  * @param func A pointer to a valid function's descriptors
  */
 void link_jump_instruction(function *func) {
-	insn_info *insn;				// Current instruction
-	insn_info *dest;				// Destination one
-	function *callee;				// Callee function
-	symbol *sym;					// Callee function's symbol
-	long long jmp_addr;				// Jump address
+	insn_info *insn;	// Current instruction
+	insn_info *dest;	// Destination one
+	function *callee;	// Callee function
+	symbol *sym;		// Callee function's symbol
+	long long jmp_addr;	// Jump address
 
 	hnotice(1, "Link jump and call instructions of all functions:\n");
 
 	// For each instruction, look for jump ones
 	insn = func->insn;
 	while(insn) {
+		
+		printf("insn at %p\n", insn->orig_addr);
+		
 		if(IS_JUMP(insn)) {
 
 			// Provided a jump instruction, look for the destination address
@@ -1844,6 +1847,7 @@ void link_jump_instruction(function *func) {
 			hnotice(2, "Jump instruction at <%#08lx> linked to instruction at <%#08lx>\n",
 					insn->orig_addr, dest->orig_addr);
 
+
 		// a CALL could be seen as a JUMP and could help in handling the embedded offset to local functions
 		} else if(IS_CALL(insn)) {
 			// must create the reference only if the 4-bytes offset is not null
@@ -1858,6 +1862,9 @@ void link_jump_instruction(function *func) {
 			}
 
 			if(jmp_addr != 0) {
+				
+				printf("jump dest: %#08x \n", jmp_addr);
+				
 				// call to local function detected
 				jmp_addr += insn->orig_addr + insn->size;
 
@@ -1865,9 +1872,9 @@ void link_jump_instruction(function *func) {
 				callee = functions;
 				while(callee) {
 					
-					printf("%p, ", callee->orig_addr);
+					printf("%#08x, ", callee->insn->orig_addr);
 					
-					if(callee->orig_addr == jmp_addr)
+					if(callee->insn->orig_addr == jmp_addr)
 						break;
 
 					callee = callee->next;
@@ -1884,7 +1891,7 @@ void link_jump_instruction(function *func) {
 				// address of the relocation. In such a way we threat local function calls as relocation enties.
 				sym = callee->symbol;
 
-				// The instruction object will be binded to the proper symbol
+				// The instruction object will be bound to the proper symbol
 				instruction_rela_node(sym, insn, RELOCATE_RELATIVE_32);
 
 				// CALL instruction embedded offset must be reinitialize to zero
