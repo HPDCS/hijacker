@@ -15,14 +15,6 @@ void output_object_file(char *pathname, int flags) {
 		elf_generate_file(pathname, flags);
 		break;
 
-	case EXECUTABLE_COFF:
-
-		break;
-
-	case EXECUTABLE_PE:
-
-		break;
-
 	default:
 		hinternal();
 	}

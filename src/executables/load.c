@@ -19,16 +19,6 @@ static void check_executable(char *path) {
 		return;
 	}
 
-	if(is_coff(path)) {
-		PROGRAM(type) = EXECUTABLE_COFF;
-		return;
-	}
-
-	if(is_pe(path)) {
-		PROGRAM(type) = EXECUTABLE_PE;
-		return;
-	}
-
 	// Too bad...
 	herror(true, "Unrecognized executable format for '%s'\n", path);
 }
@@ -44,22 +34,6 @@ static void check_instruction_set(void) {
 		case EXECUTABLE_ELF:
 
 			PROGRAM(insn_set) = elf_instruction_set();
-			if(PROGRAM(insn_set) != UNRECOG_INSN) {
-				recognized = true;
-			}
-			break;
-
-		case EXECUTABLE_COFF:
-
-			PROGRAM(insn_set) = coff_instruction_set();
-			if(PROGRAM(insn_set) != UNRECOG_INSN) {
-				recognized = true;
-			}
-			break;
-
-		case EXECUTABLE_PE:
-
-			PROGRAM(insn_set) = pe_instruction_set();
 			if(PROGRAM(insn_set) != UNRECOG_INSN) {
 				recognized = true;
 			}
@@ -85,16 +59,6 @@ static void create_map() {
 		case EXECUTABLE_ELF:
 
 			elf_create_map();
-			break;
-
-		case EXECUTABLE_COFF:
-
-			coff_create_map();
-			break;
-
-		case EXECUTABLE_PE:
-
-			pe_create_map();
 			break;
 
 		default:

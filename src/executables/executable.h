@@ -3,8 +3,6 @@
 #define _EXECUTABLE_H
 
 #include <elf/elf-defs.h>
-#include <coff/coff-defs.h>
-#include <pe/pe-defs.h>
 
 #include <instruction.h>
 #include <rules.h>
@@ -84,12 +82,7 @@ typedef struct _section {
 	struct _section	*next;
 } section;
 
-
-
-
 #define EXECUTABLE_ELF	1
-#define EXECUTABLE_PE	2
-#define EXECUTABLE_COFF	3
 
 #define MAX_VERSIONS	256
 
@@ -98,8 +91,6 @@ typedef struct _executable {
 	int insn_set;
 	union {
 		elf_file	elf;
-		coff_file	coff;
-		pe_file		pe;
 	} e;
 	symbol		*orig_syms;
 	function	*v_code[MAX_VERSIONS];

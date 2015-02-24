@@ -2,13 +2,6 @@
 #ifndef _INSTRUCTIONS_H
 #define _INSTRUCTIONS_H
 
-
-#include <alpha/instruction.h>
-#include <arm/instruction.h>
-#include <ia_64/instruction.h>
-#include <mips/instruction.h>
-#include <powerpc/instruction.h>
-#include <sparc/instruction.h>
 #include <x86/instruction.h>
 
 #include <executable.h>
@@ -75,12 +68,6 @@
 
 // Arch-Dependent Instruction Sets
 #define UNRECOG_INSN	0
-#define ALPHA_INSN	1
-#define ARM_INSN	2
-#define IA_64_INSN	3
-#define MIPS_INSN	4
-#define POWERPC_INSN	5
-#define SPARC_INSN	6
 #define X86_INSN	7
 
 
@@ -91,12 +78,6 @@ typedef struct instruction {
 	unsigned int		size;
 	unsigned int		opcode_size;	// [DC] To keep trace of the opcode size
 	union {
-		insn_info_alpha		alpha;
-		insn_info_arm		arm;
-		insn_info_ia_64		ia_64;
-		insn_info_mips		mips;
-		insn_info_powerpc	powerpc;
-		insn_info_sparc		sparc;
 		insn_info_x86		x86;
 	} i;
 	//void *reference;			// May represent a reference to either a relocation symbol or an instruction (jump)

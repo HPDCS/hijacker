@@ -1433,68 +1433,30 @@ static void elf_code_section(int sec) {
 	// Decode instructions and build functions map
 	while(pos < size) {
 
-		//bzero(curr, sizeof(insn_info));
-
 		switch(PROGRAM(insn_set)) {
 
-		case ALPHA_INSN:
-			hnotice(1, "Unsupported instruction set\n");
-			hfail();
-			return;
-			break;
+			case X86_INSN:
+				x86_disassemble_instruction(sec_content(sec), &pos, &curr->i.x86, flags);
+				hnotice(2, "%#08lx: %s (%d)\n", curr->i.x86.initial, curr->i.x86.mnemonic, curr->i.x86.opcode_size);
 
-		case ARM_INSN:
-			hnotice(1, "Unsupported instruction set\n");
-			hfail();
-			return;
-			break;
-
-		case IA_64_INSN:
-			hnotice(1, "Unsupported instruction set\n");
-			hfail();
-			return;
-			break;
-
-		case MIPS_INSN:
-			hnotice(1, "Unsupported instruction set\n");
-			hfail();
-			return;
-			break;
-
-		case POWERPC_INSN:
-			hnotice(1, "Unsupported instruction set\n");
-			hfail();
-			return;
-			break;
-
-		case SPARC_INSN:
-			hnotice(1, "Unsupported instruction set\n");
-			hfail();
-			return;
-			break;
-
-		case X86_INSN:
-			x86_disassemble_instruction(sec_content(sec), &pos, &curr->i.x86, flags);
-			hnotice(2, "%#08lx: %s (%d)\n", curr->i.x86.initial, curr->i.x86.mnemonic, curr->i.x86.opcode_size);
-
-			// Make flags arch-independent
-			curr->flags = curr->i.x86.flags;
-			curr->new_addr = curr->orig_addr = curr->i.x86.initial;
-			curr->size = curr->i.x86.insn_size;
-			curr->opcode_size = curr->i.x86.opcode_size;
+				// Make flags arch-independent
+				curr->flags = curr->i.x86.flags;
+				curr->new_addr = curr->orig_addr = curr->i.x86.initial;
+				curr->size = curr->i.x86.insn_size;
+				curr->opcode_size = curr->i.x86.opcode_size;
 
 
-			//TODO: debug
-			/*hprint("ISTRUZIONE:: '%s' -> opcode = %hhx%hhx, opsize = %d, insn_size = %d; breg = %x, "
-					"ireg = %x; disp_offset = %lx, jump_dest = %lx, scale = %lx, span = %lx\n",
-					curr->i.x86.mnemonic, curr->i.x86.opcode[1], curr->i.x86.opcode[0], curr->i.x86.opcode_size, curr->i.x86.insn_size,
-					curr->i.x86.breg, curr->i.x86.ireg, curr->i.x86.disp_offset, curr->i.x86.jump_dest,
-					curr->i.x86.scale, curr->i.x86.span);*/
+				//TODO: debug
+				/*hprint("ISTRUZIONE:: '%s' -> opcode = %hhx%hhx, opsize = %d, insn_size = %d; breg = %x, "
+						"ireg = %x; disp_offset = %lx, jump_dest = %lx, scale = %lx, span = %lx\n",
+						curr->i.x86.mnemonic, curr->i.x86.opcode[1], curr->i.x86.opcode[0], curr->i.x86.opcode_size, curr->i.x86.insn_size,
+						curr->i.x86.breg, curr->i.x86.ireg, curr->i.x86.disp_offset, curr->i.x86.jump_dest,
+						curr->i.x86.scale, curr->i.x86.span);*/
 
-			break;
+				break;
 
-		default:
-			hinternal();
+			default:
+				hinternal();
 		}
 
 		// Link the node and continue
@@ -2029,9 +1991,9 @@ static void resolve_symbols() {
 /**
  * Third phase which resolves relocation.
  * Resolves each relocation entry stored in previous phase, by looking for each symbol name and binding them
- * with the relative reference. In particular, in functions each instruction descriptor handles a 'reference'
- * void pointer which can represent either a variable or a call instruction to a specific address.
- * In case of a reference to an 'undefined' symbol, which probably means to an external library function, an
+ * to the relative reference. In particular, in functions each instruction descriptor handles a 'reference'
+ * void * pointer which can represent either a variable or a call instruction to a specific address.
+ * In case of a reference to an 'undefined' symbol, which probably means an external library function, a
  * temporary NULL pointer is set.
  *
  * If the symbol or the code address referenced to by the relocation entry was not found a warning is issued,
@@ -2143,7 +2105,7 @@ static void resolve_relocation(){
 					sym_2->relocation.secname = ".text";
 					sym_2->relocation.ref_insn = insn;
 
-					// The instruction object will be binded to the proper symbol.
+					// The instruction object will be bound to the proper symbol.
 					// This reference is read by the specific machine code emitter
 					// that is in charge to proper handle the relocation.
 					insn->reference = sym_2;
@@ -2301,39 +2263,11 @@ int elf_instruction_set(void) {
 	// Switch on proper field
 	switch(hdr.e_machine) {
 
-	case EM_ALPHA:
-		insn_set = ALPHA_INSN;
-		break;
-
-	case EM_ARM:
-		insn_set = ARM_INSN;
-		break;
-
-	case EM_IA_64:
-		insn_set = IA_64_INSN;
-		break;
-
-	case EM_MIPS:
-	case EM_MIPS_RS3_LE: // ?
-		insn_set = MIPS_INSN;
-		break;
-
-	case EM_PPC:
-	case EM_PPC64:
-		insn_set = POWERPC_INSN;
-		break;
-
-	case EM_SPARC:
-	case EM_SPARC32PLUS:
-	case EM_SPARCV9:
-		insn_set = SPARC_INSN;
-		break;
-
-	case EM_386:
-	case EM_X86_64:
-		insn_set = X86_INSN;
-		break;
-	}
+		case EM_386:
+		case EM_X86_64:
+			insn_set = X86_INSN;
+			break;
+		}
 
 
 	if(insn_set == UNRECOG_INSN) {
