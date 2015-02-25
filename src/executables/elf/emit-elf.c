@@ -71,7 +71,7 @@ inline static void check_section_size(section *sec, int span) {
 
 	hdr = (Section_Hdr *) sec->header;
 
-	offset = (sec->ptr - sec->payload);
+	offset = ((unsigned char *)sec->ptr - (unsigned char *)sec->payload);
 	size = header_info(hdr, sh_size);
 
 	hnotice(6, "Check if section %u has enough available space....: Available = %u, Needed = %u\n", sec->index,
@@ -418,7 +418,7 @@ unsigned long elf_write_code(section *sec, function *func) {
 		herror(true, "Architecture type not recognized!\n");
 	}
 
-	hnotice(3, "Function '%s' copied (%u bytes) in section '%s'\n", func->name, written, sec->name);
+	hnotice(3, "Function '%s' copied (%lu bytes) in section '%s'\n", func->name, written, sec->name);
 
 	return offset;
 }
@@ -447,7 +447,7 @@ long elf_write_reloc(section *sec, symbol *sym, unsigned long long addr, long ad
 	// mhh, should not happen here, but...
 	if(!sec) {
 		herror(false, "A relocation entry was not added: target section seems does not exist!\n");
-		return -1;		// TODO: is it correct to return -1 in case of error?
+		return -1; // TODO: is it correct to return -1 in case of error?
 	}
 
 	size = rela_size();
@@ -475,14 +475,14 @@ long elf_write_reloc(section *sec, symbol *sym, unsigned long long addr, long ad
 	check_section_size(sec, size);
 
 	memcpy(sec->ptr, rela, sizeof(Elf_Rela));
-	sec->ptr += sizeof(Elf_Rela);
+	sec->ptr = (void *)((char *)sec->ptr + sizeof(Elf_Rela));
 
 	// Marks the symbol as unreferenced, since it is resolved;
 	// in this way we prevent that subsequent parsing will
 	// create same entries
 	sym->referenced = 0;
 
-	hnotice(3, "Written relocation entry at offset <%#08lx> to symbol '%s' %+d\n", addr, sym->name, addend);
+	hnotice(3, "Written relocation entry at offset <%#08llx> to symbol '%s' %ld\n", addr, sym->name, addend);
 
 
 	return addr;
@@ -508,13 +508,13 @@ static section* elf_create_section(int type, int size, int flags) {
 	Elf64_Shdr *hdr64;
 	Elf32_Shdr *hdr32;
 	int shsize;
-	int index;
+	int idx;
 
 	shsize = shdr_size();
-	hdr = (Section_Hdr *) malloc(shsize);
+	hdr = malloc(shsize);
 	bzero(hdr, shsize);
 
-	sec = (section *) malloc(sizeof(section));
+	sec = malloc(sizeof(section));
 	bzero(sec, sizeof(section));
 
 	sec->header = hdr;
@@ -523,7 +523,7 @@ static section* elf_create_section(int type, int size, int flags) {
 		hdr64 = &(hdr->section64);
 
 		// Increment the number of all sections if a new one is created
-		index = hijacked.ehdr->header64.e_shnum++;
+		idx = hijacked.ehdr->header64.e_shnum++;
 
 		//	hdr64->sh_name = elf_write_string(shstrtab, name);
 		hdr64->sh_type = type;
@@ -537,7 +537,7 @@ static section* elf_create_section(int type, int size, int flags) {
 		hdr32 = &(hdr->section32);
 
 		// Increment the number of all sections if a new one is created
-		index = hijacked.ehdr->header32.e_shnum++;
+		idx = hijacked.ehdr->header32.e_shnum++;
 
 		//	hdr32->sh_name = elf_write_string(shstrtab, name);
 		hdr32->sh_type = type;
@@ -548,9 +548,9 @@ static section* elf_create_section(int type, int size, int flags) {
 		hdr32->sh_size = size;
 	}
 
-	hnotice(3, "Section of type %d of %d bytes created with index %d\n", type, size, index);
+	hnotice(3, "Section of type %d of %d bytes created with index %d\n", type, size, idx);
 
-	sec->index = index;
+	sec->index = idx;
 	sec->type = type;
 
 
@@ -619,7 +619,7 @@ inline static long elf_write_section(FILE *file, section *sec) {
 	offset = ftell(file);
 	fwrite(sec->payload, header_info(hdr, sh_size), 1, file);
 
-	hnotice(3, "Section copied (%u bytes) starting from <%#08lx>\n", header_info(hdr, sh_size), offset);
+	hnotice(3, "Section copied (%lu bytes) starting from <%#08lx>\n", header_info(hdr, sh_size), offset);
 	hsuccess();
 
 	return offset;
@@ -652,7 +652,7 @@ inline static long elf_write_section_header(FILE *file, section *sec) {
 /**
  * Build the header of the ELF file.
  */
-static void elf_build_eheader() {
+static void elf_build_eheader(void) {
 	Elf_Hdr *ehdr;
 	Elf64_Ehdr *ehdr64;
 	Elf32_Ehdr *ehdr32;
@@ -704,9 +704,9 @@ static void elf_build_eheader() {
 }
 
 
-static elf_build() {
+static void elf_build(void) {
 	long size;
-	int ver;
+	unsigned int ver;
 	symbol *sym, *prev;
 	function *func;
 	char secname[32];
@@ -751,7 +751,7 @@ static elf_build() {
 		strcpy(secname, ".text");
 		if(config.rules[ver]->suffix) {
 			strcat(secname, ".");
-			strcat(secname, config.rules[ver]->suffix);
+			strcat(secname, (const char *)config.rules[ver]->suffix);
 		}
 		elf_name_section(text[ver], secname);
 	}
@@ -789,9 +789,9 @@ static elf_build() {
 
 	// create all the relocation sections we need form the knowledge
 	// provided by the parsing of the original ELF file
-	section *sec = PROGRAM(sections);
+	//~section *sec = PROGRAM(sections);
 	section *rela;
-	int target;
+	//~int target;
 	/*while(sec) {
 		if(sec->type == SECTION_RELOC) {
 			rela = elf_create_section(SHT_RELA, 0, 0);
@@ -841,7 +841,7 @@ static elf_build() {
 		strcpy(secname, ".rela.text");
 		if(config.rules[ver]->suffix) {
 			strcat(secname, ".");
-			strcat(secname, config.rules[ver]->suffix);
+			strcat(secname, (const char *)config.rules[ver]->suffix);
 		}
 		elf_name_section(rela, secname);
 
@@ -859,7 +859,7 @@ static elf_build() {
 
 
 static void elf_update_symbol_list(symbol *first) {
-	int index = 0;
+	int idx = 0;
 	int local = 0;		// it starts from 1 cause it takes into account the first null symbol
 	symbol *sym, *prev, *node;
 	section *sec;
@@ -871,7 +871,7 @@ static void elf_update_symbol_list(symbol *first) {
 		// check if the symbol is already present in the section
 		// and if the case, skip it
 		if(sym->duplicate) {
-			sym->index = index - 1;
+			sym->index = idx - 1;
 			sym = sym->next;
 			continue;
 		}
@@ -917,7 +917,7 @@ static void elf_update_symbol_list(symbol *first) {
 			local++;
 		}
 
-		sym->index = index++;
+		sym->index = idx++;
 
 		hnotice(3, "[%d] Symbol '%s' of type %d (%s)\n", sym->index, sym->name, sym->type,
 				sym->bind == STB_LOCAL ? "local" : sym->bind == STB_GLOBAL ? "global" : "weak");
@@ -929,18 +929,16 @@ static void elf_update_symbol_list(symbol *first) {
 	// update the section info field the reports the total number of the local symbol registered
 	set_hdr_info(symtab->header, sh_info, local);
 
-	hnotice(4, "%d total symbols registered (%d are local)\n", index, local);
+	hnotice(4, "%d total symbols registered (%d are local)\n", idx, local);
 }
 
 
-static void elf_fill_sections() {
+static void elf_fill_sections(void) {
 	symbol *sym;
 	function *func;
 	section *sec;
 	long offset;
-	int sym_count;
-	int target, flags;
-	int ver;
+	unsigned int ver;
 
 	sym = PROGRAM(symbols);
 
@@ -1038,11 +1036,11 @@ static void elf_fill_sections() {
 			continue;
 		}
 
-		if(!strcmp(sym->relocation.secname, ".text")) {
+		if(!strcmp((const char *)sym->relocation.secname, ".text")) {
 			sec = rela_text[sym->version];
-		} else if(!strcmp(sym->relocation.secname, ".rodata")) {
+		} else if(!strcmp((const char *)sym->relocation.secname, ".rodata")) {
 			sec = rela_rodata;
-		} else if(!strcmp(sym->relocation.secname, ".data")) {
+		} else if(!strcmp((const char *)sym->relocation.secname, ".data")) {
 			sec = rela_data;
 		} else {
 			herror(false, "The relocation entry has specified a non valid section name: ignored\n");
@@ -1050,7 +1048,7 @@ static void elf_fill_sections() {
 			continue;
 		}
 
-		hprint("Da applicare una rilocazione di tipo %d al simbolo '%s' +%0lx (offset %0x) nella sezione '%s'\n",
+		hprint("Da applicare una rilocazione di tipo %d al simbolo '%s' +%0lx (offset %0llx) nella sezione '%s'\n",
 			sym->relocation.type, sym->name, sym->relocation.addend, sym->relocation.offset, sym->relocation.secname);
 
 		elf_write_reloc(sec, sym, sym->relocation.offset, sym->relocation.addend);
@@ -1065,10 +1063,9 @@ static void elf_fill_sections() {
 /**
  * Generates the new object file.
  */
-void elf_generate_file(char *path, int flags) {
+void elf_generate_file(char *path) {
 	FILE *file;
 	section *sec;
-	int ehsize;
 	int shnum;
 	long offset;
 
@@ -1111,8 +1108,9 @@ void elf_generate_file(char *path, int flags) {
 		shrink_section_size(sec);
 		set_hdr_info(sec->header, sh_addralign, 1);
 
-		if(sec->type == SECTION_SYMBOLS)
+		if(sec->type == SECTION_SYMBOLS) {
 			set_hdr_info(sec->header, sh_addralign, 8);
+		}
 
 		offset = elf_write_section(file, sec);
 		set_hdr_info(sec->header, sh_offset, offset);

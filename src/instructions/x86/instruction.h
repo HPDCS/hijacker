@@ -63,7 +63,5 @@ typedef struct insn_info_x86 {
 	bool uses_rip;
 } insn_info_x86;
 
-extern void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_info_x86 *instrument, char flags);
-
 #endif /* _INSTRUCTION_X86_H */
 

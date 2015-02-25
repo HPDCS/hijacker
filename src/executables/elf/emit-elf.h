@@ -89,7 +89,7 @@ typedef struct _hijacked_elf {
 /**
  * Generates the new object file.
  */
-void elf_generate_file(char *path, int flags);
+void elf_generate_file(char *path);
 
 
 #endif /* EMIT_ELF_H_ */
