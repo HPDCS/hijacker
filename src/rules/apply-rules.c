@@ -362,18 +362,19 @@ void apply_rules(void) {
 	// Create a temporary directory to place object files;
 	execute("mkdir", "-p", TEMP_PATH);
 
-	// Iterates over the executable versions
+	// Iterates all over executable versions
 	for (version = 0; version < config.nExecutables; version++) {
 		hnotice(1, "Executable version %d\n", version);
 
-		// Reset the counter of the total instruction instrumented
+		// Reset the counter of the overall instrumented instructions
 		instrumented = 0;
 
 		// Get the new vesion executable's rules
 		exec = config.rules[version];
 
 		// Clone the intermediate binary representation
-		// Version 0 is reserved, therefore we have to shift by 1
+		// Version 0 is reserved to the original plain copy of the application,
+		// which has been previously cloned during the ELF parsing
 		switch_executable_version(version);
 
 		// Iterates all over the XML inject tag in the Executable

@@ -496,31 +496,41 @@ function * clone_function_descriptor (function *original, char *name) {
 int switch_executable_version (int version) {
 	function *func, *code;
 
+	// Updates the current working version of the binary representation
 	PROGRAM(version) = version;
 
 	// Checks whether the version is already present in the list
-	// otherwise it creates a new one by cloning symbols and code
+	// otherwise it creates a new one by cloning the whole code
+	// (symbols are not copied sincethey are shared among versions)
 	if(!PROGRAM(v_code)[version]) {
 
-		hnotice(2, "Version not present, cloning metadata for a new one\n");
+		hnotice(2, "Version not present, cloning the binary representation...\n");
 
-		// Clones the whole code
+		// Clones the whole code (symbols are shared) from the plain version (0)
+		// to the new one by appending the user-defined suffix to each new function
 		//SYMBOLS = clone_symbol_list(PROGRAM(symbols));
 		code = func = clone_function_list(PROGRAM(v_code)[0], (char *)config.rules[version]->suffix);
 		PROGRAM(v_code)[version] = code;
+
+		// The overall number of handled versions has to be increased
 		PROGRAM(versions)++;
 
-		// Relink jump instruction
-		// By cloning each instruction will be unreferenced otherwise
-		// we they still points to the old orginal copy which is uncorrect
+		// Relinking jump instructions. Once cloned, instructions are no more
+		// linked together; this task belongs to the parsing stage, nevertheless
+		// we have to re-execute it in order to realign the representation's sementic
+		// During the cloning operation, each instruction will be unreferenced otherwise
+		// we they still points to the old orginal copy, which would be incorrect!
+
+		// Iterates all over the functions
 		while(func) {
-			link_jump_instruction(func);
+			link_jump_instructions(func, code);
 			func = func->next;
 		}
 
 		hnotice(2, "Version %d of the executable's binary representation created\n", version);
 	}
 
+	// Update the exexcutable versions array
 	PROGRAM(code) = PROGRAM(v_code)[version];
 
 	hnotice(2, "Switched to version %d\n", version);

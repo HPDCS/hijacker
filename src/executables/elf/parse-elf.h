@@ -32,6 +32,6 @@
 
 //parsed_elf parsed;
 
-void link_jump_instruction(function *func);
+void link_jump_instructions(function *func, function *code);
 
 #endif /* PARSE_ELF_H_ */
