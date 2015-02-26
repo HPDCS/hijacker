@@ -54,5 +54,6 @@
 
 
 void prepare_trampoline_call (insn_info *target, symbol *reference);
+void trampoline_prepare (insn_info *target, unsigned char *func);
 
 #endif /* REVERSE_ELF_H_ */

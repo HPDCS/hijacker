@@ -315,7 +315,7 @@ static void update_instruction_references(function *func, insn_info *target, int
 		printf("%p, ", sym);
 
 		// Looks for refrences which applies to .text section
-		if(!strcmp(sym->name, ".text")) {
+		if(!strcmp((const char *)sym->name, ".text")) {
 
 			// Update only those relocation beyond the code affected by current instrumentation
 			if(sym->relocation.addend > (long long)target->new_addr) {
@@ -490,7 +490,7 @@ int substitute_instruction_with (insn_info *target, unsigned char *binary, size_
  * @param function Name of the function to be called
  * @param where Integer constant which defines where to add the call wrt target
  */
-void add_call_instruction(insn_info *target, char *func, int where) {
+void add_call_instruction(insn_info *target, unsigned char *func, int where) {
 	insn_info *instr;
 	symbol *sym;
 	unsigned char *call;

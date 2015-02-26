@@ -42,7 +42,7 @@ static void push_insn_entry (insn_info *target, insn_entry *entry) {
 		break;
 	}
 
-	hnotice(4, "Pushed 'insn_entry' strucure into the stack (%d bytes)\n", sizeof(insn_entry));
+	hnotice(4, "Pushed 'insn_entry' strucure into the stack (%zd bytes)\n", sizeof(insn_entry));
 }
 
 
@@ -59,12 +59,11 @@ static void get_memwrite_info (insn_info *insn, insn_entry *entry) {
 	}
 
 	hnotice(4, "Instruction entry for trampoline module created:\n");
-	hnotice(4, "MOV %d bytes value to <%#08lx>\n", entry->size,
-		entry->base + entry->idx * entry->scala + entry->offset);
+	hnotice(4, "MOV %d bytes value to <%#08llx>\n", entry->size, entry->base + entry->idx * entry->scala + entry->offset);
 }
 
 
-static void add_call_trampoline (insn_info *target, symbol *reference) {
+static void add_call_trampoline (insn_info *target, symbol *ref) {
 	insn_info *call;
 
 	switch (PROGRAM(insn_set)) {
@@ -74,12 +73,12 @@ static void add_call_trampoline (insn_info *target, symbol *reference) {
 	}
 
 	hnotice(4, "Creating the RELA reference to the trampoline...\n");
-	instruction_rela_node(reference, call, RELOCATE_RELATIVE_64);
+	instruction_rela_node(ref, call, RELOCATE_RELATIVE_64);
 }
 
 
 
-void trampoline_prepare (insn_info *target, char *func) {
+void trampoline_prepare (insn_info *target, unsigned char *func) {
 	insn_entry entry;
 	symbol *sym;
 
@@ -91,7 +90,7 @@ void trampoline_prepare (insn_info *target, char *func) {
 	// The idea is to generalize the calling method, the aforementioned
 	// symbol will be properly relocated to whichever function the user has
 	// specified in the rules files in the AddCall tag's 'function' field
-	hnotice(4, "Push function pointer to the trampoline structure <%#08lx>\n", func);
+	hnotice(4, "Push function pointer to the trampoline structure <%p>\n", func);
 	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
 
 	// Once the structure has been created, it is possbile
@@ -125,6 +124,6 @@ inline void prepare_trampoline_call (insn_info *target, symbol *trampoline) {
 	hnotice(4, "Add CALL instruction to the montor...\n");
 	add_call_trampoline(target, trampoline);
 
-	hnotice(2, "MOV instruction at <%#08lx> moved to <%#08lx>\n", target->orig_addr, target->new_addr);
-	hnotice(2, "trampoline instrumented for MOV instruction at <%#08lx>\n\n", target->new_addr);
+	hnotice(2, "MOV instruction at <%#08llx> moved to <%#08llx>\n", target->orig_addr, target->new_addr);
+	hnotice(2, "trampoline instrumented for MOV instruction at <%#08llx>\n\n", target->new_addr);
 }

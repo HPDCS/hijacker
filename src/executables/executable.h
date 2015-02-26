@@ -46,13 +46,13 @@
 
 typedef struct _symbol {
 	int 		type;			/// The hijacker's local type specification of the symbol
-	int			bind;			/// The hijacker's local bind specification of the symbol
-	char		*name;			/// Pointer to the buffer holding the symbol's name
+	int		bind;			/// The hijacker's local bind specification of the symbol
+	unsigned char	*name;			/// Pointer to the buffer holding the symbol's name
 	unsigned int	size;		/// Size of the symbol, could be zero (e.g. for SYMBOL_UNDEF)
-	int 		secnum;			/// Index of the section the symbol belongs to
-	int 		index;			/// Symbol's index within the symbol table
-	long long	position;		/// Offset positioning within the symbol section
-	long long	initial;		/// Initialization symbol's value
+	unsigned int	secnum;			/// Index of the section the symbol belongs to
+	unsigned int	index;			/// Symbol's index within the symbol table
+	unsigned long long	position;		/// Offset positioning within the symbol section
+	unsigned long long	initial;		/// Initialization symbol's value
 	struct {
 //		struct _symbol *from;		/// Symbol from which the relocation applies
 		insn_info *ref_insn;		/// Instruction where the relocation is applied
@@ -71,7 +71,7 @@ typedef struct _symbol {
 
 typedef struct _function {
 	int			passes;
-	char			*name;
+	unsigned char			*name;
 	unsigned long long	orig_addr;
 	unsigned long long	new_addr;
 	insn_info		*insn;
@@ -82,9 +82,9 @@ typedef struct _function {
 
 typedef struct _reloc {
 	long long offset;
-	char *name;
+	unsigned char *name;
 	symbol *symbol;
-	int s_index;
+	unsigned int s_index;
 	int type;
 	int addend;
 	struct _reloc	*next;
@@ -99,8 +99,8 @@ typedef struct _reloc {
 
 typedef struct _section {
 	int		type;
-	int		index;
-	char	*name;
+	unsigned int	index;
+	unsigned char	*name;
 	void		*header;
 	void		*payload;
 	void		*ptr;		// [DC] Payoad's file pointer (emit stage)
@@ -137,7 +137,7 @@ typedef struct _executable {
 extern void add_section(int type, int secndx, void *payload);
 extern section *get_section_type(int type);
 extern void load_program(char *path);
-extern void output_object_file(char *pathname, int flags);
+extern void output_object_file(char *pathname);
 
 #endif /* _EXECUTABLE_H */
 

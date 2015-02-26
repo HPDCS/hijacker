@@ -38,11 +38,11 @@
 #include "reverse-x86.h"
 
 
-void get_x86_memwrite_info (insn_info *insn, insn_entry *entry) {
+void get_x86_memwrite_info (insn_info *instr, insn_entry *entry) {
 	insn_info_x86 *x86;
 
 	// from the instruction descriptor get the x86 instrucion one
-	x86 = &(insn->i.x86);
+	x86 = &(instr->i.x86);
 	bzero(entry, sizeof(insn_entry));
 
 	// fill the structure
@@ -56,7 +56,7 @@ void get_x86_memwrite_info (insn_info *insn, insn_entry *entry) {
 
 
 
-void push_x86_insn_entry (insn_info *insn, insn_entry *entry) {
+void push_x86_insn_entry (insn_info *instr, insn_entry *entry) {
 	int size;
 	int num;
 	int idx;
@@ -67,11 +67,11 @@ void push_x86_insn_entry (insn_info *insn, insn_entry *entry) {
 
 	// Creates bytes array of the main instructions needed to manage
 	// the stack in order to save trampoline's structure
-	char sub[4] = {0x48, 0x83, 0xec, (char) size};
-	char mov[8] = {0xc7, 0x44, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00};
+	unsigned char sub[4] = {0x48, 0x83, 0xec, (char) size};
+	unsigned char mov[8] = {0xc7, 0x44, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 	// add the SUB instruction in order to create a sufficent stack window for the structure
-	insert_instructions_at(insn, sub, sizeof(sub), INSERT_BEFORE, &insn);
+	insert_instructions_at(instr, sub, sizeof(sub), INSERT_BEFORE, &instr);
 
 	// iterates all over the mov needed
 	for (idx = 0; idx < num; ++idx) {
@@ -82,7 +82,7 @@ void push_x86_insn_entry (insn_info *insn, insn_entry *entry) {
 		memcpy((mov + 4), &value, sizeof(int));				// embed the immediate into the instruction
 
 		// create and add the new instruction to the rest of code
-		insert_instructions_at(insn, mov, sizeof(mov), INSERT_AFTER, &insn);
+		insert_instructions_at(instr, mov, sizeof(mov), INSERT_AFTER, &instr);
 	}
 
 	/*symbol *sym;
@@ -98,8 +98,8 @@ void push_x86_insn_entry (insn_info *insn, insn_entry *entry) {
 // TODO: uniformare lo standard delle funzioni per il ritorno dei valori
 insn_info * insert_x86_call_instruction (insn_info *target) {
 	insn_info *call_insn;
-	char call[5] = {0xe8, 0x00, 0x00, 0x00, 0x00};
-	char add[4] = {0x48, 0x83, 0xc4, (char)sizeof(insn_entry)};
+	unsigned char call[5] = {0xe8, 0x00, 0x00, 0x00, 0x00};
+	unsigned char add[4] = {0x48, 0x83, 0xc4, (char)sizeof(insn_entry)};
 
 	// add the call instruction in the original code to the module
 	insert_instructions_at(target, call, sizeof(call), INSERT_BEFORE, &call_insn);

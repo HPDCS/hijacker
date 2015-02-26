@@ -67,7 +67,7 @@ void hexdump (void *addr, int len) {
 					printf (" |%s|\n", buff);
 
 				// Output the offset.
-				printf ("   (%5d) %08lx ", i, i);
+				printf ("   (%5d) %08x ", i, i);
 			}
 
 			// Now the hex code for the specific character.

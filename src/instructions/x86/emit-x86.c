@@ -29,41 +29,38 @@
 
 #include "x86.h"
 #include "emit-x86.h"
+#include <elf/emit-elf.h>
 
 
-long write_x86_code(function *func, section *text, section *reloc) {
-	insn_info *insn;
-	insn_info *jumpto;
+long write_x86_code(function *func, section *text, section *relocation) {
+	insn_info *instr;
 	insn_info_x86 *x86;
 	symbol *sym;
 	void *ptr;
 	int offset;
-	int size;
-	long long jump_displacement;
-	char jump_type;
 
 	ptr = text->ptr;
-	insn = func->insn;
+	instr = func->insn;
 
-	while(insn) {
-		x86 = &insn->i.x86;
+	while(instr != NULL) {
+		x86 = &instr->i.x86;
 
 		// handle the relocation
-		if(insn->reference && !IS_JUMP(insn)) {
-			sym = (symbol *) insn->reference;
+		if(instr->reference && !IS_JUMP(instr)) {
+			sym = (symbol *)instr->reference;
 
-			offset = insn->new_addr + x86->opcode_size;
+			offset = instr->new_addr + x86->opcode_size;
 			sym->relocation.offset = offset;
 
-			elf_write_reloc(reloc, sym, offset, sym->relocation.addend);
+			elf_write_reloc(relocation, sym, offset, sym->relocation.addend);
 		}
 
 		// copy the instruction
-		memcpy(text->ptr, x86->insn, insn->size);
-		text->ptr += insn->size;
+		memcpy(text->ptr, x86->insn, instr->size);
+		text->ptr = (void *)((char *)text->ptr + instr->size);
 
-		insn = insn->next;
+		instr = instr->next;
 	}
 
-	return (text->ptr - ptr);
+	return (long)((char *)text->ptr - (char *)ptr);
 }

@@ -141,12 +141,12 @@ static bool parse_cmd_line(int argc, char **argv) {
  * Links all the additional modules that can be found in the
  * current working directory.
  */
-static void link_modules(void) {
+/*static void link_modules(void) {
 	hnotice(3, "Link additional modules in '%s' to the output instrumented file 'hijacked.o'\n", TEMP_PATH);
 	link("-r", TEMP_PATH"*.o", "-o", config.output);
 	hsuccess();
 }
-
+*/
 
 int main(int argc, char **argv) {
 
@@ -168,7 +168,7 @@ int main(int argc, char **argv) {
 	apply_rules();
 
 	// Write back executable
-	output_object_file(TEMP_PATH"hijacked.o", 0);
+	output_object_file(TEMP_PATH"hijacked.o");
 
 	// Finalize the output file by linking the module
 	//link_modules();

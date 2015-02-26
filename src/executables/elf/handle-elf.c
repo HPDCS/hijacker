@@ -30,6 +30,7 @@
 #include <prints.h>
 #include <executable.h>
 #include <instruction.h>
+#include <elf/parse-elf.h>
 
 #include "handle-elf.h"
 
@@ -55,7 +56,7 @@ symbol * find_symbol (char *name) {
 
 	sym = PROGRAM(symbols);
 	while(sym) {
-		if(!strcmp(sym->name, name))
+		if(!strcmp((const char *)sym->name, name))
 			return sym;
 		sym = sym->next;
 	}
@@ -108,20 +109,20 @@ void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type) {
 	ref->referenced = 1;
 	ref->relocation.addend = addend;
 	ref->relocation.type = type;
-	ref->relocation.secname = ".text";
+	ref->relocation.secname = (unsigned char *)".text";
 
 	insn->reference = ref;
 
-	hnotice(3, "New RELA node has been created from symbol '%s' %+d to the instruction at address <%#08lx>\n",
+	hnotice(3, "New RELA node has been created from symbol '%s' %+ld to the instruction at address <%#08llx>\n",
 		sym->name, ref->relocation.addend, insn->new_addr);
 }
 
 
-void create_rela_node (symbol *sym, long long offset, long addend, char *secname) {
-	unsigned char type;
+void create_rela_node(symbol *sym, long long offset, long addend, unsigned char *secname) {
+	char type;
 
 	// Decide the relocation's type accordingly to the relocation specifications
-	if(!strcmp(secname, ".text")) {
+	if(!strcmp((const char *)secname, ".text")) {
 
 		// Relocatation applies in the .text section towards symbol 'sym'
 		switch(sym->type) {
@@ -132,7 +133,7 @@ void create_rela_node (symbol *sym, long long offset, long addend, char *secname
 			default:
 				type = R_X86_64_PC32;
 		}
-	} else if(!strcmp(secname, ".rodata")) {
+	} else if(!strcmp((const char *)secname, ".rodata")) {
 		// Relocation applies in the .rodata section towards another section symbol
 		type = R_X86_64_64;
 	} else {
@@ -148,7 +149,7 @@ void create_rela_node (symbol *sym, long long offset, long addend, char *secname
 	sym->relocation.secname = secname;
 
 
-	hnotice(3, "New RELA node of type %d has been created to symbol '%s' %+d in section '%s'\n",
+	hnotice(3, "New RELA node of type %d has been created at %lld to symbol '%s' %ld in section '%s'\n",
 		sym->relocation.type, sym->relocation.offset, sym->name, sym->relocation.addend, secname);
 }
 
@@ -161,6 +162,8 @@ void create_rela_node (symbol *sym, long long offset, long addend, char *secname
  * @param size The size in bytes of the buffer 'data'
  */
 void add_data_to_section (symbol *sym, void *data, size_t size) {
+	(void)data;
+	(void)size;
 
 	// Checks if the symbol passed is really of type 'SECTION'
 	if(sym->type != SYMBOL_SECTION) {
@@ -179,14 +182,14 @@ void add_data_to_section (symbol *sym, void *data, size_t size) {
 	// la sezione data con i nuovi dati aggiunti.
 }
 
-symbol * create_symbol_node (char *name, int type, int bind, int size) {
+symbol *create_symbol_node(unsigned char *name, int type, int bind, int size) {
 	symbol *sym;
 	symbol *node;
 
 	// Check whether the symbol requested is already present
 	node = PROGRAM(symbols);
 	while(node) {
-		if(!strcmp(node->name, name))
+		if(!strcmp((const char *)node->name, (const char *)name))
 			return node;
 		sym = node;
 		node = node->next;
@@ -222,7 +225,7 @@ symbol * create_symbol_node (char *name, int type, int bind, int size) {
 }
 
 
-function * create_function_node (char *name, insn_info *code) {
+function * create_function_node(char *name, insn_info *code) {
 	function *func, *list;
 	symbol *sym;
 	insn_info *insn;
@@ -235,7 +238,7 @@ function * create_function_node (char *name, insn_info *code) {
 		insn = insn->next;
 	}
 
-	sym = create_symbol_node(name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, size);
+	sym = create_symbol_node((unsigned char *)name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, size);
 
 	func = (function *) malloc(sizeof(function));
 	if(!func) {
@@ -243,7 +246,7 @@ function * create_function_node (char *name, insn_info *code) {
 	}
 	bzero(func, sizeof(function));
 
-	func->name = name;
+	func->name = (unsigned char *)name;
 	func->symbol = sym;
 	func->insn = code;
 
@@ -341,7 +344,7 @@ static insn_info * clone_instruction_list (insn_info *insn) {
 	return head;
 }
 
-
+/*
 static symbol * clone_symbol (symbol *sym) {
 	symbol *clone;
 
@@ -354,7 +357,7 @@ static symbol * clone_symbol (symbol *sym) {
 
 	return clone;
 }
-
+*/
 
 /**
  * Clone the whole symbol list of the internal representation. This is done
@@ -362,7 +365,8 @@ static symbol * clone_symbol (symbol *sym) {
  *
  * @return The pointer to the first symbol descriptor of the clone list
  */
-static symbol * clone_symbol_list (symbol *sym) {
+/*
+static symbol *clone_symbol_list (symbol *sym) {
 	symbol *clone, *head;
 
 	if(!sym)
@@ -388,7 +392,7 @@ static symbol * clone_symbol_list (symbol *sym) {
 
 	return head;
 }
-
+*/
 
 static function * clone_function (function *func, char *suffix) {
 	function *clone;
@@ -412,10 +416,10 @@ static function * clone_function (function *func, char *suffix) {
 	clone->insn = clone_instruction_list(func->insn);
 
 	// Updates the symbol pointer (assume that symbols have been already be cloned)
-	size = strlen(func->name) + strlen(suffix) + 2; // one is \0, one is '_'
-	name = (char *) malloc(sizeof(char) * size);
+	size = strlen((const char *)func->name) + strlen(suffix) + 2; // one is \0, one is '_'
+	name = malloc(sizeof(char) * size);
 	bzero(name, size);
-	strcpy(name, func->name);
+	strcpy(name, (const char *)func->name);
 	strcat(name, "_");
 	strcat(name, suffix);
 
@@ -424,8 +428,8 @@ static function * clone_function (function *func, char *suffix) {
 		hinternal();
 	}
 
-	clone->symbol = create_symbol_node(name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, size);
-	clone->name = name;
+	clone->symbol = create_symbol_node((unsigned char *)name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, size);
+	clone->name = (unsigned char *)name;
 
 	return clone;
 }
@@ -438,9 +442,9 @@ static function * clone_function (function *func, char *suffix) {
  *
  * @return The pointer to the first function descriptor of the clone list
  */
-static function * clone_function_list (function *func, char *suffix) {
+static function *clone_function_list(function *func, char *suffix) {
 	function *clone, *head;
-	insn_info *insn, *insn_clone;
+	insn_info *insn;
 
 	if(!func)
 		return NULL;
@@ -463,7 +467,7 @@ static function * clone_function_list (function *func, char *suffix) {
 
 		insn = head->insn;
 		while(insn) {
-			printf("\t%s <%#08lx> (%p)\n", insn->i.x86.mnemonic, insn->new_addr, insn);
+			printf("\t%s <%#08llx> (%p)\n", insn->i.x86.mnemonic, insn->new_addr, insn);
 			insn = insn->next;
 		}
 		printf("\n");
@@ -502,7 +506,7 @@ int switch_executable_version (int version) {
 
 		// Clones the whole code
 		//SYMBOLS = clone_symbol_list(PROGRAM(symbols));
-		code = func = clone_function_list(PROGRAM(v_code)[0], config.rules[version]->suffix);
+		code = func = clone_function_list(PROGRAM(v_code)[0], (char *)config.rules[version]->suffix);
 		PROGRAM(v_code)[version] = code;
 		PROGRAM(versions)++;
 

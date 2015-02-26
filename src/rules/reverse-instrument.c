@@ -11,10 +11,13 @@
 #include "trampoline.h"
 #include "insert_insn.h"
 
+
+/*
 static void compile_needed_modules () {
 
 
 }
+*/
 
 /**
  * This rule will instrument the original code in order to provide
@@ -31,13 +34,10 @@ static void compile_needed_modules () {
  *
  * Note: this function must be called only once.
  */
-void reverse_trampoline () {
-	insn_entry *entry;
+void reverse_trampoline(void) {
 	insn_info *insn;
-	insn_info *call;
 	function *func;
 	symbol *trampoline;
-	int size;
 
 	hnotice(1, "Instrument trampoline module\n");
 
@@ -45,7 +45,7 @@ void reverse_trampoline () {
 	// look for, or create, the new 'trampoline' symbol to be linked
 	trampoline = PROGRAM(symbols);
 	while (trampoline) {
-		if (!strcmp(trampoline->name, "trampoline")) break;
+		if (!strcmp((const char *)trampoline->name, "trampoline")) break;
 		trampoline = trampoline->next;
 	}
 
@@ -53,7 +53,7 @@ void reverse_trampoline () {
 	// no duplicate symbols or useless compiling would be made
 	if (!trampoline) {
 		// no symbol are found, create it
-		trampoline = create_symbol_node("trampoline", SYMBOL_UNDEF, STB_GLOBAL, 0);
+		trampoline = create_symbol_node((unsigned char *)"trampoline", SYMBOL_UNDEF, STB_GLOBAL, 0);
 
 		// if no symbol was found meas that neither was compiled the module
 		// thus, compile 'trampoline64.S' module
@@ -79,7 +79,7 @@ void reverse_trampoline () {
 
 				// check if the instruction writes on non-stack memory and in case
 				// will instrument the code in order to generate the reverse code
-				hnotice(2, "Check if instruction at <%#08lx> writes on memory...\n", insn->new_addr);
+				hnotice(2, "Check if instruction at <%#08llx> writes on memory...\n", insn->new_addr);
 
 				if(IS_MEMWR(insn) && !IS_STACK(insn)) {
 

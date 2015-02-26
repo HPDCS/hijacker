@@ -30,8 +30,7 @@
 #ifndef PARSE_ELF_H_
 #define PARSE_ELF_H_
 
-
-parsed_elf parsed;
+//parsed_elf parsed;
 
 void link_jump_instruction(function *func);
 

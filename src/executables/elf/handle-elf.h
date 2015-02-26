@@ -47,7 +47,7 @@ symbol * find_symbol (char *name);
 void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type) ;
 
 
-void create_rela_node (symbol *sym, long long offset, long addend, char *secname) ;
+void create_rela_node(symbol *sym, long long offset, long addend, unsigned char *secname) ;
 
 
 /**
@@ -64,7 +64,7 @@ void create_rela_node (symbol *sym, long long offset, long addend, char *secname
  *
  * @return The pointer to a symbol matching the name requested.
  */
-symbol * create_symbol_node (char *name, int type, int bind, int size);
+symbol *create_symbol_node(unsigned char *name, int type, int bind, int size);
 
 
 /**

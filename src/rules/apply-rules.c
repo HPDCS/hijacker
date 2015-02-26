@@ -88,9 +88,7 @@ static void apply_rule_link (char *filename) {
 static void apply_rule_inject (char *filename, insn_info *target, int where) {
 	FILE *fp;
 	int fsize;
-	char *fcontent;
-	int pos;
-	char flags;
+	unsigned char *fcontent;
 	insn_info *insn;
 
 	// Note that 'filename' is the assembly source
@@ -117,7 +115,7 @@ static void apply_rule_inject (char *filename, insn_info *target, int where) {
 	rewind(fp);
 
 	// Allocate the memory buffer for the file
-	fcontent = (char *)malloc(sizeof(char) * fsize);
+	fcontent = malloc(sizeof(char) * fsize);
 	if(!fcontent) {
 		execute("rm", "obj");
 		execute("rm", "bin");
@@ -155,14 +153,12 @@ static void apply_rule_inject (char *filename, insn_info *target, int where) {
  * @param tagCall Pointer to the Call tag
  */
 static void apply_rule_addcall (Call *tagCall, insn_info *target) {
-	symbol *trampoline;
 	int where;
-	void (*func)(void *, unsigned int);
 
 	if(tagCall->where) {
-		if(!strcmp(tagCall->where, ATTRIB_WHERE_BEFORE))
+		if(!strcmp((const char *)tagCall->where, ATTRIB_WHERE_BEFORE))
 			where = INSERT_BEFORE;
-		else if(!strcmp(tagCall->where, ATTRIB_WHERE_AFTER))
+		else if(!strcmp((const char *)tagCall->where, ATTRIB_WHERE_AFTER))
 			where = INSERT_AFTER;
 		else // Default
 			where = INSERT_BEFORE;
@@ -178,18 +174,18 @@ static void apply_rule_addcall (Call *tagCall, insn_info *target) {
 		// build up the insn_entry stack structure
 		// embedding into it a pointer to the functions
 		// to be called at runtime.
-		if(!strcmp(tagCall->arguments, "target")){
+		if(!strcmp((const char *)tagCall->arguments, "target")){
 			hnotice(6, "Specified a 'target' argument to '%s' function, preparing the trampoline structure\n", tagCall->function);
 
 			// Prepare the trampoline structure on the stack
-			trampoline_prepare(target, tagCall->function);
+			trampoline_prepare(target, (unsigned char *)tagCall->function);
 
 			// Creates and adds a new CALL to the trampoline function with respect to the 'target' one
-			add_call_instruction(target, "trampoline", where);
+			add_call_instruction(target, (unsigned char *)"trampoline", where);
 		}
 	} else {
 		// Creates and adds a new CALL  with respect to the 'target' one
-		add_call_instruction(target, tagCall->function, where);
+		add_call_instruction(target, (unsigned char *)tagCall->function, where);
 	}
 
 	hnotice(2, "Adding a call instruction to symbol '%s'\n", tagCall->function);
@@ -204,15 +200,14 @@ static void apply_rule_addcall (Call *tagCall, insn_info *target) {
  *
  * @return The number of instrumented instructions
  */
-static int apply_rule_instruction (Executable *exec, Instruction *tagInstruction, function *func) {
+static int apply_rule_instruction(Executable *exec, Instruction *tagInstruction, function *func) {
 	int tag;
 	int count;
-	char name[32];
-
 	insn_info *insn;
-
 	Assembly *tagAssembly;
 	Call *tagCall;
+
+	(void)exec;
 
 	// Since the current function will be instrumented
 	// we must to create a new function descriptor by cloinig
@@ -230,13 +225,13 @@ static int apply_rule_instruction (Executable *exec, Instruction *tagInstruction
 
 	hnotice(2, "Entering Instruction scope; searching for instruction of type %d\n", tagInstruction->flags);
 	while(insn) {
-		hnotice(5, "Checking instruction at <%#08lx>\n", insn->new_addr);
+		hnotice(5, "Checking instruction at <%#08llx>\n", insn->new_addr);
 
 		// Check whether the instruction's type match to the rule
 		if (insn->flags & tagInstruction->flags) {
 			// If this is the case, the rules applies.
 			hnotice(3, "Instruction matching the rule specification is found:\n");
-			hnotice(4, "Instrumenting '%s' at %#08lx...\n", insn->i.x86.mnemonic, insn->new_addr);
+			hnotice(4, "Instrumenting '%s' at %#08llx...\n", insn->i.x86.mnemonic, insn->new_addr);
 
 			// Increment the counter of instrumented instructions
 			count++;
@@ -262,17 +257,17 @@ static int apply_rule_instruction (Executable *exec, Instruction *tagInstruction
 
 			// Check injectBefore attribute
 			if(tagInstruction->before) {
-				apply_rule_inject(tagInstruction->before, insn, INSERT_BEFORE);
+				apply_rule_inject((char *)tagInstruction->before, insn, INSERT_BEFORE);
 			}
 
 			// Check injectAfter attribute
 			if(tagInstruction->after) {
-				apply_rule_inject(tagInstruction->after, insn, INSERT_AFTER);
+				apply_rule_inject((char *)tagInstruction->after, insn, INSERT_AFTER);
 			}
 
 			// Check replace attribute
 			if(tagInstruction->replace) {
-				apply_rule_inject(tagInstruction->replace, insn, SUBSTITUTE);
+				apply_rule_inject((char *)tagInstruction->replace, insn, SUBSTITUTE);
 			}
 		}
 
@@ -313,7 +308,7 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
 	func = PROGRAM(code);
 	while(func) {
 		// Look for the right function to which to apply the rule
-		if(!strcmp(func->name, tagFunction->name)) {
+		if(!strcmp((const char *)func->name, (char *)tagFunction->name)) {
 			hnotice(4, "Function matching '%s' the rule name found\n", func->name);
 
 			// Retrieve the sub tags: a function may be composed of
@@ -352,7 +347,6 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
  */
 void apply_rules(void) {
 	function *func;
-	insn_info *insn;
 
 	int tag;
 	int version;
@@ -362,8 +356,6 @@ void apply_rules(void) {
 	Executable *exec;
 	Instruction *tagInstruction;
 	Function *tagFunction;
-	Assembly *tagAssemgly;
-	Call *tagCall;
 
 	hprint("Start applying rules...\n");
 
@@ -388,7 +380,7 @@ void apply_rules(void) {
 		for (tag = 0; tag < exec->nInjects; tag++) {
 			// Retrive the next inject tag and process it
 			hnotice(2, "Instruction tag met, applying the rule\n");
-			module = exec->injectFiles[tag];
+			module = (char *)exec->injectFiles[tag];
 			hnotice(3, "Looking for the instruction with flags '%s'\n", module);
 			apply_rule_link(module);
 		}

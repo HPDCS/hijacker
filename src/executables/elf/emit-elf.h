@@ -90,6 +90,7 @@ typedef struct _hijacked_elf {
  * Generates the new object file.
  */
 void elf_generate_file(char *path);
+long elf_write_reloc(section *sec, symbol *sym, unsigned long long addr, long addend);
 
 
 #endif /* EMIT_ELF_H_ */

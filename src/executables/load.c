@@ -75,7 +75,7 @@ static void check_instruction_set(void) {
 }
 
 
-static void create_map() {
+static void create_map(void) {
 
 	hprint("Creating program map...\n");
 

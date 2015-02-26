@@ -1969,23 +1969,26 @@ void df_opcode(struct disassembly_state *state) {
  * opcode.
  */
 int sse_prefix_to_index (unsigned char sse_prefix) {
-	int index = 0;
+	int idx = 0;
 
 	switch(sse_prefix) {
 		case 0x00:
-			index = 0;
+			idx = 0;
 			break;
 		case 0x66:
-			index = 1;
+			idx = 1;
 			break;
 		case 0xf2:
-			index = 2;
+			idx = 2;
 			break;
 		case 0xf3:
-			index = 3;
+			idx = 3;
+			break;
+		default:
+			fprintf(stderr, "%s:%d: Unexpected SSE prefix: %d\n", __FILE__, __LINE__, sse_prefix);
 	}
 
-	return index;
+	return idx;
 }
 
 
@@ -2107,11 +2110,10 @@ void esc_0f10_17 (struct disassembly_state *state) {
     }
   };
 
-	if((state->opcode[1] == 0x12 || state->opcode[1] == 0x16)
-	     && state->sse_prefix == 0) {
+	if((state->opcode[1] == 0x12 || state->opcode[1] == 0x16) && state->sse_prefix == 0) {
 		unsigned char opcode = state->opcode[1];
-		int index = 0;
-		insn table[] = {
+		int idx = 0;
+		insn tbl[] = {
 		  /* 0f12 */
 		  /* mem->reg only */
 		  // [FV] Riportava Wq, Vq ed era segnata da non instrumentare !?
@@ -2131,23 +2133,23 @@ void esc_0f10_17 (struct disassembly_state *state) {
 
 		if(state->modrm >> 6 == 0x3) { // reg->reg
 			if(opcode == 0x12)
-				index = 1;
+				idx = 1;
 			else
-				index = 3;
+				idx = 3;
 		} else { // mem->reg
 			if(opcode == 0x12)
-				index = 0;
+				idx = 0;
 			else
-				index = 2;
+				idx = 2;
 		}
 
-		state->addr[0] = table[index].addr_method[0];
-		state->addr[1] = table[index].addr_method[1];
-		state->addr[2] = table[index].addr_method[2];
+		state->addr[0] = tbl[idx].addr_method[0];
+		state->addr[1] = tbl[idx].addr_method[1];
+		state->addr[2] = tbl[idx].addr_method[2];
 
-		state->op[0] = table[index].operand_type[0];
-		state->op[1] = table[index].operand_type[1];
-		state->op[2] = table[index].operand_type[2];
+		state->op[0] = tbl[idx].operand_type[0];
+		state->op[1] = tbl[idx].operand_type[1];
+		state->op[2] = tbl[idx].operand_type[2];
 
 		return;
 	}
@@ -3993,8 +3995,8 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
  * Accesso diretto. Nessun byte ModR/M, nessun registro di base, nessun indice nei
  * registri, nessun fattore di scala. Decisamente semplice!
  */
-void format_addr_a (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_a (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
+	(void)addr;
 
 	// Questo formato è proprio della jmp far e della call far.
 	// La jmp imposta il flag to_instrument a true, mentre la
@@ -4030,8 +4032,9 @@ void format_addr_a (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_c
  * I bit 5-3 del byte ModR/M identificano un registro di controllo
  */
-void format_addr_c (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_c (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
+	(void)addr;
+	(void)op;
 
 	// Da qui non si può recuperare alcuna informazione interessante...
 
@@ -4058,8 +4061,9 @@ void format_addr_c (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_d
  * I bit 5-3 del byte ModR/M selezionano un registro di debug
  */
-void format_addr_d (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_d (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
+	(void)addr;
+	(void)op;
 
 	// Niente di interessante...
 
@@ -4098,14 +4102,15 @@ void format_addr_d (struct disassembly_state *state, enum addr_method addr,
  * indirizzo di memoria con un registro di base opzionale, registro
  * di indice, fattore di scala e displacement...
  */
-void format_addr_e (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_e (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
 
 	/* Se ModR/M specifica un registro, allora OP specifica la sua dimensione,
 	   come la differenza tra ax, eax o rax. Se ModR/M specifica un indirizzo,
 	   allora OP specifica il tipo di dato puntato (byte, word, ...) */
 	unsigned char rm;
 	enum reg_size reg_size = REG_SIZE_128;
+
+	(void)addr;
 
 	rm = state->modrm & 0x07;
 
@@ -4144,7 +4149,10 @@ void format_addr_e (struct disassembly_state *state, enum addr_method addr,
 		case OP_PS: /* 16 */
 		case OP_PD: /* 16 */
 			reg_size = REG_SIZE_128;
-		default:;
+			break;
+		default:
+			fprintf(stderr, "%s: %d: Unexpected operand %d\n", __FILE__, __LINE__, op);
+			break;
 	}
 
 	if(state->modrm >> 6 == 0x3) { // Specifica un registro
@@ -4189,10 +4197,10 @@ void format_addr_e (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_g
  * Il campo Reg del byte ModR/M specifica un registro
  */
-void format_addr_g (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_g (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
 	enum reg_size reg_size;
 	int reg_field;
+	(void)addr;
 
 	// Tipo predefinito - molto probabilmente è quello sbagliato...
 	reg_size = REG_SIZE_128;
@@ -4243,22 +4251,23 @@ void format_addr_g (struct disassembly_state *state, enum addr_method addr,
 		case OP_SI: /* 32 */
 			reg_size = REG_SIZE_32;
 			break;
-		default: // Non può essere più grande di 32 bit...
-			hinternal();
+		default:
+			fprintf(stderr, "%s: %d: Unexpected operand %d\n", __FILE__, __LINE__, op);
+			break;
 	}
 }
 
 /* format_addr_i
  * Dati immediati
  */
-void format_addr_i (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_i (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
 	// I dati immediati sono di 1, 2 o 4 byte
 	int immed_size = 0;
 	uint8_t byte;
 	uint16_t word;
 	uint32_t dword;
 	uint64_t qword, immed_data = 0;
+	(void)addr;
 
 	switch(op) {
 		case OP_B: /* 8 */
@@ -4287,7 +4296,10 @@ void format_addr_i (struct disassembly_state *state, enum addr_method addr,
 			}
 		case OP_D: /* 32 */
 			immed_size = 4;
-		default:;
+			break;
+		default:
+			fprintf(stderr, "%s: %d: Unexpected operand %d\n", __FILE__, __LINE__, op);
+			break;
 	}
 
 
@@ -4307,6 +4319,10 @@ void format_addr_i (struct disassembly_state *state, enum addr_method addr,
 		case 8:
 			memcpy(&qword, state->text + state->pos, immed_size);
 			immed_data = qword;
+			break;
+		default:
+			fprintf(stderr, "%s: %d: Unexpected size %d\n", __FILE__, __LINE__, immed_size);
+			break;
 	}
 
 	// A questo punto immed_data contiene i dati immediati dell'istruzione
@@ -4317,12 +4333,12 @@ void format_addr_i (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_j
  * L'istruzione contiene un offset relativo a EIP
  */
-void format_addr_j (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_j (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
 	int off_size = 0, jump_size = 0;
 	int8_t byte_jump;
 	int16_t word_jump;
 	int32_t dword_jump;
+	(void)addr;
 
 	switch(op) {
 		case OP_B: /* 8 */
@@ -4343,7 +4359,10 @@ void format_addr_j (struct disassembly_state *state, enum addr_method addr,
 			}
 		case OP_D: /* 32 */
 			off_size = 4;
-		default:;
+			break;
+		default:
+			fprintf(stderr, "%s: %d: Unexpected operand %d\n", __FILE__, __LINE__, op);
+			break;
 	}
 
 	jump_size = off_size;
@@ -4428,8 +4447,6 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
 
 			// Riferimento in memoria
 			mem_ref = (unsigned long)disp16;
-			printf("--------------- %d\n", mem_ref);
-			// if(!state->read_dest)
 
 			state->instrument->addr = mem_ref;
 
@@ -4494,9 +4511,6 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
 
 				// Riferimento in memoria
 				mem_ref = (unsigned long)disp32;
-				printf("--------------- %d\n", mem_ref);
-
-				// [FV] if(!state->read_dest)
 
 				state->instrument->addr = mem_ref;
 			}
@@ -4647,14 +4661,14 @@ void format_addr_m (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_o
  * Byte ModR/M non presente. C'è un offset di dimensione ADDR_SIZE subito dopo l'istruzione
  */
-void format_addr_o (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
-	// [FV] Inserito un campo per memorizzare l'offset di un byte (solo per le letture)
+void format_addr_o (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
 	uint8_t boff;
 	uint16_t woff;
 	uint32_t doff;
 	uint64_t qoff;
 	int offsize = 0;
+
+	(void)addr;
 
 	// Determina la dimensione della scrittura/lettura in memoria
 	// [FV] if(!state->read_dest)
@@ -4716,8 +4730,10 @@ void format_addr_o (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_p
  * Il campo reg del byte ModR/M seleziona un registro MMX.
  */
-void format_addr_p (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_p (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
+	(void)state;
+	(void)addr;
+	(void)op;
 
 	// Questo è il numero del registro a 64 bit: (state->modrm >> 3) & 0x07
 }
@@ -4725,8 +4741,10 @@ void format_addr_p (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_n [FV]
  * Il campo R/M del byte ModR/M seleziona un registro MMX.
  */
-void format_addr_n (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_n (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
+	(void)state;
+	(void)addr;
+	(void)op;
 
 	// Questo è il numero del registro a 64 bit: (state->modrm & 0x07)
 }
@@ -4752,8 +4770,8 @@ void format_addr_q (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_r
  * Il campo Mod del byte ModR/M può soltanto riferirsi ad un registro general purpose
  */
-void format_addr_r (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_r (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
+	(void)addr;
 
 	// Viene usato soltanto da OP_D
 	if(op != OP_D)
@@ -4770,8 +4788,10 @@ void format_addr_r (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_s
  * Il campo Reg del byte ModR/M seleziona un segment register
  */
-void format_addr_s (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_s (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
+	(void)state;
+	(void)addr;
+	(void)op;
 
 	// I segment register sono:
 	// es, cs, ss, ds, fs, gs, r_reg, r_seg
@@ -4789,8 +4809,10 @@ void format_addr_s (struct disassembly_state *state, enum addr_method addr,
  * questa funzione (e tutte le chiamate ad essa) possono essere cancellate senza
  * problemi.
  */
-void format_addr_t (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_t (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
+	(void)state;
+	(void)addr;
+	(void)op;
 
 	// Il registro di test (se presente) è selezionato da (state->modrm >> 3) & 0x07
 }
@@ -4798,8 +4820,9 @@ void format_addr_t (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_v
  * Il campo Reg del byte ModR/M seleziona un registro XMM
  */
-void format_addr_v (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_v (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
+	(void)addr;
+	(void)op;
 
 	char reg = (state->modrm >> 3) & 0x07;
 	if(state->mode64 && REXR(state->rex))
@@ -4810,8 +4833,9 @@ void format_addr_v (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_u [FV]
  * Il campo R/M del byte ModR/M seleziona un registro XMM
  */
-void format_addr_u (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_u (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
+	(void)addr;
+	(void)op;
 
 	char reg = state->modrm & 0x07;
 	if(state->mode64 && REXR(state->rex))
@@ -4821,8 +4845,7 @@ void format_addr_u (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_w
  * Il byte ModR/M specifica o un registro XMM o la memoria
  */
-void format_addr_w (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_w (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
 	if(state->modrm >> 6 == 0x3) {
 		char reg = (state->modrm >> 3) & 0x07;
 
@@ -4843,8 +4866,9 @@ void format_addr_w (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_x
  * X è un operando implicito, il suffisso nell'istruzione è b
  */
-void format_addr_x (struct disassembly_state *state, enum addr_method addr,
-		    enum operand_type op) {
+void format_addr_x (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
+	(void)addr;
+	(void)op;
 
 	// La dimensione è sicuramente 1 byte
 	state->instrument->span = 1;
@@ -4856,8 +4880,8 @@ void format_addr_x (struct disassembly_state *state, enum addr_method addr,
 /* format_addr_y
  * Y è un operando implicito, il suffisso nell'istruzione è l o w o q a seconda
  */
-void format_addr_y (struct disassembly_state *state, enum addr_method addr,
-	enum operand_type op) {
+void format_addr_y (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
+	(void)addr;
 
 	// Determina la dimensione della scrittura/lettura in memoria
 	// [FV] if(!state->read_dest)
@@ -4873,161 +4897,108 @@ void format_addr_y (struct disassembly_state *state, enum addr_method addr,
  * (se a registro o a memoria, qual è la dimensione dei dati, ...)
  */
 void format_addr_op (struct disassembly_state *state, enum addr_method addr, enum operand_type op) {
-	int off_size;
 
 	switch(addr) {
+
 		case ADDR_N:
 			format_addr_n(state, addr, op);
 			break;
+
 		case ADDR_U:
 			format_addr_u(state, addr, op);
 			break;
+
 		case ADDR_A:
 			format_addr_a(state, addr, op);
 			break;
+
 		case ADDR_C:
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = false;
-			 */
 			format_addr_c(state, addr, op);
 			break;
+
 		case ADDR_D:
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = false;
-			 */
 			format_addr_d(state, addr, op);
 			break;
+
 		case ADDR_E: // Può esserci accesso a memoria
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = true;
-			 */
 			format_addr_e(state, addr, op);
 			break;
+
 		case ADDR_F:
 			// Non occorre fare nulla per questo metodo di indirizzamento.
 			// È utilizzato soltanto da pushf/popf e si riferisce sempre e solo ad eflags
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = false;
-			 */
 			break;
+
 		case ADDR_G:
 			// [FV] Si tratta di un registro
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = false;
-			 */
 			format_addr_g(state, addr, op);
 			break;
+
 		case ADDR_I:
 			// [FV] Si tratta di un dato immediato
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = false;
-			 */
 			format_addr_i(state, addr, op);
 			break;
+
 		case ADDR_J:
 			// [FV] state->instrument->is_jmp = true;
 			format_addr_j(state, addr, op);
 			break;
+
 		case ADDR_M:
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = true;
-			 */
 			format_addr_m(state, addr, op);
 			break;
+
 		case ADDR_O: // Ci sono due mov (A2 e A3) che scrivono su memoria
 			// [FV] ... mentre A0 e A1 leggono dalla memoria
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = true;
-			 */
 			format_addr_o(state, addr, op);
 			break;
+
 		case ADDR_P:
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = false;
-			*/
 			format_addr_p(state, addr, op);
 			break;
+
 		case ADDR_Q: // Può esserci accesso a memoria
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = true;
-			 */
 			format_addr_q(state, addr, op);
 			break;
+
 		case ADDR_R:
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = false;
-			 */
 			format_addr_r(state, addr, op);
 			break;
+
 		case ADDR_S:
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = false;
-			 */
 			format_addr_s(state, addr, op);
 			break;
+
 		case ADDR_T:
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = false;
-			 */
-			format_addr_t(state, addr, op);
 			break;
+
 		case ADDR_V:
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = false;
-			 */
 			format_addr_v(state, addr, op);
 			break;
+
 		case ADDR_W: // Può esserci accesso a memoria...
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = true;
-			 */
 			format_addr_w(state, addr, op);
 			break;
+
 		case ADDR_X: // Può esserci accesso a memoria
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = true;
-			 */
 			format_addr_x(state, addr, op);
 			break;
+
 		case ADDR_Y: // Può esserci accesso a memoria
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = true;
-			 */
 			format_addr_y(state, addr, op);
 			break;
-		case R_START ... R_END: // ... è un'estensione GNU
+
+		case R_START ... R_END:
 			// I registri possono avere dimensioni diverse (es: [e]ax)
 			// Per le dimensioni a 64 bit vale il fatto che se REX.B == 1, allora reg |= 0x08
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = false;
-			 */
 			break;
+
 		case IMMED_1:
 			// Il valore 1...
-			/* [FV]
-			 *	if(!state->read_dest)
-			 *		state->instrument->to_memory = false;
-			 */
 			break;
-		default:;
+
+		default:
+			fprintf(stderr, "%s:%d: Unexpected address format %d\n", __FILE__, __LINE__, addr);
 	}
 }
 
