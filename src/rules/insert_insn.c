@@ -195,7 +195,7 @@ static void update_instruction_references(function *func, insn_info *target, int
 				jumpto = (insn_info *)insn->jumpto;
 				x86 = &(insn->i.x86);
 
-				//~ offset = x86->opcode_size;
+				offset = x86->opcode_size;
 				size = x86->insn_size - x86->opcode_size;
 				jump_displacement = jumpto->new_addr - (insn->new_addr + insn->size);
 				// (insn->new_addr + insn->size) will give %rip value, then we have to subtract
@@ -307,12 +307,12 @@ static void update_instruction_references(function *func, insn_info *target, int
 	printf("\n\nsymbols: ");
 	while(sym) {
 
-		printf("%p, ", sym);
+		printf("%p '%s' -- ", sym, sym->name);
 
 		// Looks for refrences which applies to .text section
 		if(!strcmp(sym->name, ".text")) {
 
-			// Update only those relocation beyond the code affected by current instrumentation
+			// Update only those relocations beyond the code affected by current instrumentation
 			if(sym->relocation.addend > target->new_addr) {
 				sym->relocation.addend += shift;
 
@@ -323,6 +323,7 @@ static void update_instruction_references(function *func, insn_info *target, int
 
 		sym = sym->next;
 	}
+	printf("\n");
 }
 
 

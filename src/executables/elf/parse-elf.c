@@ -1792,16 +1792,16 @@ static void split_function(symbol *sym, function *func) {
  * Provided a valid function's descriptors, it will look up for all the jump instructions
  * and will link them to their relative destination ones.
  *
- * @param func A pointer to a valid function's descriptors
+ * @param func The pointer to a valid function's descriptors
  */
-void link_jump_instruction(function *func) {
+void link_jump_instructions(function *func, function *code) {
 	insn_info *insn;	// Current instruction
 	insn_info *dest;	// Destination one
 	function *callee;	// Callee function
 	symbol *sym;		// Callee function's symbol
 	long long jmp_addr;	// Jump address
 
-	hnotice(1, "Link jump and call instructions of all functions:\n");
+	hnotice(1, "Link jump and call instructions of function '%s':\n", func->name);
 
 	// For each instruction, look for jump ones
 	insn = func->insn;
@@ -1852,14 +1852,15 @@ void link_jump_instruction(function *func) {
 			}
 
 			if(jmp_addr != 0) {
-
 				// Call to local function detected. The format is the same as a jump
 				// XXX: credo che fosse scorretto nel caso delle funzioni locali, infatti non trovava la funzione
-				//~ jmp_addr += insn->orig_addr + insn->size;
+				//jmp_addr += insn->orig_addr + insn->size;
 				jmp_addr = insn->orig_addr + insn->i.x86.insn_size + insn->i.x86.jump_dest;
 
+				hnotice(6, "Call to a local function at <%#08lx> detected\n", jmp_addr);
+
 				// look for the relative function called
-				callee = functions;
+				callee = code;
 				while(callee) {
 
 					printf("%#08x, ", callee->orig_addr);
@@ -1875,7 +1876,9 @@ void link_jump_instruction(function *func) {
 					hinternal();
 				}
 
-				// At this point 'func' will point to the destination function relative to the call
+				hnotice(6, "Callee function '%s' at <%#08lx> found\n", callee->name, callee->orig_addr);
+
+				// At this point 'func' will point to the destination function relative to the call;
 				// the only thing we have to do is to add the reference to the relative function's symbol
 				// so that, in the future emit step, the code will automatically retrieve the correct final
 				// address of the relocation. In such a way we threat local function calls as relocation enties.
@@ -1992,10 +1995,6 @@ static void resolve_symbols() {
 
 	// Link JUMP instructions and break the instruction chain
 	func = functions;
-
-	// links the jump instructions
-	link_jump_instruction(func);
-
 	while(func) {
 		// breaks the instructions chain
 		if(func->insn->prev) {
@@ -2031,7 +2030,7 @@ static void resolve_relocation(){
 
 	hnotice(1, "Resolving relocation entries...\n");
 
-	// Part of this work it already done in the previous step performed by 'link_jump_instruction' function
+	// Part of this work is already done in the previous step performed by 'link_jump_instructions' function
 
 	// Get the list of parsed relocation sections
 	sec = relocs;
@@ -2168,6 +2167,19 @@ static void resolve_relocation(){
 }
 
 
+static void resolve_jumps() {
+	function *func;
+	
+	// links the jump instructions
+	func = functions;
+	while(func) {
+		link_jump_instructions(func, functions);
+		
+		func = func->next;
+	}
+}
+
+
 void elf_create_map(void) {
 	unsigned int size;
 	unsigned int sec;
@@ -2252,13 +2264,17 @@ void elf_create_map(void) {
 		}
 	}
 
+	// Ultimates the binary representation
 	resolve_symbols();
 	resolve_relocation();
 
+	// Updates the internal binary representation's pointers
 	PROGRAM(symbols) = symbols->payload;
 	PROGRAM(code) = PROGRAM(v_code)[0] = functions;
 	PROGRAM(rawdata) = 0;
 	PROGRAM(versions)++;
+
+	resolve_jumps();
 
 	hnotice(1, "ELF parsing terminated\n\n");
 	hsuccess();
