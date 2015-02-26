@@ -71,7 +71,7 @@ typedef struct _symbol {
 
 typedef struct _function {
 	int			passes;
-	unsigned char			*name;
+	unsigned char		*name;
 	unsigned long long	orig_addr;
 	unsigned long long	new_addr;
 	insn_info		*insn;

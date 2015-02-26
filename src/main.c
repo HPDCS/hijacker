@@ -168,7 +168,7 @@ int main(int argc, char **argv) {
 	apply_rules();
 
 	// Write back executable
-	output_object_file(TEMP_PATH"hijacked.o");
+	output_object_file(config.output);
 
 	// Finalize the output file by linking the module
 	//link_modules();

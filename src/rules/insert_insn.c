@@ -105,10 +105,7 @@ static void parse_instruction_bytes (unsigned char *bytes, unsigned long int *po
  * @param target Target instruction (either the substituted or newly created one)
  * @param shift (Signed) number of bytes by which to shift all the references
  */
-static void update_instruction_references(function *func, insn_info *target, int shift) {
-
-	// XXX: func non viene usato
-	(void)func;
+static void update_instruction_references(insn_info *target, int shift) {
 
 	insn_info *instr;
 	insn_info *jumpto;
@@ -123,6 +120,7 @@ static void update_instruction_references(function *func, insn_info *target, int
 	int offset;
 	int size;
 	long long jump_displacement;
+	unsigned char bytes[6];
 	//~char jump_type;
 
 	hnotice(3, "Updating instructions' refs beyond the one intrumented... (shift = %+d)\n", shift);
@@ -225,7 +223,6 @@ static void update_instruction_references(function *func, insn_info *target, int
 						hnotice(5, "Short jump will overflow with new displacement %#0llx\n", jump_displacement);
 
 						// in this case we need to substitute the short jump with a long one
-						unsigned char bytes[6];
 						bzero(bytes, sizeof(bytes));
 
 						// TODO: differenza tra jump condizionale e non!!
@@ -309,10 +306,7 @@ static void update_instruction_references(function *func, insn_info *target, int
 	}*/
 	sym = PROGRAM(symbols);
 
-	printf("\n\nsymbols: ");
 	while(sym) {
-
-		printf("%p '%s' -- ", sym, sym->name);
 
 		// Looks for refrences which applies to .text section
 		if(!strcmp((const char *)sym->name, ".text")) {
@@ -367,7 +361,7 @@ static void insert_insn_at (insn_info *target, insn_info *instr, int flag) {
 	// Update instruction references
 	// since we are adding a new instruction, the shift amount
 	// is equal to the instruction's size
-	update_instruction_references(NULL, instr, instr->size);
+	update_instruction_references(instr, instr->size);
 
 	//func = get_function(target);
 	//hnotice(4, "Inserted a new instruction node %s the instruction at offset <%#08lx> in function '%s'\n", flag == INSERT_AFTER ? "after" : "before", target->new_addr, func->symbol->name);
@@ -388,11 +382,6 @@ static void insert_insn_at (insn_info *target, insn_info *instr, int flag) {
  * @param insn Pointer to the descriptor of the instruction to substitute with.
  */
 static void substitute_insn_with(insn_info *target, insn_info *instr) {
-	function *func;
-	//~int insn_size;
-	int old_size;
-
-
 	// we have to update all the references
 	// why add the opcode size again??
 	// delta shift should be the: d = (old size - the new one) [signed, obviously]
@@ -409,7 +398,7 @@ static void substitute_insn_with(insn_info *target, insn_info *instr) {
 	free(target);
 
 	// XXX: old_size e func non vengono mai inizializzati qui!
-	update_instruction_references(func, instr, (instr->size - old_size));
+	update_instruction_references(instr, (instr->size - target->size));
 
 	//func = get_function(target);
 	//hnotice(4, "Substituting instruction at address <%#08lx> in function '%s'\n", target->orig_addr, func->symbol->name);
@@ -445,11 +434,10 @@ int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size
 }
 
 
-int substitute_instruction_with (insn_info *target, unsigned char *binary, size_t size, insn_info **instr) {
+int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size, insn_info **instr) {
 	insn_info *substituted;
 	unsigned long int pos;
 	int count;
-
 
 	hnotice(4, "Substituting target instruction at %#08llx with binary code\n", target->new_addr);
 	hdump(5, "Binary code", binary, size);
@@ -463,7 +451,8 @@ int substitute_instruction_with (insn_info *target, unsigned char *binary, size_
 	parse_instruction_bytes(binary, &pos, instr);
 	substitute_insn_with(target, *instr);
 	substituted = *instr;
-	pos = 0, count = 1;
+	pos = 0;
+	count = 1;
 
 	while(pos < size) {
 		// Interprets the binary bytes and packs the next instruction

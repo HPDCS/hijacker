@@ -69,21 +69,21 @@ static section *bss;
 inline static void check_section_size(section *sec, int span) {
 	Section_Hdr *hdr;
 	unsigned long long offset;
-	unsigned long long size;
+	unsigned long long size = 0;
 
 
 	hdr = (Section_Hdr *) sec->header;
 
-	offset = ((unsigned char *)sec->ptr - (unsigned char *)sec->payload);
+	offset = ((char *)sec->ptr - (char *)sec->payload);
 	size = header_info(hdr, sh_size);
 
 	hnotice(6, "Check if section %u has enough available space....: Available = %llu, Needed = %d\n", sec->index, (size - offset), span);
 	hnotice(6, "Offset= %llu, size= %llu\n", offset, size);
 
-	if(!size)
+	if(size != 0)
 		size = SECTION_INIT_SIZE;
 
-	if(!sec->ptr) {
+	if(sec->ptr != NULL) {
 		sec->ptr = sec->payload = malloc(size);
 		hnotice(6, "Allocated %llu bytes for section %u\n", size, sec->index);
 	} else if (((char *)sec->ptr + span) >= ((char *)sec->payload + size)) {
@@ -580,7 +580,7 @@ inline static void elf_name_section(section *sec, char *name) {
 	Elf64_Shdr *hdr64;
 	Elf32_Shdr *hdr32;
 
-	sec->name = malloc(sizeof(char) * strlen(name));
+	sec->name = malloc(sizeof(char) * (strlen(name) + 1));
 	if(!sec->name) {
 		herror(true, "Out of memroy!\n");
 	}
@@ -1061,7 +1061,7 @@ static void elf_fill_sections(void) {
  * Generates the new object file.
  */
 void elf_generate_file(char *path) {
-	FILE *file;
+	FILE *file = NULL;
 	section *sec;
 	int shnum;
 	long offset;
@@ -1083,7 +1083,7 @@ void elf_generate_file(char *path) {
 		herror("Unable to write output ELF file '%s'!\n", path);
 	}
 
-	hijacked.path = malloc(strlen(path));
+	hijacked.path = malloc(strlen(path) + 1);
 	strcpy(hijacked.path, path);
 
 	// reserver the initial space for the elf header that will be written

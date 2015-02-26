@@ -11,7 +11,7 @@ debug:
 	gdb --args hijacker $(VERB) -c conf.xml -i model/pcs.o -o model/pcs-instrumented.o
 
 memcheck:
-	valgrind hijacker $(VERB) -c conf.xml -i model/pcs.o -o model/pcs-instrumented.o
+	valgrind --track-origins=yes hijacker $(VERB) -c conf.xml -i model/pcs.o -o model/pcs-instrumented.o
 
 core/core.o:
 	gcc -c core/scheduler.c -I model/ -I core/ -o core/scheduler.o

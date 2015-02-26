@@ -56,14 +56,14 @@ static void apply_rule_link (char *filename) {
 	// a binary file in order to pass it to disassemble function
 
 	// Check if the file really exists and compile the assmbly into the 'bin' file
-	len = strlen(filename);
+	len = strlen(filename) + 1;
 
-	objname = (char *) malloc(len * sizeof(char));
+	objname = malloc(len * sizeof(char));
 	strcpy(objname, filename);
 	objname[len-1] = 'o';
 
-	path = (char *) malloc(64 * sizeof(char));
-	bzero(path, strlen(path));
+	path = malloc(64 * sizeof(char));
+	bzero(path, 64 * sizeof(char));
 	strcpy(path, TEMP_PATH);
 	strcat(path, objname);
 

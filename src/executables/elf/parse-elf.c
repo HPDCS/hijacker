@@ -49,8 +49,6 @@ static section *relocs;			/// List of all relocations sections parsed
 static section *symbols;		/// List of all symbols parsed
 static section *code;			/// List of whole code sections parsed
 static function *functions;		/// List of resolved functions
-// XXX: unused?
-static section *data;			/// List of all raw data sections
 static char *strings;			/// Array of strings
 
 // FIXME: redundancy with 'add_section'
@@ -503,8 +501,8 @@ static void split_function(symbol *sym, function *func) {
  * @param func The pointer to a valid function's descriptors
  */
 
-void link_jump_instructions(function *func, function *code) {
-	insn_info *insn;	// Current instruction
+void link_jump_instructions(function *func, function *code_version) {
+	insn_info *instr;	// Current instruction
 	insn_info *dest;	// Destination one
 	function *callee;	// Callee function
 	symbol *sym;		// Callee function's symbol
@@ -566,10 +564,10 @@ void link_jump_instructions(function *func, function *code) {
 				//jmp_addr += insn->orig_addr + insn->size;
 				jmp_addr = instr->orig_addr + instr->i.x86.insn_size + instr->i.x86.jump_dest;
 
-				hnotice(6, "Call to a local function at <%#08lx> detected\n", jmp_addr);
+				hnotice(6, "Call to a local function at <%#08llx> detected\n", jmp_addr);
 
 				// look for the relative function called
-				callee = code;
+				callee = code_version;
 				while(callee) {
 
 					printf("%#08llx, ", callee->orig_addr);
@@ -585,7 +583,7 @@ void link_jump_instructions(function *func, function *code) {
 					hinternal();
 				}
 
-				hnotice(6, "Callee function '%s' at <%#08lx> found\n", callee->name, callee->orig_addr);
+				hnotice(6, "Callee function '%s' at <%#08llx> found\n", callee->name, callee->orig_addr);
 
 				// At this point 'func' will point to the destination function relative to the call;
 				// the only thing we have to do is to add the reference to the relative function's symbol
@@ -856,9 +854,8 @@ static void resolve_relocation(void) {
 				sym_2->relocation.addend = rel->addend;
 				sym_2->relocation.offset = rel->offset;
 				sym_2->relocation.type = rel->type;
-				sym_2->relocation.secname = sec->name;
-
-
+				sym_2->relocation.secname = (unsigned char *)sec_name(sec->index);
+				
 				hnotice(2, "Added symbol reference to <%#08llx> + %d\n", rel->offset, rel->addend);
 			}
 
@@ -872,7 +869,7 @@ static void resolve_relocation(void) {
 }
 
 
-static void resolve_jumps() {
+static void resolve_jumps(void) {
 	function *func;
 	
 	// links the jump instructions
