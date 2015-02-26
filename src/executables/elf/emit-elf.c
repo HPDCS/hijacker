@@ -87,7 +87,8 @@ inline static void check_section_size(section *sec, int span) {
 		sec->ptr = sec->payload = malloc(size);
 		hnotice(6, "Allocated %llu bytes for section %u\n", size, sec->index);
 	} else if (((char *)sec->ptr + span) >= ((char *)sec->payload + size)) {
-		sec->ptr = sec->payload = realloc(sec->payload, size *= 2);
+		size *= 2;
+		sec->ptr = sec->payload = realloc(sec->payload, size);
 		sec->ptr = (void *)((char *)sec->ptr + offset);		// Replace 'ptr' to the original displacement in the newly allocated block
 		hnotice(6, "Doubling size of section %u to %llu...\n", sec->index, size);
 	}
@@ -142,7 +143,7 @@ long elf_write_string(section *sec, char *buffer) {
 	int buflen;
 	void *ptr;
 
-	if(!buffer)
+	if(buffer == NULL)
 		return 0;
 
 	hdr = (Section_Hdr *) sec->header;

@@ -107,7 +107,7 @@ static void parse_instruction_bytes (unsigned char *bytes, unsigned long int *po
  */
 static void update_instruction_references(insn_info *target, int shift) {
 
-	insn_info *instr;
+	insn_info *instr = NULL	;
 	insn_info *jumpto;
 	insn_info_x86 *x86;
 	symbol *sym;
@@ -250,14 +250,17 @@ static void update_instruction_references(insn_info *target, int shift) {
 						hdump(1, "TO", bytes, sizeof(bytes));*/
 						substitute_instruction_with(instr, bytes, sizeof(bytes), &instr);
 
-						offset = x86->opcode_size;
-						size = x86->insn_size - x86->opcode_size;
+						// XXX: TO CHECK: x86 è parte di instr, ma instr è
+						// soggetta a free() nella chiamata alla riga sopra...
+						//~ offset = x86->opcode_size;
+						//~ size = x86->insn_size - x86->opcode_size;
 
 						hnotice(5, "Changed into a long jump\n");
 					}
 				}
 
 				hnotice(5, "It's a long jump, just update the displacement to %#0llx\n", jump_displacement);
+				// XXX: TO CHECK: stessa cosa di poco sopra: x86 può essere in memoria free()
 				memcpy((x86->insn + offset), &jump_displacement, size);
 
 			// must be taken into account embedded CALL instructions (ie. for local functions)
@@ -323,7 +326,6 @@ static void update_instruction_references(insn_info *target, int shift) {
 
 		sym = sym->next;
 	}
-	printf("\n");
 }
 
 
@@ -395,10 +397,13 @@ static void substitute_insn_with(insn_info *target, insn_info *instr) {
 		target->prev->next = instr;
 	if(target->next)
 		target->next->prev = instr;
-	free(target);
 
 	// XXX: old_size e func non vengono mai inizializzati qui!
 	update_instruction_references(instr, (instr->size - target->size));
+	
+	// XXX: la free veniva fatta prima della riga sopra
+	bzero(target, sizeof(insn_info));
+	free(target);
 
 	//func = get_function(target);
 	//hnotice(4, "Substituting instruction at address <%#08lx> in function '%s'\n", target->orig_addr, func->symbol->name);
@@ -436,7 +441,7 @@ int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size
 
 int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size, insn_info **instr) {
 	insn_info *substituted;
-	unsigned long int pos;
+	unsigned long int pos = 0;
 	int count;
 
 	hnotice(4, "Substituting target instruction at %#08llx with binary code\n", target->new_addr);
