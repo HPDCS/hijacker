@@ -418,7 +418,7 @@ void apply_rules(void) {
 
 		hnotice(1, "Instrumentation of executable version %d terminated: %d instructions have been instrumented\n",
 			version, instrumented);
-	}
 
-	hsuccess();
+		hsuccess();
+	}
 }

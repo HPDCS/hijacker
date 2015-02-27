@@ -617,7 +617,6 @@ inline static long elf_write_section(FILE *file, section *sec) {
 	fwrite(sec->payload, header_info(hdr, sh_size), 1, file);
 
 	hnotice(3, "Section copied (%lu bytes) starting from <%#08lx>\n", header_info(hdr, sh_size), offset);
-	hsuccess();
 
 	return offset;
 }
@@ -964,7 +963,6 @@ static void elf_fill_sections(void) {
 			func = func->next;
 		}
 	}
-	hsuccess();
 
 	// ==== 2 ====
 	// Fill symtab section, strtab names and data sections with the
@@ -1049,8 +1047,6 @@ static void elf_fill_sections(void) {
 
 		sym = sym->next;
 	}
-
-	hsuccess();
 }
 
 
@@ -1137,7 +1133,4 @@ void elf_generate_file(char *path) {
 	rewind(file);
 	fwrite(hijacked.ehdr, ehdr_size(), 1, file);
 	fclose(file);
-
-	hsuccess();
-	hprint("File ELF written in '%s'\n", path);
 }
