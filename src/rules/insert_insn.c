@@ -109,7 +109,7 @@ static void parse_instruction_bytes (unsigned char *bytes, unsigned long int *po
  */
 static void update_instruction_references(insn_info *target, int shift) {
 
-	insn_info *instr;
+	insn_info *instr = NULL	;
 	insn_info *jumpto;
 	insn_info_x86 *x86;
 	symbol *sym;
@@ -244,14 +244,17 @@ static void update_instruction_references(insn_info *target, int shift) {
 						hprint("Una JUMP short deve essere sostituita!\n");
 						substitute_instruction_with(instr, bytes, sizeof(bytes), &instr);
 
-						offset = x86->opcode_size;
-						size = x86->insn_size - x86->opcode_size;
+						// XXX: TO CHECK: x86 è parte di instr, ma instr è
+						// soggetta a free() nella chiamata alla riga sopra...
+						//~ offset = x86->opcode_size;
+						//~ size = x86->insn_size - x86->opcode_size;
 
 						hnotice(5, "Changed into a long jump\n");
 					}
 				}
 
 				hnotice(5, "It's a long jump, just update the displacement to %#0llx\n", jump_displacement);
+				// XXX: TO CHECK: stessa cosa di poco sopra: x86 può essere in memoria free()
 				memcpy((x86->insn + offset), &jump_displacement, size);
 
 			// must be taken into account embedded CALL instructions (ie. for local functions)
@@ -358,7 +361,6 @@ static void substitute_insn_with(insn_info *target, insn_info *instr) {
 		target->prev->next = instr;
 	if(target->next)
 		target->next->prev = instr;
-	free(target);
 
 	update_instruction_references(instr, (target->size - instr->size));
 
@@ -399,14 +401,12 @@ int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size
 
 
 int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size, insn_info **instr) {
-	unsigned long int pos;
+	unsigned long int pos = 0;
 	unsigned int old_size;
 	int count;
 
 	hnotice(4, "Substituting target instruction at %#08llx with binary code\n", target->new_addr);
 	hdump(5, "Binary code", binary, size);
-
-	pos = 0;
 
 	// Pointer 'binary' may contains more than one instruction
 	// in this case, the behavior is to convert the whole binary

@@ -459,9 +459,8 @@ static function *clone_function_list(function *func, char *suffix) {
 		func = func->next;
 	}
 
+/*	hprint("Istruzioni copiate!\n");
 
-	//================ DEBUG ================//
-	/*hprint("Istruzioni copiate!\n");
 	func = head;
 	while(func) {
 		printf("Funzione '%s' (%p):\n", func->name, func);
@@ -474,8 +473,8 @@ static function *clone_function_list(function *func, char *suffix) {
 		printf("\n");
 
 		func = func->next;
-	}*/
-	//=======================================//
+	}
+*/
 
 	return head;
 }
