@@ -77,13 +77,13 @@ inline static void check_section_size(section *sec, int span) {
 	offset = ((char *)sec->ptr - (char *)sec->payload);
 	size = header_info(hdr, sh_size);
 
-	hnotice(6, "Check if section %u has enough available space....: Available = %llu, Needed = %d\n", sec->index, (size - offset), span);
-	hnotice(6, "Offset= %llu, size= %llu\n", offset, size);
+	hnotice(6, "Check if section '%s' (index %u) has enough available space (Available = %llu, Needed = %d, Offset = %llu)\n",
+		sec->name, sec->index, (size - offset), span, offset);
 
-	if(size != 0)
+	if(size == 0)
 		size = SECTION_INIT_SIZE;
 
-	if(sec->ptr != NULL) {
+	if(sec->ptr == NULL) {
 		sec->ptr = sec->payload = malloc(size);
 		hnotice(6, "Allocated %llu bytes for section %u\n", size, sec->index);
 	} else if (((char *)sec->ptr + span) >= ((char *)sec->payload + size)) {
@@ -440,11 +440,9 @@ long elf_write_reloc(section *sec, symbol *sym, unsigned long long addr, long ad
 	Elf_Rela *rela;
 	int size;
 
-	//hnotice(3, "Creating rela entry...\n");
-
 	// mhh, should not happen here, but...
 	if(!sec) {
-		herror(false, "A relocation entry was not added: target section seems does not exist!\n");
+		herror(false, "A relocation entry was not added: target section seems that do not exist!\n");
 		return -1; // TODO: is it correct to return -1 in case of error?
 	}
 
@@ -582,7 +580,7 @@ inline static void elf_name_section(section *sec, char *name) {
 
 	sec->name = malloc(sizeof(char) * (strlen(name) + 1));
 	if(!sec->name) {
-		herror(true, "Out of memroy!\n");
+		herror(true, "Out of memory!\n");
 	}
 	strcpy((char *)sec->name, name);
 
@@ -704,9 +702,12 @@ static void elf_build_eheader(void) {
 static void elf_build(void) {
 	long size;
 	unsigned int ver;
+	unsigned int target;
 	symbol *sym, *prev;
 	function *func;
-	char secname[64];
+	section *rela;
+	section *sec;
+	unsigned char secname[SECNAME_SIZE];
 
 	sym = PROGRAM(symbols);
 
@@ -729,7 +730,7 @@ static void elf_build(void) {
 	elf_name_section(strtab, ".strtab");
 	elf_write_string(strtab, "");
 
-
+	// For each version a new .text section must be created
 	for(ver = 0; ver < PROGRAM(versions); ver++) {
 		switch_executable_version(ver);
 		func = PROGRAM(code);
@@ -744,8 +745,10 @@ static void elf_build(void) {
 
 		// Creates as much .text sections as the instrumentation versions
 		text[ver] = elf_create_section(SHT_PROGBITS, size, SHF_EXECINSTR|SHF_ALLOC);
+
 		bzero(secname, sizeof(secname));
 		strcpy(secname, ".text");
+
 		if(config.rules[ver]->suffix) {
 			strcat(secname, ".");
 			strcat(secname, (const char *)config.rules[ver]->suffix);
@@ -785,11 +788,32 @@ static void elf_build(void) {
 
 
 	// create all the relocation sections we need form the knowledge
-	// provided by the parsing of the original ELF file
-	//~section *sec = PROGRAM(sections);
-	section *rela;
-	//~int target;
-	/*while(sec) {
+	// provided by the internal binary representation's versions registered
+	for(ver = 0; ver < PROGRAM(versions); ver++) {
+		rela = elf_create_section(SHT_RELA, 0, 0);
+
+		set_hdr_info(rela->header, sh_entsize, rela_size());
+		set_hdr_info(rela->header, sh_link, symtab->index);
+		set_hdr_info(rela->header, sh_info, text[ver]->index);
+
+		rela->reference = 0;
+
+		bzero(secname, sizeof(secname));
+		strcpy((char *)secname, ".rela.text");
+
+		if(config.rules[ver]->suffix) {
+			strcat(secname, ".");
+			strcat(secname, (const char *)config.rules[ver]->suffix);
+		}
+		elf_name_section(rela, secname);
+
+		rela_text[ver] = rela;
+	}
+
+	// Creates the possible other relocation sections from the knowledge of
+	// the original ELF file
+	sec = PROGRAM(sections);
+	while(sec) {
 		if(sec->type == SECTION_RELOC) {
 			rela = elf_create_section(SHT_RELA, 0, 0);
 			elf_name_section(rela, sec_name(sec->index));
@@ -802,15 +826,7 @@ static void elf_build(void) {
 			rela->reference = sec;		//TODO: to payload!!
 			target = sec_field(sec->index, sh_info);
 
-			if(!strcmp(sec_name(target), ".text")) {
-				set_hdr_info(rela->header, sh_info, text->index);
-
-				// it not needed to specify a relocation entry since references are already
-				// retrieved by the specific instruction set code emitter
-				rela->reference = 0;
-				rela_text = rela;
-
-			} else if(!strcmp(sec_name(target), ".data")) {
+			if(!strcmp(sec_name(target), ".data")) {
 				set_hdr_info(rela->header, sh_info, data->index);
 				rela_data = rela;
 
@@ -822,27 +838,6 @@ static void elf_build(void) {
 
 		}
 		sec = sec->next;
-	}*/
-
-	// at least one rela section is needed, hence if no rela section was created
-	// then create one in order to support trampoline instrumentation
-	for(ver = 0; ver < PROGRAM(versions); ver++) {
-		rela = elf_create_section(SHT_RELA, 0, 0);
-
-		set_hdr_info(rela->header, sh_entsize, rela_size());
-		set_hdr_info(rela->header, sh_link, symtab->index);
-		set_hdr_info(rela->header, sh_info, text[ver]->index);
-
-		rela->reference = 0;
-		bzero(secname, sizeof(secname));
-		strcpy((char *)secname, ".rela.text");
-		if(config.rules[ver]->suffix) {
-			strcat(secname, ".");
-			strcat(secname, (const char *)config.rules[ver]->suffix);
-		}
-		elf_name_section(rela, secname);
-
-		rela_text[ver] = rela;
 	}
 
 	hnotice(3, "Allocating ELF header memory\n");
@@ -1040,12 +1035,13 @@ static void elf_fill_sections(void) {
 		} else if(!strcmp((const char *)sym->relocation.secname, ".data")) {
 			sec = rela_data;
 		} else {
-			herror(false, "The relocation entry has specified a non valid section name: ignored\n");
+			herror(false, "Relocation entry towards symobl '%s' has specified a non valid section name (%s): ignored\n",
+				sym->name, sym->relocation.secname);
 			sym = sym->next;
 			continue;
 		}
 
-		hprint("Da applicare una rilocazione di tipo %d al simbolo '%s' +%0lx (offset %0llx) nella sezione '%s'\n",
+		hnotice(3, "Relocation of type %d to symbol '%s' +%0lx (offset %0llx) in section '%s', has to be applied\n",
 			sym->relocation.type, sym->name, sym->relocation.addend, sym->relocation.offset, sym->relocation.secname);
 
 		elf_write_reloc(sec, sym, sym->relocation.offset, sym->relocation.addend);

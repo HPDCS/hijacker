@@ -1,5 +1,5 @@
 all: instrument app core/core.o
-	gcc core/core.o model/pcs-instrumented.o -o pcs
+	gcc core/core.o model/pcs-instrumented.o -o pcs -lm
 
 app:
 	gcc -c model/pcs.c -I core/ -o model/pcs.o

@@ -31,6 +31,10 @@
 #include "elf-defs.h"
 #include "executable.h"
 
+
+#define SECNAME_SIZE 128
+
+
 typedef struct _hijacked_elf {
 	Elf_Hdr *ehdr;			/// ELF's header descriptor
 	section *sections;		/// Section list contained by the hijacked ELF file

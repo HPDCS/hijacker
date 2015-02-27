@@ -409,7 +409,6 @@ static function * clone_function (function *func, char *suffix) {
 	}
 
 	// Copies the original descriptor to the new one
-	printf("Copio funzione '%s'\n", func->name);
 	memcpy(clone, func, sizeof(function));
 
 	// Updates the pointer to instruction list
@@ -430,6 +429,8 @@ static function * clone_function (function *func, char *suffix) {
 
 	clone->symbol = create_symbol_node((unsigned char *)name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, size);
 	clone->name = (unsigned char *)name;
+
+	hnotice(6, "Function '%s' (%d bytes) cloned\n", func->name, func->symbol->size);
 
 	return clone;
 }
@@ -460,7 +461,7 @@ static function *clone_function_list(function *func, char *suffix) {
 
 
 	//================ DEBUG ================//
-	hprint("Istruzioni copiate!\n");
+	/*hprint("Istruzioni copiate!\n");
 	func = head;
 	while(func) {
 		printf("Funzione '%s' (%p):\n", func->name, func);
@@ -473,7 +474,7 @@ static function *clone_function_list(function *func, char *suffix) {
 		printf("\n");
 
 		func = func->next;
-	}
+	}*/
 	//=======================================//
 
 	return head;

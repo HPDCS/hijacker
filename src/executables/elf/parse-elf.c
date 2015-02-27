@@ -570,8 +570,6 @@ void link_jump_instructions(function *func, function *code_version) {
 				callee = code_version;
 				while(callee) {
 
-					printf("%#08llx, ", callee->orig_addr);
-
 					if(callee->orig_addr == jmp_addr)
 						break;
 
@@ -854,7 +852,7 @@ static void resolve_relocation(void) {
 				sym_2->relocation.addend = rel->addend;
 				sym_2->relocation.offset = rel->offset;
 				sym_2->relocation.type = rel->type;
-				sym_2->relocation.secname = (unsigned char *)sec_name(sec->index);
+				sym_2->relocation.secname = (unsigned char *)sec_name(target);
 				
 				hnotice(2, "Added symbol reference to <%#08llx> + %d\n", rel->offset, rel->addend);
 			}
