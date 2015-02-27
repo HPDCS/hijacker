@@ -25,6 +25,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <libgen.h>
 
 #include <executable.h>
 #include <elf/reverse-elf.h>
@@ -45,9 +46,8 @@
  * @param tagInject Pointer to the Ibject XML tag descriptor
  */
 static void apply_rule_link (char *filename) {
-	int len;
-	char *objname;
-	char *path;
+	//~char *objname;
+	//~char *path;
 
 	hnotice(2, "Entering Inject scope: compiling and linking module '%s'\n", filename);
 
@@ -56,25 +56,34 @@ static void apply_rule_link (char *filename) {
 	// a binary file in order to pass it to disassemble function
 
 	// Check if the file really exists and compile the assmbly into the 'bin' file
-	len = strlen(filename) + 1;
+	//~len = strlen(filename) + 1;
 
-	objname = malloc(len * sizeof(char));
-	strcpy(objname, filename);
-	objname[len-1] = 'o';
+	//~objname = malloc(len * sizeof(char));
+	//~strcpy(objname, filename);
+	//~objname[len-1] = 'o';
 
-	path = malloc(64 * sizeof(char));
-	bzero(path, 64 * sizeof(char));
-	strcpy(path, TEMP_PATH);
-	strcat(path, objname);
+	//~path = malloc(64 * sizeof(char));
+	//~bzero(path, 64 * sizeof(char));
+	//~strcpy(path, TEMP_PATH);
+	//~strcat(path, objname);
 
-	hnotice(6, "Compiling assembly file in '%s'\n", path);
+	//~hnotice(6, "Compiling file in '%s'\n", path);
 	if(!file_exists(filename)) {
 		herror(true, "The XML rules file has specified a file that does not exists!\n");
 	}
-
+	
 	// Just compile the given module's source.
 	// The resulting object file will be linked in the final stage.
-	compile(filename, "-c", "-o", path);
+	compile(filename, "-c", "-o", "current.o");
+	
+	if(file_exists("incremental.o")) {
+		link("-r", "incremental.o", "current.o", "-o", "__incremental.o");
+		unlink("current.o");
+		unlink("incremental.o");
+		rename("__incremental.o", "incremental.o");
+	} else {
+		rename("current.o", "incremental.o");
+	}
 }
 
 

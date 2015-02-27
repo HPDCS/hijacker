@@ -6,6 +6,8 @@ AC_INIT([FULL-PACKAGE-NAME], [VERSION], [BUG-REPORT-ADDRESS])
 AM_INIT_AUTOMAKE([1.11 -Wall foreign subdir-objects])
 AM_SILENT_RULES([yes])
 AC_USE_SYSTEM_EXTENSIONS
+LT_INIT
+AC_CONFIG_MACRO_DIR([m4])
 
 
 
@@ -27,6 +29,7 @@ AC_LANG([C])
 #----------------------------------------------------------------------------
 # Checks for programs.
 #----------------------------------------------------------------------------
+AM_PROG_AS
 AC_PROG_CC
 AC_PROG_MAKE_SET
 AC_PROG_MKDIR_P
