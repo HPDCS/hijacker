@@ -4150,6 +4150,12 @@ void format_addr_e (struct disassembly_state *state, enum addr_method addr, enum
 		case OP_PD: /* 16 */
 			reg_size = REG_SIZE_128;
 			break;
+		case OP_Y: /* RICONTROLLARE ASSOLUTAMENTE */
+			if(state->opd_size == SIZE_64) {
+				reg_size = REG_SIZE_64;
+			}
+			reg_size = REG_SIZE_32;
+			break;
 		default:
 			fprintf(stderr, "%s: %d: Unexpected operand %d\n", __FILE__, __LINE__, op);
 			break;
