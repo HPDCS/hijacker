@@ -44,4 +44,6 @@ void output_object_file(char *pathname) {
 		default:
 			hinternal();
 	}
+
+	hsuccess();
 }

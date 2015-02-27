@@ -241,13 +241,13 @@ static void update_instruction_references(insn_info *target, int shift) {
 						/*hprint("JUMP at %#08lx (previously at %#08lx) MUST BE SUBSTITUTED (offset= %d):\n", insn->new_addr, insn->orig_addr, jump_displacement);
 						hdump(1, "FROM", insn->i.x86.insn, insn->size);
 						hdump(1, "TO", bytes, sizeof(bytes));*/
-						hprint("Una JUMP short deve essere sostituita!\n");
 						substitute_instruction_with(instr, bytes, sizeof(bytes), &instr);
 
 						// XXX: TO CHECK: x86 è parte di instr, ma instr è
 						// soggetta a free() nella chiamata alla riga sopra...
-						//~ offset = x86->opcode_size;
-						//~ size = x86->insn_size - x86->opcode_size;
+						x86 = &(instr->i.x86);
+						offset = x86->opcode_size;
+						size = x86->insn_size - x86->opcode_size;
 
 						hnotice(5, "Changed into a long jump\n");
 					}
