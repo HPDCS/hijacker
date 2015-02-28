@@ -1,6 +1,7 @@
 #!/bin/sh
 
 set -ex
+mkdir -p m4
 rm -rf autom4te.cache aclocal.m4
 find . -name "Makefile.in" -exec rm {} \;
 aclocal --force
