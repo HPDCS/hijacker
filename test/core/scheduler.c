@@ -34,6 +34,13 @@ extern inline void free_last_revwin();
 unsigned int num_entities;
 
 
+static void (*PE)(unsigned int me, double now, int event_type, void *event_content, unsigned int size, void *state);
+
+extern void ProcessEvent(unsigned int me, double now, int event_type, void *event_content, unsigned int size, void *state);
+extern void ProcessEvent_memtrack(unsigned int me, double now, int event_type, void *event_content, unsigned int size, void *state);
+extern void ProcessEvent_notrack(unsigned int me, double now, int event_type, void *event_content, unsigned int size, void *state);
+
+
 extern void ScheduleNewEvent(unsigned int receiver,
 			     double timestamp,
 			     unsigned int event_type,
@@ -69,6 +76,8 @@ void SetState(void *state) {
 }
 
 
+
+
 int main(int argc, char **argv) {
 	unsigned int i;
 	platform_event *e;
@@ -96,12 +105,14 @@ int main(int argc, char **argv) {
 	fel = malloc(sizeof(calqueue));
 	calqueue_init(fel);
 
+	PE = ProcessEvent;
+
 
 	// Schedule INIT to entities
 	for(i = 0; i < num_entities; i++) {
 		current_entity = i;
 		increment_era();
-		ProcessEvent(i, 0, INIT, NULL, 0, NULL);
+		PE(i, 0, INIT, NULL, 0, NULL);
 		free_last_revwin();
 	}
 
@@ -115,10 +126,20 @@ int main(int argc, char **argv) {
 		simulation_time = e->timestamp;
 
 		increment_era();
-		ProcessEvent(current_entity, simulation_time, e->event_type, e->payload, e->size, simulation_states[current_entity]);
+		PE(current_entity, simulation_time, e->event_type, e->payload, e->size, simulation_states[current_entity]);
 		free_last_revwin();
 
 		processed_events++;
+
+
+		// Switch to other instrumented versions
+		if(simulation_time > 1.0/3.0 * end_time && simulation_time <= 2/3.0 * end_time ) {
+			PE=ProcessEvent_notrack;
+		}
+
+		if((simulation_time > 2.0/3.0 * end_time) {
+			PE=ProcessEvent_memtrack;
+		}
 
 		// free memory
 		if(e->payload != NULL)

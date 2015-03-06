@@ -116,5 +116,4 @@ typedef struct _entity_state{
 
 
 
-extern void ProcessEvent(unsigned int me, double now, int event_type, event_content_type *event_content, unsigned int size, entity_state *state);
 extern bool OnGVT(unsigned int me, entity_state *snapshot);
