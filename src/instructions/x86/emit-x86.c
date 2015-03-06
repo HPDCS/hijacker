@@ -38,6 +38,7 @@ long write_x86_code(function *func, section *text, section *relocation) {
 	symbol *sym;
 	void *ptr;
 	int offset;
+	int displ;
 
 	ptr = text->ptr;
 	instr = func->insn;
@@ -49,8 +50,14 @@ long write_x86_code(function *func, section *text, section *relocation) {
 		if(instr->reference && !IS_JUMP(instr)) {
 			sym = instr->reference;
 
-			offset = instr->new_addr + x86->opcode_size;
+			displ = 0;
+			if(x86->disp != 0)
+				displ = x86->disp_size;
+				
+			offset = instr->new_addr + x86->opcode_size + displ;
 			sym->relocation.offset = offset;
+
+		//	printf("opcode_size= %d, disp_size= %d, span= %d, disp= %llx\n", x86->opcode_size, x86->disp_size, x86->span, x86->disp);
 
 			elf_write_reloc(relocation, sym, offset, sym->relocation.addend);
 		}

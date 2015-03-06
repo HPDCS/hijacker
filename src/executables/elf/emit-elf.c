@@ -1097,7 +1097,7 @@ static void elf_fill_sections(void) {
 		}
 
 		if(sym->relocation.ref_insn) {
-			printf("Il simbolo %s (%d) punta all'istruzione <%#08llx>\n", sym->name, sym->version, sym->relocation.ref_insn->new_addr);
+			//printf("Il simbolo %s (%d) punta all'istruzione <%#08llx>\n", sym->name, sym->version, sym->relocation.ref_insn->new_addr);
 			sym->relocation.addend = sym->relocation.ref_insn->new_addr;
 		}
 

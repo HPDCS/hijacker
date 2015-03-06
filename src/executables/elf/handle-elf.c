@@ -582,7 +582,7 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 						instr->pointedby = ref;
 						ref->relocation.ref_insn = instr;
 
-						printf("Aggiornato il puntatore al simbolo che punta all'istruzione <%#08llx> alla versione %d\n", instr->new_addr, ref->version);
+						//printf("Aggiornato il puntatore al simbolo che punta all'istruzione <%#08llx> alla versione %d\n", instr->new_addr, ref->version);
 					}
 
 					instr = instr->next;

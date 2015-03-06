@@ -109,7 +109,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	hnotice(4, "Push the function pointer to '%s' in the trampoline structure\n", func);
 	
 	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
-	instruction_rela_node(sym, instr->prev->prev, RELOCATE_ABSOLUTE_64);
+	instruction_rela_node(sym, instr->prev, RELOCATE_ABSOLUTE_64);
 
 
 	hnotice(4, "Adds the call to the trampoline hijacker library function\n");
@@ -118,7 +118,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	insert_instructions_at(target, call, sizeof(call), where, &instr);
 
 	// Checks and creates the symbol name that will be the target of the call
-	sym = create_symbol_node((unsigned char *)"trampoline", SYMBOL_FUNCTION, SYMBOL_GLOBAL, 0);
+	sym = create_symbol_node((unsigned char *)"trampoline", SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
 	instruction_rela_node(sym, instr, RELOCATE_RELATIVE_32);
 
 	// in order to align the stack pointer we need to insert an ADD instruction

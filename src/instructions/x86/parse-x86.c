@@ -5176,7 +5176,7 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 	// Controlla il displacement
 	state.disp_size = disp_size(state.modrm, state.addr_size);
 
-	// [DC] Registra la dimensione dell'opcode, del prefisso, R/M e SIB  delle istruzioni per gestire correttamente
+	// [DC] Registra la dimensione dell'opcode, del prefisso, R/M e SIB delle istruzioni per gestire correttamente
 	// la rilocazione nella fase di emissione del file instrumentato
 	state.instrument->opcode_size = (state.pos - state.orig_pos);
 
@@ -5203,6 +5203,8 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 			break;
 	}
 
+	//state.instrument->opcode_size = (state.pos - state.orig_pos);
+
 	// A questo punto, state.pos o è l'offset dei dati immediati, oppure
 	// l'offset dell'istruzione seguente
 	// I dati immediati vengono smaltiti dalle funzioni di formattazione.
@@ -5226,6 +5228,7 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 	// [FV] Adesso copio il displacement indipendentemente da alcuna condizione
 	// [FV] if(state.instrument->to_instrument && state.instrument->to_memory)
 	state.instrument->disp_offset = state.disp_offset;
+	state.instrument->disp_size = state.disp_size;
 
 
 	// [FV] Copia il flag "uses_rip"
