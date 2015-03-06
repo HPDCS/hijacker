@@ -168,7 +168,7 @@
 #define hhijacker() (printf("HIJACKER\n"))
 
 #define hdump(verb_level, desc, addr, len) do {\
-	if(config.verbose > verb_level){\
+	if(config.verbose >= verb_level){\
 		if(!len) {\
 			hnotice(verb_level, "Nothing to dump!\n\n");\
 			break;\

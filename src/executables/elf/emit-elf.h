@@ -32,7 +32,7 @@
 #include "executable.h"
 
 
-#define SECNAME_SIZE 128
+#define SECNAME_SIZE 256
 
 
 typedef struct _hijacked_elf {

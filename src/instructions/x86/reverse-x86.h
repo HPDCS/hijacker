@@ -32,6 +32,8 @@
 #include <trampoline.h>
 
 
+void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where);
+
 /**
  * In order to properly save the stack in the instrumented code
  * it's needed to generate the push instructions by coalescing

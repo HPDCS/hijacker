@@ -184,20 +184,20 @@ static void apply_rule_addcall (Call *tagCall, insn_info *target) {
 		// embedding into it a pointer to the functions
 		// to be called at runtime.
 		if(!strcmp((const char *)tagCall->arguments, "target")){
-			hnotice(6, "Specified a 'target' argument to '%s' function, preparing the trampoline structure\n", tagCall->function);
+			hnotice(4, "Specified a 'target' argument to '%s' function, preparing the trampoline structure\n", tagCall->function);
 
 			// Prepare the trampoline structure on the stack
-			trampoline_prepare(target, (unsigned char *)tagCall->function);
+			trampoline_prepare(target, (unsigned char *)tagCall->function, where);
 
 			// Creates and adds a new CALL to the trampoline function with respect to the 'target' one
-			add_call_instruction(target, (unsigned char *)"trampoline", where);
+			//add_call_instruction(target, (unsigned char *)"trampoline", where);
 		}
 	} else {
 		// Creates and adds a new CALL  with respect to the 'target' one
-		add_call_instruction(target, (unsigned char *)tagCall->function, where);
+		add_call_instruction(target, (unsigned char *)tagCall->function, where, &target);
 	}
 
-	hnotice(2, "Adding a call instruction to symbol '%s'\n", tagCall->function);
+	hnotice(2, "Added call instruction to symbol '%s'\n", tagCall->function);
 }
 
 
@@ -403,6 +403,7 @@ void apply_rules(void) {
 			hnotice(3, "Looking for the instruction with flags %x\n", tagInstruction->flags);
 			func = PROGRAM(code);
 			while(func) {
+				hnotice(3, "Instrumenting function '%s' <%#08llx>\n", func->symbol->name, func->new_addr);
 				instrumented += apply_rule_instruction(exec, tagInstruction, func);
 				func = func->next;
 			}

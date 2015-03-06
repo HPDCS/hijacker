@@ -5203,10 +5203,6 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 			break;
 	}
 
-	// [DC] Registra la dimensione dell'opcode, del prefisso, R/M e SIB  delle istruzioni per gestire correttamente
-	// la rilocazione nella fase di emissione del file instrumentato
-	state.instrument->opcode_size = (state.pos - state.orig_pos);
-
 	// A questo punto, state.pos o è l'offset dei dati immediati, oppure
 	// l'offset dell'istruzione seguente
 	// I dati immediati vengono smaltiti dalle funzioni di formattazione.

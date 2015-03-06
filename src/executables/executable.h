@@ -53,7 +53,7 @@ typedef struct _symbol {
 	unsigned int	index;			/// Symbol's index within the symbol table
 	unsigned long long	position;		/// Offset positioning within the symbol section
 	unsigned long long	initial;		/// Initialization symbol's value
-	struct {
+	struct _relocation {
 //		struct _symbol *from;		/// Symbol from which the relocation applies
 		insn_info *ref_insn;		/// Instruction where the relocation is applied
 		long long offset;			/// The offset from the reference symbol's position

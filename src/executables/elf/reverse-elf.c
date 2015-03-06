@@ -63,7 +63,7 @@ static void get_memwrite_info (insn_info *insn, insn_entry *entry) {
 }
 
 
-static void add_call_trampoline (insn_info *target, symbol *ref) {
+/*static void add_call_trampoline (insn_info *target, symbol *ref) {
 	insn_info *call;
 
 	switch (PROGRAM(insn_set)) {
@@ -74,41 +74,54 @@ static void add_call_trampoline (insn_info *target, symbol *ref) {
 
 	hnotice(4, "Creating the RELA reference to the trampoline...\n");
 	instruction_rela_node(ref, call, RELOCATE_RELATIVE_64);
-}
+}*/
 
 
-
-void trampoline_prepare (insn_info *target, unsigned char *func) {
-	insn_entry entry;
+void trampoline_prepare (insn_info *target, unsigned char *func, int where) {
+	/*insn_entry entry;
 	symbol *sym;
 
 	// Retrieve information to fill the structure
 	hnotice(4, "Retrieve meta-info about target MOV instruction...\n");
 	get_memwrite_info(target, &entry);
 
-	// Adds the pointer to the function that the trampoline module has to call at runtime
-	// The idea is to generalize the calling method, the aforementioned
-	// symbol will be properly relocated to whichever function the user has
-	// specified in the rules files in the AddCall tag's 'function' field
-	hnotice(4, "Push function pointer to the trampoline structure <%p>\n", func);
-	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
-
 	// Once the structure has been created, it is possbile
 	// to generate the push instructions and add them to the code
 	hnotice(4, "Push trampoline structure into stack before the target MOV...\n");
 	push_insn_entry(target, &entry);
 
+	// Adds the pointer to the function that the trampoline module has to call at runtime
+	// The idea is to generalize the calling method, the aforementioned
+	// symbol will be properly relocated to whichever function the user has
+	// specified in the rules files in the AddCall tag's 'function' field
+	
 	// Now, we have either the function symbol to be called and the stack filled up;
 	// the only thing that remains to do is to adds a relocation entry from the last
 	// long-word of the pushed entry towards the new function symbol.
 	// Note that 'target' actually is the 2nd MOV instruction being instrumented, therefore
 	// in order to make the correct relocation we have to look for its predecessor (twice)
 	// which (should) be the last MOV that should pushes the calling address on the stack
-	instruction_rela_node(sym, target->prev->prev, RELOCATE_ABSOLUTE_64);
+	hnotice(4, "Push the function pointer to '%s' in the trampoline structure\n", func);
+	
+	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
+	instruction_rela_node(sym, target->prev->prev, RELOCATE_ABSOLUTE_64
+
+	// Creates and adds a new CALL to the trampoline function with respect to the 'target' one
+	add_call_instruction(target, (unsigned char *)"trampoline", where);
+
+	trampoline_finalize(target);*/
+
+	// choose which subfunction use to fill the structure properly
+	// according to the executable file type
+	switch (PROGRAM(insn_set)) {
+		case X86_INSN:
+			x86_trampoline_prepare(target, func, where);
+		break;
+	}
 }
 
 
-inline void prepare_trampoline_call (insn_info *target, symbol *trampoline) {
+/*inline void prepare_trampoline_call (insn_info *target, symbol *trampoline) {
 	insn_entry entry;
 
 	// retrieve information to fill the structure
@@ -126,4 +139,4 @@ inline void prepare_trampoline_call (insn_info *target, symbol *trampoline) {
 
 	hnotice(2, "MOV instruction at <%#08llx> moved to <%#08llx>\n", target->orig_addr, target->new_addr);
 	hnotice(2, "trampoline instrumented for MOV instruction at <%#08llx>\n\n", target->new_addr);
-}
+}*/

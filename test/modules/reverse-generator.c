@@ -303,6 +303,14 @@ void reverse_code_generator (void *address, unsigned int size) {
 	//~ printf("==============================\n\n");
 }
 
+inline int increment_era () {
+
+	last_era++;
+	allocate_reverse_window(REVERSE_WIN_SIZE);
+
+	return last_era;
+}
+
 inline void trampoline_initialize () {
 	if(current_era > 0) return;
 
@@ -312,15 +320,6 @@ inline void trampoline_initialize () {
 
 	//history.size = sizeof(history.era);
 	increment_era();
-}
-
-
-inline int increment_era () {
-
-	last_era++;
-	allocate_reverse_window(REVERSE_WIN_SIZE);
-
-	return last_era;
 }
 
 

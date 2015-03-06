@@ -35,7 +35,7 @@
 #define RELOCATE_ABSOLUTE_32	2
 #define RELOCATE_ABSOLUTE_64	3
 
-symbol * find_symbol (char *name);
+symbol * find_symbol (unsigned char *name);
 
 /**
  * In order to be linkable, new relocation nodes can be created in case

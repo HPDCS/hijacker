@@ -172,7 +172,7 @@ static void elf_code_section(int sec) {
 
 			case X86_INSN:
 				x86_disassemble_instruction(sec_content(sec), &pos, &curr->i.x86, flags);
-				hnotice(2, "%#08lx: %s (%d)\n", curr->i.x86.initial, curr->i.x86.mnemonic, curr->i.x86.opcode_size);
+				hnotice(6, "%#08lx: %s (%d)\n", curr->i.x86.initial, curr->i.x86.mnemonic, curr->i.x86.opcode_size);
 
 				// Make flags arch-independent
 				curr->flags = curr->i.x86.flags;
@@ -508,7 +508,7 @@ void link_jump_instructions(function *func, function *code_version) {
 	symbol *sym;		// Callee function's symbol
 	unsigned long long jmp_addr;	// Jump address
 
-	hnotice(1, "Link jump and call instructions of function '%s':\n", func->name);
+	hnotice(2, "Link jump and call instructions of function '%s':\n", func->name);
 
 	// For each instruction, look for jump ones
 	instr = func->insn;
@@ -541,7 +541,7 @@ void link_jump_instructions(function *func, function *code_version) {
 			// At this point 'dest' will point to the destination instruction relative to the jump 'instr'
 			instr->jumpto = dest;
 
-			hnotice(2, "Jump instruction at <%#08llx> linked to instruction at <%#08llx>\n", instr->orig_addr, dest->orig_addr);
+			hnotice(4, "Jump instruction at <%#08llx> linked to instruction at <%#08llx>\n", instr->orig_addr, dest->orig_addr);
 
 
 		// a CALL could be seen as a JUMP and could help in handling the embedded offset to local functions
@@ -599,7 +599,7 @@ void link_jump_instructions(function *func, function *code_version) {
 						break;
 				}
 
-				hnotice(2, "Call instruction at <%#08llx> linked to address <%#08llx>\n", instr->orig_addr, callee->orig_addr);
+				hnotice(3, "Call instruction at <%#08llx> linked to address <%#08llx>\n", instr->orig_addr, callee->orig_addr);
 			}
 		}
 
@@ -678,6 +678,7 @@ static void resolve_symbols(void) {
 		case SYMBOL_SECTION:
 			hnotice(2, "Section symbol pointing to section %d (%s)\n", sym->secnum, sec_name(sym->secnum));
 			sym->name = (unsigned char *)sec_name(sym->secnum);
+			sym->size = sec_size(sym->secnum);
 			break;
 
 		case SYMBOL_FILE:
@@ -794,7 +795,7 @@ static void resolve_relocation(void) {
 				}
 
 				if(func) {
-					hnotice(3, "Relocation is found to be in function at <%#08llx> (%s)\n", func->orig_addr, func->name);
+					hnotice(3, "Relocation is found to be in function '%s' at <%#08llx>\n", func->name, func->orig_addr);
 					instr = func->insn;
 				}
 
@@ -821,7 +822,6 @@ static void resolve_relocation(void) {
 					// TODO: now there is the create_rela_node functions, use it!
 					// Check for relocation duplicates
 					sym_2 = symbol_check_shared(sym);
-					sym_2->referenced = 1;
 					sym_2->relocation.addend = rel->addend;
 					sym_2->relocation.type = rel->type;
 					sym_2->relocation.secname = (unsigned char *)".text";
@@ -845,16 +845,58 @@ static void resolve_relocation(void) {
 				// If we are here, the relocation is SECTION->SECTION, otherwise
 				// an instruction would be found in the previous branch.
 
+				hnotice(3, "Looking up for address <%#08llx>\n", rel->addend);
+
+				// Search in the function list the one containing the right instruction.
+				// This is simply done by looking for the function whose starting offset
+				// is the closest address to one relocation refers to.
+				func = functions;
+				instr = NULL;
+				while(func->next){
+					if(func->next->orig_addr > (unsigned long long)rel->addend){
+						break;
+					}
+
+					func = func->next;
+				}
+
+				if(func) {
+					hnotice(3, "Relocation is found to be in function '%s' at <%#08llx>\n", func->name, func->orig_addr);
+					instr = func->insn;
+				}
+
+				// At this point 'instr' (should) contains the first instruction of the
+				// correct function to which apply the relocation.
+				// Now we have to look for the right instruction pointed to by the offset.
+				// in order to do that is sufficient to look up for the instructions whose
+				// address is the closest to the one relocation refers to.
+				// Note that '>' is because the relocation actually does not refer to
+				// the instruction's address itself, but it is shifted by the opcode size.
+				while(instr) {
+					if(instr->orig_addr == (unsigned long long)rel->addend){
+						break;
+					}
+
+					instr = instr->next;
+				}
+
 				// TODO: now there is the create_rela_node function, so use it!
 				// Check for relocation duplicates
 				sym_2 = symbol_check_shared(sym);
-				sym_2->referenced = 1;
 				sym_2->relocation.addend = rel->addend;
 				sym_2->relocation.offset = rel->offset;
 				sym_2->relocation.type = rel->type;
 				sym_2->relocation.secname = (unsigned char *)sec_name(target);
+
+				// if instr is NULL, uuh...something is going wrong!
+				if(instr != NULL) {
+					hnotice(3, "Instruction pointed to by relocation: <%#08llx> '%s'\n", instr->orig_addr, instr->i.x86.mnemonic);
+
+					sym_2->relocation.ref_insn = instr;
+					instr->pointedby = sym_2;
+				}
 				
-				hnotice(2, "Added symbol reference to <%#08llx> + %d\n", rel->offset, rel->addend);
+				hnotice(2, "Added symbol reference to <%#08llx> + %d\n\n", rel->offset, rel->addend);
 			}
 
 			rel = rel->next;

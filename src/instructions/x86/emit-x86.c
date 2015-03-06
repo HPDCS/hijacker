@@ -47,7 +47,7 @@ long write_x86_code(function *func, section *text, section *relocation) {
 
 		// handle the relocation
 		if(instr->reference && !IS_JUMP(instr)) {
-			sym = (symbol *)instr->reference;
+			sym = instr->reference;
 
 			offset = instr->new_addr + x86->opcode_size;
 			sym->relocation.offset = offset;

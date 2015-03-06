@@ -111,6 +111,7 @@ typedef struct instruction {
 	//void *reference;			// May represent a reference to either a relocation symbol or an instruction (jump)
 	struct instruction *jumpto;
 	struct _symbol *reference;
+	struct _symbol *pointedby;
 	struct instruction *prev;	// Instructions are organized in a chain
 	struct instruction *next;
 } insn_info;

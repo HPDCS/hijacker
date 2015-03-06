@@ -112,7 +112,7 @@ int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t
  *
  * @return The pointer to the newly created CALL instruction descriptor
  */
-void add_call_instruction (insn_info *target, unsigned char *function, int where);
+void add_call_instruction (insn_info *target, unsigned char *function, int where, insn_info **instr);
 
 
 #endif /* INSERT_INSN_H_ */

@@ -125,7 +125,7 @@ static void update_instruction_references(insn_info *target, int shift) {
 	unsigned char bytes[6];
 	//~char jump_type;
 
-	hnotice(3, "Updating instructions' refs beyond the one intrumented... (shift = %+d)\n", shift);
+	//hnotice(3, "Updating instructions' refs beyond the one intrumented... (shift = %+d)\n", shift);
 
 	// updates the dimension of the function symbol
 	//func->symbol->size += shift;
@@ -145,19 +145,19 @@ static void update_instruction_references(insn_info *target, int shift) {
 	// instruction encountered.
 	//foo = func;
 	foo = PROGRAM(code);
+	offset = 0;
 	while(foo) {
 
 		// Looks only for functions that are beyond the instruction instrumented,
 		// in order to reduce the number of total iterations
-		if(foo->new_addr < target->new_addr) {
+		/*if(foo->new_addr < target->new_addr) {
 			foo = foo->next;
 			continue;
-		}
+		}*/
 
 		hnotice(5, "Updating instructions in function '%s'\n", foo->name);
 		
 		instr = foo->insn;
-		offset = foo->new_addr;
 		while(instr != NULL) {
 			old_offset = instr->new_addr;
 			instr->i.x86.addr = instr->new_addr = offset;
@@ -173,7 +173,7 @@ static void update_instruction_references(insn_info *target, int shift) {
 		foo->new_addr = foo->insn->new_addr;
 		foo->symbol->size = offset;
 
-		hnotice(4, "Function size updated to %d\n", foo->symbol->size);
+		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n", foo->symbol->name, foo->new_addr, foo->symbol->size);
 
 		foo = foo->next;
 	}
@@ -197,7 +197,7 @@ static void update_instruction_references(insn_info *target, int shift) {
 				// (insn->new_addr + insn->size) will give %rip value, then we have to subtract
 				// the address of jump destination instruction
 
-				hnotice(5, "Jump instruction at <%#08llx> (originally <%#08llx>) +%#0llx points to address %#08llx (originally %#08llx)\n",
+				hnotice(6, "Jump instruction at <%#08llx> (originally <%#08llx>) +%#0llx points to address %#08llx (originally %#08llx)\n",
 					instr->new_addr, instr->orig_addr, jump_displacement, jumpto->new_addr, jumpto->orig_addr);
 
 				// TODO: Must implement support to near and far jump!
@@ -213,7 +213,7 @@ static void update_instruction_references(insn_info *target, int shift) {
 					// for the short jump check it the jump is at more of 128 byte, otherwise
 					// the single 8-bits displacement for the short jump is unsiffucient
 					if (jump_displacement < -128 || jump_displacement > 128) {
-						hnotice(5, "Short jump will overflow with new displacement %#0llx\n", jump_displacement);
+						hnotice(6, "Short jump will overflow with new displacement %#0llx\n", jump_displacement);
 
 						// in this case we need to substitute the short jump with a long one
 						bzero(bytes, sizeof(bytes));
@@ -245,15 +245,16 @@ static void update_instruction_references(insn_info *target, int shift) {
 
 						// XXX: TO CHECK: x86 è parte di instr, ma instr è
 						// soggetta a free() nella chiamata alla riga sopra...
+						// YYY: IN TEORIA ora non più...
 						x86 = &(instr->i.x86);
 						offset = x86->opcode_size;
 						size = x86->insn_size - x86->opcode_size;
 
-						hnotice(5, "Changed into a long jump\n");
+						hnotice(6, "Changed into a long jump\n");
 					}
 				}
 
-				hnotice(5, "It's a long jump, just update the displacement to %#0llx\n", jump_displacement);
+				//hnotice(5, "It's a long jump, just update the displacement to %#0llx\n", jump_displacement);
 				// XXX: TO CHECK: stessa cosa di poco sopra: x86 può essere in memoria free()
 				memcpy((x86->insn + offset), &jump_displacement, size);
 
@@ -272,28 +273,32 @@ static void update_instruction_references(insn_info *target, int shift) {
 	// beyond the one instrumented. (ie. in case of switch tables)
 	hnotice(4, "Check relocation symbols\n");
 
-	sym = PROGRAM(symbols);
+	/*sym = PROGRAM(symbols);
 	while(sym) {
 
-		// Looks for refrences which applies to .text section
-		if(!strcmp((const char *)sym->name, ".text")) {
+		// Looks for refrences which applies to .text section only
+		if(!strncmp((const char *)sym->name, ".text", 5)) {
 
-			// Update only those relocation beyond the code affected by current instrumentation
-			if(sym->relocation.addend > (long long)target->new_addr) {
+			// Update only those relocation beyond the code affected by current instrumentation and version
+			if(sym->relocation.addend > (long long)(target->new_addr - shift) && sym->version == PROGRAM(version)) {
 
 				sym->relocation.addend += shift;
 
-				hnotice(5, "Relocation to symbol %d (%s) at offset %#08llx addend updated %#0lx (%+d)\n",
+				printf("update .rela.rodata :: offset= %08llx, instr_addr= %08llx (%08llx), addend=%lx (%lx %+d), version=%d(%d)\n",
+					sym->relocation.offset, target->new_addr, target->new_addr - shift, sym->relocation.addend, sym->relocation.addend-shift, shift, sym->version, PROGRAM(version));
+
+				hnotice(6, "Relocation to symbol %d (%s) at offset %#08llx addend updated %#0lx (%+d)\n",
 					sym->index, sym->name, sym->position, sym->relocation.addend, shift);
 			}
 		}
 
 		sym = sym->next;
-	}
+	}*/
 }
 
 
-static void insert_insn_at (insn_info *target, insn_info *instr, int flag) {
+static insn_info * insert_insn_at (insn_info *target, insn_info *instr, int flag) {
+	insn_info *pivot;
 	//~function *func;
 
 
@@ -310,6 +315,7 @@ static void insert_insn_at (insn_info *target, insn_info *instr, int flag) {
 
 		target->prev->next = instr;
 		target->prev = instr;
+		pivot = instr;
 		break;
 
 	case INSERT_AFTER:
@@ -318,6 +324,7 @@ static void insert_insn_at (insn_info *target, insn_info *instr, int flag) {
 
 		target->next->prev = instr;
 		target->next = instr;
+		pivot = target;
 		break;
 
 	default:
@@ -327,7 +334,7 @@ static void insert_insn_at (insn_info *target, insn_info *instr, int flag) {
 	// Update instruction references
 	// since we are adding a new instruction, the shift amount
 	// is equal to the instruction's size
-	update_instruction_references(instr, instr->size);
+	update_instruction_references(pivot, instr->size);
 
 	//func = get_function(target);
 	//hnotice(4, "Inserted a new instruction node %s the instruction at offset <%#08lx> in function '%s'\n", flag == INSERT_AFTER ? "after" : "before", target->new_addr, func->symbol->name);
@@ -362,19 +369,20 @@ static void substitute_insn_with(insn_info *target, insn_info *instr) {
 	if(target->next)
 		target->next->prev = instr;
 
-	update_instruction_references(instr, (target->size - instr->size));
+	update_instruction_references(instr, (instr->size - target->size));
 
 	//func = get_function(target);
 	//hnotice(4, "Substituting instruction at address <%#08lx> in function '%s'\n", target->orig_addr, func->symbol->name);
 }
 
 
-int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size, int flag, insn_info **instr) {
+int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size, int flag, insn_info **last) {
+	insn_info *instr;
 	unsigned long int pos;
 	int count;
 
 	hnotice(4, "Inserting instrucions from raw binary code (%zd bytes) %s the instruction at %#08llx\n",
-		size, INSERT_BEFORE ? "before" : "after", target->new_addr);
+		size, flag == INSERT_BEFORE ? "before" : "after", target->new_addr);
 	hdump(5, "Binary", binary, size);
 
 	// Pointer 'binary' may contains more than one instruction
@@ -385,14 +393,16 @@ int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size
 	
 	while(pos < size) {
 		// Interprets the binary bytes and packs the next instruction
-		parse_instruction_bytes(binary, &pos, instr);
+		parse_instruction_bytes(binary, &pos, &instr);
 
 		// Adds the newly creaed instruction descriptor to the
 		// internal binary representation
-		insert_insn_at(target, *instr, flag);
+		insert_insn_at(target, instr, flag);
 
 		count++;
 	}
+
+	*last = instr;
 
 	hnotice(4, "Inserted %d instruction %s the target <%#08llx>\n", count, INSERT_BEFORE ? "before" : "after", target->new_addr);
 
@@ -400,7 +410,8 @@ int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size
 }
 
 
-int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size, insn_info **instr) {
+int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size, insn_info **last) {
+	insn_info *instr;
 	unsigned long int pos = 0;
 	unsigned int old_size;
 	int count;
@@ -415,26 +426,27 @@ int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t
 	// First instruction met will substitute the current target,
 	// whereas the following have to be inserted just after it
 	old_size = target->size;
-	parse_instruction_bytes(binary, &pos, instr);
-	substitute_insn_with(target, *instr);
+	parse_instruction_bytes(binary, &pos, &instr);
+	substitute_insn_with(target, instr);
 
 	// we have to update all the references
 	// delta shift should be the: d = (old size - the new one) [signed, obviously]
-	update_instruction_references(*instr, (old_size - size));
-	target = *instr;
+	update_instruction_references(instr, (old_size - size));
 
 	count = 1;
 
 	while(pos < size) {
 		// Interprets the binary bytes and packs the next instruction
-		parse_instruction_bytes(binary, &pos, instr);
+		parse_instruction_bytes(binary, &pos, &instr);
 
 		// Adds the newly creaed instruction descriptor to the
 		// internal binary representation
-		insert_insn_at(target, *instr, INSERT_AFTER);
+		insert_insn_at(target, instr, INSERT_AFTER);
 
 		count++;
 	}
+
+	*last = instr;
 
 	hnotice(4, "Target instruction subsituted with %d instructions\n", count);
 
@@ -451,34 +463,34 @@ int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t
  * @param target The pointer to the pivot instruction descriptor
  * @param function Name of the function to be called
  * @param where Integer constant which defines where to add the call wrt target
+ * @param instr Pointer to the call instruction just created
  */
-void add_call_instruction(insn_info *target, unsigned char *func, int where) {
-	insn_info *instr;
+void add_call_instruction(insn_info *target, unsigned char *func, int where, insn_info **instr) {
 	symbol *sym;
-	unsigned char *call;
-	unsigned long int pos;
+	unsigned char call[5];
 
-	// TODO: da spostare in un file a parte per x86!
-	// XXX: perché una malloc qui?!
-	call = malloc(5);
-	bzero(call, 5);
-	call[0] = 0xe8;
-	pos = 0;
+	bzero(call, sizeof(call));
+	switch (PROGRAM(insn_set)) {
+		case X86_INSN:
+			call[0] = 0xe8;
+		break;
+	}
 
 	// Checks and creates the symbol name
 	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
 
 	// Create the CALL node
-	parse_instruction_bytes(call, &pos, &instr);
+	//parse_instruction_bytes(call, &pos, &instr);
 
 	// Adds the instruction to the binary representation
 	// WRANING! We MUST add the instruction BEFORE to create
 	// the new rela node, otherwise the instruction's address
 	// will not be coherent anymore once at the amitting step
-	insert_insn_at(target, instr, where);
+	insert_instructions_at(target, call, sizeof(call), where, instr);
+	//insert_insn_at(target, instr, where);
 
 	// Once the instruction has been inserted into the binary representation
 	// and each address and reference have been properly updated,
 	// create a new RELA entry
-	instruction_rela_node(sym, instr, RELOCATE_RELATIVE_32);
+	instruction_rela_node(sym, *instr, RELOCATE_RELATIVE_32);
 }

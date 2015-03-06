@@ -38,7 +38,7 @@ int function_size (function *func) {
 	insn_info *insn;
 	int size;
 
-	if(!func)
+	if(func == NULL)
 		return -1;
 
 	insn = func->insn;
@@ -51,12 +51,12 @@ int function_size (function *func) {
 	return size;
 }
 
-symbol * find_symbol (char *name) {
+symbol * find_symbol (unsigned char *name) {
 	symbol *sym;
 
 	sym = PROGRAM(symbols);
 	while(sym) {
-		if(!strcmp((const char *)sym->name, name))
+		if(!strcmp((const char *)sym->name, name) && !sym->duplicate)
 			return sym;
 		sym = sym->next;
 	}
@@ -113,8 +113,8 @@ void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type) {
 
 	insn->reference = ref;
 
-	hnotice(3, "New RELA node has been created from symbol '%s' %+ld to the instruction at address <%#08llx>\n",
-		sym->name, ref->relocation.addend, insn->new_addr);
+	hnotice(3, "New RELA node has been created from symbol '%s' (%d) %+ld to the instruction at address <%#08llx>\n",
+		sym->name, sym->index, ref->relocation.addend, insn->new_addr);
 }
 
 
@@ -122,7 +122,7 @@ void create_rela_node(symbol *sym, long long offset, long addend, unsigned char 
 	char type;
 
 	// Decide the relocation's type accordingly to the relocation specifications
-	if(!strcmp((const char *)secname, ".text")) {
+	/*if(!strcmp((const char *)secname, ".text")) {
 
 		// Relocatation applies in the .text section towards symbol 'sym'
 		switch(sym->type) {
@@ -139,7 +139,7 @@ void create_rela_node(symbol *sym, long long offset, long addend, unsigned char 
 	} else {
 		// Default value
 		type = R_X86_64_64;
-	}
+	}*/
 
 	sym = symbol_check_shared(sym);
 	sym->referenced = 1;
@@ -185,12 +185,17 @@ void add_data_to_section (symbol *sym, void *data, size_t size) {
 symbol *create_symbol_node(unsigned char *name, int type, int bind, int size) {
 	symbol *sym;
 	symbol *node;
+	unsigned int index;
 
 	// Check whether the symbol requested is already present
 	node = PROGRAM(symbols);
 	while(node) {
-		if(!strcmp((const char *)node->name, (const char *)name))
+		if(!strcmp((const char *)node->name, (const char *)name)){
+			hnotice(3, "%s symbol '%s' (%d) node found [ver = %d]\n",
+				node->bind == SYMBOL_LOCAL ? "Local" : node->bind == SYMBOL_GLOBAL ?  "Global" : "Weak",
+				node->name, node->index, node->version);
 			return node;
+		}
 		sym = node;
 		node = node->next;
 	}
@@ -202,24 +207,56 @@ symbol *create_symbol_node(unsigned char *name, int type, int bind, int size) {
 	}
 	bzero(node, sizeof(symbol));
 
-	//node->name = (char *) malloc(strlen(name));
-	//strcpy(node->name, name);
-	node->name = name;
+	node->name = (char *) malloc(strlen(name) + 1);
+	strcpy(node->name, name);
+	//node->name = name;
 	node->type = type;
 	node->bind = bind;
 	node->size = size;
 	node->version = PROGRAM(version);
 
-	// add to the symbol list (sym holds the last symbol yet)
-	/*sym = PROGRAM(symbols);
-	while (sym->next) {
-		sym = sym->next;
-	}*/
-	sym->next = node;
 
-	hnotice(3, "New %s symbol '%s' node of type %d and size %d bytes has been created\n",
-		sym->bind == SYMBOL_LOCAL ? "local" : sym->bind == SYMBOL_GLOBAL ?  "global" : "weak", node->name, node->type,
-		node->size);
+	switch(bind) {
+		// in case the symbol is local append after the last local symbol
+		// in the list
+		case SYMBOL_LOCAL:
+			sym = PROGRAM(symbols);
+			while(sym) {
+				if(sym->next->bind != SYMBOL_LOCAL)
+				 break;
+				sym = sym->next;
+			}
+			index = sym->index + 1;
+
+			node->next = sym->next;
+			sym->next = node;
+
+			// update the indexes of all the other symbols
+			/*sym = node;
+			while(sym) {
+				if(sym->duplicate) {
+					sym->index = idx - 1;
+					sym = sym->next;
+					continue;
+				}
+				
+				sym->index = index++;
+				printf("%s - %d (t=%d, b=%d)\n", sym->name, sym->index, sym->type, sym->bind);
+				sym = sym->next;
+			}*/
+			break;
+
+		// in case the symbol is global adds it to the tail
+		// add to the symbol list (here, sym holds the last symbol yet)
+		case SYMBOL_GLOBAL:
+			sym->next = node;
+			node->index = sym->index + 1;
+			break;
+	}
+
+	hnotice(3, "New %s symbol '%s' (%d) node of type %d and size %d bytes has been created\n",
+		node->bind == SYMBOL_LOCAL ? "local" : node->bind == SYMBOL_GLOBAL ?  "global" : "weak", node->name, node->index,
+		node->type, node->size);
 
 	return node;
 }
@@ -298,10 +335,63 @@ symbol * symbol_check_shared (symbol *sym) {
 		return s;
 	}
 
+	sym->referenced = true;
 	hnotice(5, "First reference to '%s'\n", sym->name);
 	// no duplicates, return the symbol itself
 	return sym;
 }
+
+
+static symbol * clone_symbol (symbol *sym) {
+	symbol *clone, *head;
+
+	head = clone = clone_symbol(sym);
+	sym = sym->next;
+
+	while(sym) {
+		clone->next = clone_symbol(sym);
+		clone = clone->next;
+		sym = sym->next;
+	}
+
+	return clone;
+}
+
+
+/**
+ * Clone the whole symbol list of the internal representation. This is done
+ * in order to support future multiversioning of executable and object files.
+ *
+ * @return The pointer to the first symbol descriptor of the clone list
+ */
+/*
+static symbol *clone_symbol_list (symbol *sym) {
+	symbol *clone, *head;
+
+	if(!sym)
+		return NULL;
+
+	head = clone = clone_symbol(sym);
+	sym = sym->next;
+
+	while(sym) {
+		clone->next = clone_symbol(sym);
+		clone = clone->next;
+		sym = sym->next;
+	}
+
+	//================ DEBUG ================//
+	hprint("Simboli copiati!\n");
+	sym = head;
+	while(sym) {
+		printf("Simbolo '%s' di tipo %d (%p)\n", sym->name, sym->type, sym);
+		sym = sym->next;
+	}
+	//=======================================//
+
+	return head;
+}
+*/
 
 
 static insn_info * clone_instruction (insn_info *insn) {
@@ -344,55 +434,6 @@ static insn_info * clone_instruction_list (insn_info *insn) {
 	return head;
 }
 
-/*
-static symbol * clone_symbol (symbol *sym) {
-	symbol *clone;
-
-	clone = (symbol *) malloc(sizeof(symbol));
-	if(!clone) {
-		herror(true, "Out of memory!\n");
-	}
-
-	memcpy(clone, sym, sizeof(symbol));
-
-	return clone;
-}
-*/
-
-/**
- * Clone the whole symbol list of the internal representation. This is done
- * in order to support future multiversioning of executable and object files.
- *
- * @return The pointer to the first symbol descriptor of the clone list
- */
-/*
-static symbol *clone_symbol_list (symbol *sym) {
-	symbol *clone, *head;
-
-	if(!sym)
-		return NULL;
-
-	head = clone = clone_symbol(sym);
-	sym = sym->next;
-
-	while(sym) {
-		clone->next = clone_symbol(sym);
-		clone = clone->next;
-		sym = sym->next;
-	}
-
-	//================ DEBUG ================//
-	hprint("Simboli copiati!\n");
-	sym = head;
-	while(sym) {
-		printf("Simbolo '%s' di tipo %d (%p)\n", sym->name, sym->type, sym);
-		sym = sym->next;
-	}
-	//=======================================//
-
-	return head;
-}
-*/
 
 static function * clone_function (function *func, char *suffix) {
 	function *clone;
@@ -423,14 +464,14 @@ static function * clone_function (function *func, char *suffix) {
 	strcat(name, suffix);
 
 	size = function_size(clone);
-	if(size < 0) {
+	if(size <= 0) {
 		hinternal();
 	}
 
 	clone->symbol = create_symbol_node((unsigned char *)name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, size);
 	clone->name = (unsigned char *)name;
 
-	hnotice(6, "Function '%s' (%d bytes) cloned\n", func->name, func->symbol->size);
+	hnotice(6, "Function '%s' (%d bytes) cloned\n", clone->name, clone->symbol->size);
 
 	return clone;
 }
@@ -446,6 +487,7 @@ static function * clone_function (function *func, char *suffix) {
 static function *clone_function_list(function *func, char *suffix) {
 	function *clone, *head;
 	insn_info *insn;
+	symbol *sym;
 
 	if(!func)
 		return NULL;
@@ -458,23 +500,6 @@ static function *clone_function_list(function *func, char *suffix) {
 		clone = clone->next;
 		func = func->next;
 	}
-
-/*	hprint("Istruzioni copiate!\n");
-
-	func = head;
-	while(func) {
-		printf("Funzione '%s' (%p):\n", func->name, func);
-
-		insn = head->insn;
-		while(insn) {
-			printf("\t%s <%#08llx> (%p)\n", insn->i.x86.mnemonic, insn->new_addr, insn);
-			insn = insn->next;
-		}
-		printf("\n");
-
-		func = func->next;
-	}
-*/
 
 	return head;
 }
@@ -493,6 +518,96 @@ function * clone_function_descriptor (function *original, char *name) {
 }
 
 
+static void clone_rodata_relocation(symbol *original, function *code, int version, unsigned char *suffix) {
+	symbol *sym, *ref, *rodata;
+	function *func;
+	insn_info *instr;
+	unsigned char name[256];
+	unsigned int offset = 0;
+
+	// Here we create also a new section symbol for the future
+	// .text section that will contain the previously cloned functions.
+	// This is a mandatory step in order to have the relocation towards
+	// the .text.xyz section aligned for the switch cases
+	bzero(name, sizeof(name));
+	strcpy(name, ".text.");
+	strcat(name, (unsigned char *)suffix);
+	ref = create_symbol_node((unsigned char *)name, SYMBOL_SECTION, SYMBOL_LOCAL, 0);
+
+	// We have create accordingly a new .rela.rodata.xyz in order to maintain aligned relocation
+	// offsets within sections, otherwise they will overwrite each other during the final linking stage.
+	// The new section is intended to handle switch cases, the remainder of the code should be fine.
+	/*bzero(name, sizeof(name));
+	strcpy(name, ".rodata.");
+	strcat(name, (unsigned char *)suffix);
+	from = create_symbol_node((unsigned char *)name, SYMBOL_SECTION, SYMBOL_LOCAL, 0);*/
+
+	// We reuse the same .rodata section to adds the relocation entries to the instrumented text
+	// without to create as many sections as the versions created. Therefore we will look for the
+	// '.rodata' sections within the symbol list and retrieve its size to append at the end the new
+	// entries.
+	rodata = find_symbol((unsigned char *)".rodata");
+	offset = rodata->size;
+
+	sym = original;
+	while(sym) {
+
+		// Looks for refrences which applies to .text section only
+		// from .rodata (e.g. switch cases), from the original code
+		if(!strcmp((const char *)sym->name, ".text") &&
+			!strcmp((const char *)sym->relocation.secname, ".rodata") &&
+			sym->version == 0) {
+			
+			ref = symbol_check_shared(ref);
+
+			ref->relocation.offset = offset;
+			ref->relocation.addend = sym->relocation.addend;
+			ref->relocation.type = sym->relocation.type;
+			ref->relocation.secname = rodata->name;
+
+			//printf("Cerco rilocazione verso .rodata contro .text con offset = %llx\n", sym->relocation.offset);
+
+			func = code;
+			while(func) {
+				instr = func->insn;
+				while(instr) {
+					if(instr->reference && instr->reference->relocation.addend == sym->relocation.offset) {
+						instr->reference = symbol_check_shared(instr->reference);
+						instr->reference->relocation.addend = offset;
+
+						//printf("Aggiornata rilocazione: <%#08llx>%+d\n", instr->reference->relocation.offset, instr->reference->relocation.addend);
+					}
+
+					if(instr->new_addr == sym->relocation.addend) {
+						instr->pointedby = ref;
+						ref->relocation.ref_insn = instr;
+
+						printf("Aggiornato il puntatore al simbolo che punta all'istruzione <%#08llx> alla versione %d\n", instr->new_addr, ref->version);
+					}
+
+					instr = instr->next;
+				}
+
+				func = func->next;
+			}
+
+			hnotice(5, "Updated rodata relocation: <%#08llx>%+d to '%s'\n",
+				ref->relocation.offset, ref->relocation.addend, ref->relocation.secname);
+
+			// Each relocation displaces of 4 bytes (32 bits) at a time
+			// TODO: It is safe to suppose that relocations may not be
+			// more that 4 bytes?
+			offset += 4;
+			rodata->size += 4;
+		}
+
+		sym = sym->next;
+	}
+	
+	hnotice(4, "Added new relocation entries in '.rodata' section (%d bytes)\n", rodata->size);
+}
+
+
 int switch_executable_version (int version) {
 	function *func, *code;
 
@@ -504,13 +619,14 @@ int switch_executable_version (int version) {
 	// (symbols are not copied sincethey are shared among versions)
 	if(!PROGRAM(v_code)[version]) {
 
-		hnotice(2, "Version not present, cloning the binary representation...\n");
+		hnotice(3, "Version not present, cloning the binary representation...\n");
 
 		// Clones the whole code (symbols are shared) from the plain version (0)
 		// to the new one by appending the user-defined suffix to each new function
 		//SYMBOLS = clone_symbol_list(PROGRAM(symbols));
 		code = func = clone_function_list(PROGRAM(v_code)[0], (char *)config.rules[version]->suffix);
 		PROGRAM(v_code)[version] = code;
+		clone_rodata_relocation(PROGRAM(symbols), code, version, (char *)config.rules[version]->suffix);
 
 		// The overall number of handled versions has to be increased
 		PROGRAM(versions)++;
@@ -527,13 +643,13 @@ int switch_executable_version (int version) {
 			func = func->next;
 		}
 
-		hnotice(2, "Version %d of the executable's binary representation created\n", version);
+		hnotice(3, "Version %d of the executable's binary representation created\n", version);
 	}
 
 	// Update the exexcutable versions array
 	PROGRAM(code) = PROGRAM(v_code)[version];
 
-	hnotice(2, "Switched to version %d\n", version);
+	hnotice(3, "Switched to version %d\n", version);
 
 	return PROGRAM(version);
 }

@@ -15,7 +15,6 @@ hijacker_SOURCES =	main.c \
 			executables/elf/reverse-elf.c \
 			rules/apply-rules.c \
 			rules/insert_insn.c \
-			rules/reverse-instrument.c \
 			instructions/x86/emit-x86.c \
 			instructions/x86/parse-x86.c \
 			instructions/x86/reverse-x86.c
