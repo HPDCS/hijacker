@@ -47,7 +47,7 @@ long write_x86_code(function *func, section *text, section *relocation) {
 		x86 = &instr->i.x86;
 
 		// handle the relocation
-		if(instr->reference && !IS_JUMP(instr)) {
+		if(instr->reference) {
 			sym = instr->reference;
 
 			displ = 0;

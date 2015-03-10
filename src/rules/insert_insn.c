@@ -187,7 +187,7 @@ static void update_instruction_references(insn_info *target, int shift) {
 		instr = foo->insn;
 		while(instr != NULL) {
 
-			if(IS_JUMP(instr)) {
+			if(IS_JUMP(instr) && instr->jumpto != NULL) {
 				jumpto = (insn_info *)instr->jumpto;
 				x86 = &(instr->i.x86);
 

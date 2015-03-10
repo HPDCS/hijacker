@@ -515,6 +515,18 @@ void link_jump_instructions(function *func, function *code_version) {
 	while(instr != NULL) {
 
 		if(IS_JUMP(instr)) {
+			// TODO: ATTENZIONE!!! Non vale per le jump con rilocazione, perché cerca un target inesistente
+			// E' necessario individuare che l'istruzione sebbene sia una jump non deve essere trattata perché
+			// ci penserà il linker nella fase successiva
+
+			// If the jump instruction has a reference, this means that a relocation has to be applied;
+			// therefore looking for the target instruction is actually incorect since it will not be.
+			if(instr->reference != NULL) {
+
+				// Simply skip the instruction; the linker will be in charge to correctly handle it
+				instr = instr->next;
+				continue;
+			}
 
 			// Provided a jump instruction, look for the destination address
 			switch(PROGRAM(insn_set)) {

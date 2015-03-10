@@ -451,6 +451,11 @@ long elf_write_reloc(section *sec, symbol *sym, unsigned long long addr, long ad
 		return -1; // TODO: is it correct to return -1 in case of error?
 	}
 
+	if(sym->version < 0) {
+		herror(false, "Symbol '%s' [%d] against which the relocation applies has been skipped: semantic correctness cannot be ensured!\n",
+			sym->name, sym->index);
+	}
+
 	size = rela_size();
 	hdr = (Section_Hdr *) sec->header;
 	rela = (Elf_Rela *) malloc(size);
@@ -706,7 +711,7 @@ static void elf_build(void) {
 	long size;
 	unsigned int ver;
 	unsigned int target;
-	symbol *sym, *prev;
+	symbol *sym, *prev, *sym2;
 	function *func;
 	section *rela;
 	section *sec;
@@ -764,7 +769,7 @@ static void elf_build(void) {
 	elf_name_section(bss, ".bss");
 
 	sym = find_symbol((unsigned char *)".rodata");
-	rodata = elf_create_section(SHT_PROGBITS, sym->size, SHF_ALLOC);
+	rodata = elf_create_section(SHT_PROGBITS, size, SHF_ALLOC);
 	elf_name_section(rodata, ".rodata");
 
 	// count the number of the registered symbols and creates a
@@ -951,7 +956,32 @@ static void elf_update_symbol_list(symbol *first) {
 			if(!sec) {
 				// no section will be found with the same name
 				// thus skip the ignored section
+
+				// TODO: da abilitare un supporto dinamico
+				/*if(1) {
+					// se è stata richiesta la creazione di tutte le sezioni originali
+					// allora viene creata una nuova sezione a partire dal file originale
+
+					sec = PROGRAM(sections);
+					while(sec) {
+						if(!strcmp(sym->name, (char *)sec->name)) {
+
+							elf_create_section(sec->type, sec->size, sec->flags);
+							sym->secnum = sec->index;
+							//sym->index = sec->index;
+							sec = sec->next;
+
+							hnotice(4, "Updated the section symbol index to %d\n", sym->secnum);
+							break;
+						}
+
+						sec = sec->next;
+					}
+				}*/
+
 				hnotice(4, "Section will be ignored\n");
+
+				sym->version = -1;
 
 				prev->next = sym->next;
 				sym = prev->next;
@@ -986,6 +1016,7 @@ static void elf_fill_sections(void) {
 	long offset;
 	unsigned int ver;
 	void *content;
+	long size;
 
 	sym = PROGRAM(symbols);
 
@@ -1040,24 +1071,27 @@ static void elf_fill_sections(void) {
 	// Fill rodata/bss sections
 	hnotice(2, "Fill rodata/bss data sections...\n");
 	sec = PROGRAM(sections);
+	offset = 0;
 	while(sec) {
-		if(!strcmp(sec_name(sec->index), ".rodata")) {
+		if(!strncmp(sec_name(sec->index), ".rodata", 7)) {
 			sym = find_symbol((unsigned char *)sec_name(sec->index));
+			//sym = find_symbol((unsigned char *)".rodata");
 			if(sym == NULL){
 				hinternal();
 			}
-			
-			hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n", sym->name, sym->secnum, sym->size);
-			content = malloc(sym->size);
+
+			size = sec_size(sec->index);
+			hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n", sym->name, sym->secnum, size);
+			content = malloc(size);
 			if(content == NULL) {
 				herror(true, "Out of memory!\n");
 			}
 
 			// This is to handle the case that hijacker will adds indirectly data to pre-existent sections
 			// i.e. in case of swith cases for different versions
-			bzero(content, sym->size);
-			memcpy(content, sec->payload, sec_size(sec->index));
-			elf_write_data(rodata, content, sym->size);
+			bzero(content, size);
+			memcpy(content, sec->payload, size);
+			elf_write_data(rodata, content, size);
 
 		} else if(!strcmp(sec_name(sec->index), ".bss")) {
 			sym = find_symbol((unsigned char *)sec_name(sec->index));

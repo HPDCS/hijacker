@@ -61,7 +61,7 @@ typedef struct _symbol {
 		unsigned char type;			/// The type of the relocation
 		unsigned char *secname;		/// Name of the relocation section where to add the entry
 	} relocation;
-	unsigned int	version;	/// Integer indicasting to which instrumenting verions it belongs
+	int	version;	/// Integer indicasting to which instrumenting verions it belongs
 	bool		duplicate;		/// Flag that tells if symbol is a duplicate
 	bool		referenced;		/// Flag indicating the symbol has been resolved
 	long		extra_flags;	/// Maintains the info field of the ELF's symbol (either bind and type) # ridondante
