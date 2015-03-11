@@ -734,6 +734,8 @@ static void resolve_symbols(void) {
  *
  * If the symbol or the code address referenced to by the relocation entry was not found a warning is issued,
  * but the parsing goes on.
+ *
+ * Note: Requires that symbols have already been resolved!
  */
 static void resolve_relocation(void) {
 	reloc *rel;
@@ -742,6 +744,7 @@ static void resolve_relocation(void) {
 	symbol *sym, *sym_2;
 	section *sec;
 	int target, flags;
+	unsigned long long offset;
 
 	hnotice(1, "Resolving relocation entries...\n");
 
@@ -798,8 +801,9 @@ static void resolve_relocation(void) {
 				// is the closest address to one relocation refers to.
 				func = functions;
 				instr = NULL;
-				while(func->next){
-					if(func->next->orig_addr > (unsigned long long)rel->offset){
+				offset = (unsigned long long)rel->offset;
+				while(func){
+					if(offset > func->orig_addr && offset < (func->orig_addr + func->symbol->size)){
 						break;
 					}
 
@@ -809,6 +813,8 @@ static void resolve_relocation(void) {
 				if(func) {
 					hnotice(3, "Relocation is found to be in function '%s' at <%#08llx>\n", func->name, func->orig_addr);
 					instr = func->insn;
+				} else {
+					hinternal();
 				}
 
 				// At this point 'instr' (should) contains the first instruction of the
