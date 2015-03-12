@@ -1,4 +1,4 @@
-	/**
+/**
 *                       Copyright (C) 2008-2015 HPDCS Group
 *                       http://www.dis.uniroma1.it/~hpdcs
 *
@@ -597,8 +597,8 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 			// Each relocation displaces of 4 bytes (32 bits) at a time
 			// TODO: It is safe to suppose that relocations may not be
 			// more that 4 bytes?
-			offset += 4;
-			rodata->size += 4;
+			offset += 8;
+			rodata->size += 8;
 		}
 
 		sym = sym->next;

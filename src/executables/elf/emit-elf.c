@@ -769,7 +769,7 @@ static void elf_build(void) {
 	elf_name_section(bss, ".bss");
 
 	sym = find_symbol((unsigned char *)".rodata");
-	rodata = elf_create_section(SHT_PROGBITS, size, SHF_ALLOC);
+	rodata = elf_create_section(SHT_PROGBITS, sym->size, SHF_ALLOC);
 	elf_name_section(rodata, ".rodata");
 
 	// count the number of the registered symbols and creates a
@@ -1074,13 +1074,14 @@ static void elf_fill_sections(void) {
 	offset = 0;
 	while(sec) {
 		if(!strncmp(sec_name(sec->index), ".rodata", 7)) {
-			sym = find_symbol((unsigned char *)sec_name(sec->index));
-			//sym = find_symbol((unsigned char *)".rodata");
+			//sym = find_symbol((unsigned char *)sec_name(sec->index));
+			sym = find_symbol((unsigned char *)".rodata");
 			if(sym == NULL){
 				hinternal();
 			}
 
-			size = sec_size(sec->index);
+			//size = sec_size(sec->index);
+			size = sym->size;
 			hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n", sym->name, sym->secnum, size);
 			content = malloc(size);
 			if(content == NULL) {
@@ -1090,7 +1091,7 @@ static void elf_fill_sections(void) {
 			// This is to handle the case that hijacker will adds indirectly data to pre-existent sections
 			// i.e. in case of swith cases for different versions
 			bzero(content, size);
-			memcpy(content, sec->payload, size);
+			memcpy(content, sec->payload, sec_size(sec->index));
 			elf_write_data(rodata, content, size);
 
 		} else if(!strcmp(sec_name(sec->index), ".bss")) {
