@@ -639,6 +639,26 @@ static inline section * find_section(unsigned int idx) {
 }
 
 
+static function * register_function(function *head, symbol *sym) {
+	function *prev, *func;
+
+	prev = func = head;
+	while(func) {
+		if(sym->func->orig_addr
+		func = func->next;
+	}
+
+	offset = (unsigned long long)rel->offset;
+	while(func){
+		if(offset > func->orig_addr && offset < (func->orig_addr + func->symbol->size)){
+			break;
+		}
+
+		func = func->next;
+	}
+}
+
+
 /**
  * Second phase parser which resolves symbols.
  * Resolves symbols by retrieving its type and calling the relative function which handle them correctly.
@@ -650,7 +670,7 @@ static void resolve_symbols(void) {
 	// Symbols will resolved and linked to the relative function descriptor object.
 
 	symbol *sym;			// Current symbol to be resolved
-	function *head, *func;	// Function pointers
+	function *head, *curr, *func;	// Function pointers
 
 	sym = symbols->payload;
 
@@ -664,10 +684,20 @@ static void resolve_symbols(void) {
 
 		switch(sym->type){
 		case SYMBOL_FUNCTION:
-			func->next = (function *) malloc(sizeof(function));
-			func = func->next;
+			func = malloc(sizeof(function));
+			//func = func->next;
 
 			split_function(sym, func);
+			curr = head;
+			while(curr->next) {
+				if(func->orig_addr < curr->next->orig_addr) {
+					func->next = curr->next;
+					curr->next = func;
+				}
+				
+				curr = curr->next;
+			}
+
 			func->symbol = sym;
 
 			hnotice(2, "Function '%s' (%d bytes long) :: <%#08llx>\n", sym->name, sym->size, func->orig_addr);
