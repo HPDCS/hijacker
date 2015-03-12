@@ -45,11 +45,11 @@
 #include <x86/x86.h>
 
 
-static section *relocs;			/// List of all relocations sections parsed
-static section *symbols;		/// List of all symbols parsed
-static section *code;			/// List of whole code sections parsed
-static function *functions;		/// List of resolved functions
-static char *strings;			/// Array of strings
+static section *relocs = 0;		/// List of all relocations sections parsed
+static section *symbols = 0;		/// List of all symbols parsed
+static section *code = 0;		/// List of whole code sections parsed
+static function *functions = 0;		/// List of resolved functions
+static char *strings = 0;		/// Array of strings
 
 // FIXME: redundancy with 'add_section'
 /**
@@ -639,26 +639,6 @@ static inline section * find_section(unsigned int idx) {
 }
 
 
-static function * register_function(function *head, symbol *sym) {
-	function *prev, *func;
-
-	prev = func = head;
-	while(func) {
-		if(sym->func->orig_addr
-		func = func->next;
-	}
-
-	offset = (unsigned long long)rel->offset;
-	while(func){
-		if(offset > func->orig_addr && offset < (func->orig_addr + func->symbol->size)){
-			break;
-		}
-
-		func = func->next;
-	}
-}
-
-
 /**
  * Second phase parser which resolves symbols.
  * Resolves symbols by retrieving its type and calling the relative function which handle them correctly.
@@ -670,11 +650,11 @@ static void resolve_symbols(void) {
 	// Symbols will resolved and linked to the relative function descriptor object.
 
 	symbol *sym;			// Current symbol to be resolved
-	function *head, *curr, *func;	// Function pointers
+	function *head, *curr, *prev, *func;	// Function pointers
 
 	sym = symbols->payload;
 
-	head = func = (function *)malloc(sizeof(function));
+	head = malloc(sizeof(function));
 	bzero(head, sizeof(function));
 
 	hnotice(1, "Resolving symbols...\n");
@@ -685,22 +665,29 @@ static void resolve_symbols(void) {
 		switch(sym->type){
 		case SYMBOL_FUNCTION:
 			func = malloc(sizeof(function));
-			//func = func->next;
-
-			split_function(sym, func);
-			curr = head;
-			while(curr->next) {
-				if(func->orig_addr < curr->next->orig_addr) {
-					func->next = curr->next;
-					curr->next = func;
-				}
-				
-				curr = curr->next;
+			if(func == NULL) {
+				herror(true, "Out of memory!\n");
 			}
 
+			split_function(sym, func);
 			func->symbol = sym;
 
 			hnotice(2, "Function '%s' (%d bytes long) :: <%#08llx>\n", sym->name, sym->size, func->orig_addr);
+			
+			curr = prev = head;
+			while(curr) {
+				if(func->orig_addr <= curr->orig_addr) {
+				//	func->next = prev->next;
+				//	prev->next = func;
+					break;
+				}
+				
+				prev = curr;
+				curr = curr->next;
+			}
+			func->next = prev->next;
+			prev->next = func;
+
 			break;
 
 		case SYMBOL_VARIABLE:
@@ -741,6 +728,7 @@ static void resolve_symbols(void) {
 	// Link JUMP instructions and break the instruction chain
 	func = functions;
 	while(func) {
+		printf("funzione '%s' <%#08llx>\n", func->name, func->orig_addr);
 		// breaks the instructions chain
 		if(func->insn->prev) {
 			func->insn->prev->next = NULL;
