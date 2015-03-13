@@ -728,7 +728,6 @@ static void resolve_symbols(void) {
 	// Link JUMP instructions and break the instruction chain
 	func = functions;
 	while(func) {
-		printf("funzione '%s' <%#08llx>\n", func->name, func->orig_addr);
 		// breaks the instructions chain
 		if(func->insn->prev) {
 			func->insn->prev->next = NULL;

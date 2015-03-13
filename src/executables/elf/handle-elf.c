@@ -524,6 +524,7 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 	insn_info *instr;
 	unsigned char name[256];
 	unsigned int offset = 0;
+	bool first = true;
 
 	// Here we create also a new section symbol for the future
 	// .text section that will contain the previously cloned functions.
@@ -555,6 +556,7 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 		// Looks for refrences which applies to .text section only
 		// from .rodata (e.g. switch cases), from the original code
 		if(!strcmp((const char *)sym->name, ".text") &&
+			sym->relocation.secname != NULL &&
 			!strcmp((const char *)sym->relocation.secname, ".rodata") &&
 			sym->version == 0) {
 			
@@ -595,10 +597,15 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 				ref->relocation.offset, ref->relocation.addend, ref->relocation.secname);
 
 			// Each relocation displaces of 4 bytes (32 bits) at a time
-			// TODO: It is safe to suppose that relocations may not be
-			// more that 4 bytes?
-			offset += 8;
+			// TODO: It is safe to suppose that relocations are always 8 bytes long?
+			
+			//FIXME: Da identificare perché la prima rilocazione viene scritta
+			// 8 byte più avanti rispetto alle altre. Questo workaround consente di
+			// instrumentare le tabelle per gli switch case in alcune condizioni
+			// che tuttavia non sono state ancora identificate...
+			offset += first ? 16 : 8;
 			rodata->size += 8;
+			first = false;
 		}
 
 		sym = sym->next;
