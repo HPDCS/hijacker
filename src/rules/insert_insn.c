@@ -68,9 +68,10 @@ static void parse_instruction_bytes (unsigned char *bytes, unsigned long int *po
 		flags = ELF(is64) ? ADDR_64 | DATA_64 : ADDR_32 | DATA_32;
 
 		// creates a new instruction node
-		*final = instr = malloc(sizeof(insn_info));
+//		*final = instr = malloc(sizeof(insn_info));
+		instr = *final;
 
-		if(instr == NULL) {
+/*		if(instr == NULL) {
 			herror(true, "Out of memory!\n");
 		}
 		bzero(instr, sizeof(insn_info));
@@ -78,7 +79,7 @@ static void parse_instruction_bytes (unsigned char *bytes, unsigned long int *po
 		if(bytes == NULL || pos == NULL) {
 			hinternal();
 		}
-
+*/
 		// Interprets the current binary code
 		x86_disassemble_instruction(bytes, pos, &instr->i.x86, flags);
 
@@ -86,7 +87,7 @@ static void parse_instruction_bytes (unsigned char *bytes, unsigned long int *po
 		instr->opcode_size = instr->i.x86.opcode_size;
 		instr->size = instr->i.x86.insn_size;
 
-		hnotice(5, "A new '%s' instruction is parsed\n", instr->i.x86.mnemonic);
+		hnotice(5, "A new '%s' instruction is parsed (%d bytes)\n", instr->i.x86.mnemonic, instr->size);
 		hdump(6, "Raw bytes", instr->i.x86.insn, instr->size);
 
 		break;
@@ -130,53 +131,6 @@ static void update_instruction_references(insn_info *target, int shift) {
 	// updates the dimension of the function symbol
 	//func->symbol->size += shift;
 
-	// now, we have to update the addresses of all the remaining instructions in the function
-	// ATTENZIONE! Non è corretto fare questo perché gli offset delle istruzioni sono a partire
-	// dall'inizio della sezione .text quindi sarebbe necessario aggiornare TUTTI i riferimenti
-	// e non solo quelli relativi alla funzione in questione (... a meno che non si cambi la
-	// logica degli offset nel descrittore di istruzione a rappresentare lo spiazzamento
-	// relativo all'interno della funzione di appartenenza, ma non so quali altri problemi comporta)
-	hnotice(4, "Recalculate instructions' addresses\n");
-	//hnotice(5, "Updating instructions in function '%s'\n", func->name);
-
-	// Instruction addresses are recomputed from scratch starting from the very beginning
-	// of the code section. Either a new instruction is inserted or substituted, an 'offset'
-	// variable holds the incremental address which takes into account the sizes of each
-	// instruction encountered.
-	//foo = func;
-	foo = PROGRAM(code);
-	offset = 0;
-	while(foo) {
-
-		// Looks only for functions that are beyond the instruction instrumented,
-		// in order to reduce the number of total iterations
-		/*if(foo->new_addr < target->new_addr) {
-			foo = foo->next;
-			continue;
-		}*/
-
-		hnotice(5, "Updating instructions in function '%s'\n", foo->name);
-		
-		instr = foo->insn;
-		while(instr != NULL) {
-			old_offset = instr->new_addr;
-			instr->i.x86.addr = instr->new_addr = offset;
-			offset += instr->size;
-			//insn->i.x86.addr = insn->new_addr += shift;
-
-			hnotice(6, "Instruction '%s' at offset <%#08x> shifted to new address <%#08llx>\n", instr->i.x86.mnemonic,
-				old_offset, instr->new_addr);
-
-			instr = instr->next;
-		}
-
-		foo->new_addr = foo->insn->new_addr;
-		foo->symbol->size = offset;
-
-		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n", foo->symbol->name, foo->new_addr, foo->symbol->size);
-
-		foo = foo->next;
-	}
 
 	// update jump refs, if any, from this function to end of code
 	hnotice(4, "Check jump displacements\n");
@@ -184,15 +138,17 @@ static void update_instruction_references(insn_info *target, int shift) {
 	foo = PROGRAM(code);
 	while(foo) {
 
+		hnotice(5, "In function '%s'\n", foo->name);
+
 		instr = foo->insn;
 		while(instr != NULL) {
-
+			
 			if(IS_JUMP(instr) && instr->jumpto != NULL) {
 				jumpto = (insn_info *)instr->jumpto;
 				x86 = &(instr->i.x86);
 
 				offset = x86->opcode_size;
-				size = x86->insn_size - x86->opcode_size;
+				size = x86->insn_size - x86->opcode_size - x86->disp_size;
 				jump_displacement = jumpto->new_addr - (instr->new_addr + instr->size);
 				// (insn->new_addr + insn->size) will give %rip value, then we have to subtract
 				// the address of jump destination instruction
@@ -249,6 +205,7 @@ static void update_instruction_references(insn_info *target, int shift) {
 						x86 = &(instr->i.x86);
 						offset = x86->opcode_size;
 						size = x86->insn_size - x86->opcode_size;
+						instr->jumpto = jumpto;
 
 						hnotice(6, "Changed into a long jump\n");
 					}
@@ -264,6 +221,55 @@ static void update_instruction_references(insn_info *target, int shift) {
 
 			instr = instr->next;
 		}
+
+		foo = foo->next;
+	}
+
+
+	// now, we have to update the addresses of all the remaining instructions in the function
+	// ATTENZIONE! Non è corretto fare questo perché gli offset delle istruzioni sono a partire
+	// dall'inizio della sezione .text quindi sarebbe necessario aggiornare TUTTI i riferimenti
+	// e non solo quelli relativi alla funzione in questione (... a meno che non si cambi la
+	// logica degli offset nel descrittore di istruzione a rappresentare lo spiazzamento
+	// relativo all'interno della funzione di appartenenza, ma non so quali altri problemi comporta)
+	hnotice(4, "Recalculate instructions' addresses\n");
+	//hnotice(5, "Updating instructions in function '%s'\n", func->name);
+
+	// Instruction addresses are recomputed from scratch starting from the very beginning
+	// of the code section. Either a new instruction is inserted or substituted, an 'offset'
+	// variable holds the incremental address which takes into account the sizes of each
+	// instruction encountered.
+	//foo = func;
+	foo = PROGRAM(code);
+	offset = 0;
+	while(foo) {
+
+		// Looks only for functions that are beyond the instruction instrumented,
+		// in order to reduce the number of total iterations
+		/*if(foo->new_addr < target->new_addr) {
+			foo = foo->next;
+			continue;
+		}*/
+
+		hnotice(5, "Updating instructions in function '%s'\n", foo->name);
+		
+		instr = foo->insn;
+		while(instr != NULL) {
+			old_offset = instr->new_addr;
+			instr->i.x86.addr = instr->new_addr = offset;
+			offset += instr->size;
+			//insn->i.x86.addr = insn->new_addr += shift;
+
+			hnotice(6, "Instruction '%s' at offset <%#08x> shifted to new address <%#08llx>\n", instr->i.x86.mnemonic,
+				old_offset, instr->new_addr);
+
+			instr = instr->next;
+		}
+
+		foo->new_addr = foo->insn->new_addr;
+		foo->symbol->size = offset;
+
+		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n", foo->symbol->name, foo->new_addr, foo->symbol->size);
 
 		foo = foo->next;
 	}
@@ -359,9 +365,11 @@ static void substitute_insn_with(insn_info *target, insn_info *instr) {
 	// we have to update all the references
 	// delta shift should be the: d = (old size - the new one) [signed, obviously]
 	
+	// Copy addresses
 	instr->orig_addr = target->orig_addr;
 	instr->new_addr = target->new_addr;
 
+	// Update references
 	instr->prev = target->prev;
 	instr->next = target->next;
 	if(target->prev)
@@ -393,6 +401,7 @@ int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size
 	
 	while(pos < size) {
 		// Interprets the binary bytes and packs the next instruction
+		instr = malloc(sizeof(insn_info));
 		parse_instruction_bytes(binary, &pos, &instr);
 
 		// Adds the newly creaed instruction descriptor to the
@@ -417,6 +426,7 @@ int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t
 	int count;
 
 	hnotice(4, "Substituting target instruction at %#08llx with binary code\n", target->new_addr);
+	hdump(5, "Old instruction", target->i.x86.insn, target->size);
 	hdump(5, "Binary code", binary, size);
 
 	// Pointer 'binary' may contains more than one instruction
@@ -426,16 +436,18 @@ int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t
 	// First instruction met will substitute the current target,
 	// whereas the following have to be inserted just after it
 	old_size = target->size;
+	instr = target;
 	parse_instruction_bytes(binary, &pos, &instr);
-	substitute_insn_with(target, instr);
+//	substitute_insn_with(target, instr);
 
 	// we have to update all the references
-	// delta shift should be the: d = (old size - the new one) [signed, obviously]
-	update_instruction_references(instr, (old_size - size));
+	// delta shift should be the: d = (new size - old size) [signed, obviously]
+	update_instruction_references(instr, (size - old_size));
 
 	count = 1;
+//	instr = target;
 
-	while(pos < size) {
+/*	while(pos < size) {
 		// Interprets the binary bytes and packs the next instruction
 		parse_instruction_bytes(binary, &pos, &instr);
 
@@ -445,8 +457,10 @@ int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t
 
 		count++;
 	}
-
+*/
 	*last = instr;
+
+//	insert_instructions_at(instr, binary+pos, size-pos, INSERT_AFTER, last);
 
 	hnotice(4, "Target instruction subsituted with %d instructions\n", count);
 
