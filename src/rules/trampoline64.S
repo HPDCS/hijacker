@@ -41,11 +41,20 @@ trampoline:
 	push	%rbx
 	mov	%rsp, %rax 		 # Ricostruisce il valore iniziale di %rsp
 	sub	$8, %rsp		 # Anzichè 4 toglie 8 a rsp (sale di una posizione nello stack)
-	add	$32+16, %rax 		 # %rsp è salito di 4 posizioni rispetto all'inizio, in più hijacker ha inserito 16 byte prima della call
+	add	$64, %rax 		 # %rsp è salito di 4 posizioni rispetto all'inizio (5, con l'indirizzo di ritorno), in più hijacker ha inserito 24 byte prima della call
 	mov	%rax, (%rsp)
 	push	%rbp 			 # Salva i valori degli altri registri
 	push	%rsi
 	push	%rdi
+	
+	push	%r8
+	push	%r9
+	push	%r10
+	push	%r11
+	push	%r12
+	push	%r13
+	push	%r14
+	push	%r15
 
 	# TODO: salvare gli altri 8 registri general purpose
 
@@ -53,7 +62,7 @@ trampoline:
 #	pushfw				# salva il registro EFLAGS
 
 	mov	%rsp, %rbp		# (12->24) Crea la finestra dello stack
-	add	$64-8, %rbp 			# (4->8) %rbp deve puntare il valore di %rax nello stack
+	add	$120, %rbp		# (4->8) %rbp deve puntare il valore di %rax nello stack
 
 	# ???
 #	mov	8(%rbp), %rsi		# (4->8) Carica il valore di ritorno della funzione chiamante in %rsi
@@ -118,8 +127,12 @@ trampoline:
 	# %rsi contiene la dimensione (in byte) della movs
 
 	# Controllo per vedere se siamo nello stack
-	cmp 	%rdi, %rsp		# Nello stack?
+	# TODO: per il controllo nelo stack è necessario un controllo più sofisticato
+	# che tenga conto del multi-threading. (Generalmente pthread alloca con malloc!)
+
 	#call	increment_stack_mov_count  # Chiama la funzione per il calcolo delle stack mov
+	
+	#cmp 	%rdi, %rsp		# Nello stack?
 	jb	.Fine				# Se %esp è minore di %edi
 
 	# La calling convention del System V ABI prevede che vengano passati
@@ -130,6 +143,15 @@ trampoline:
 
 	.Fine:
 #	popfw
+	pop	%r15
+	pop	%r14
+	pop	%r13
+	pop	%r12
+	pop	%r11
+	pop	%r10
+	pop	%r9
+	pop	%r8
+	
 	pop	%rdi 			# Ripristina i registri
 	pop	%rsi
 	pop	%rbp
@@ -138,6 +160,7 @@ trampoline:
  	pop	%rdx
  	pop	%rcx
 	pop	%rax
+	
 	ret
 
 .size   trampoline, .-trampoline

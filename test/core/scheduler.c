@@ -134,10 +134,12 @@ int main(int argc, char **argv) {
 
 		// Switch to other instrumented versions
 		if(simulation_time > 1.0/3.0 * end_time && simulation_time <= 2/3.0 * end_time ) {
+			printf("notrack\n");	
 			PE=ProcessEvent_notrack;
 		}
 
-		if((simulation_time > 2.0/3.0 * end_time) {
+		if(simulation_time > 2.0/3.0 * end_time) {
+			printf("memtrack\n");	
 			PE=ProcessEvent_memtrack;
 		}
 
