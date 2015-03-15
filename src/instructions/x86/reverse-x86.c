@@ -69,8 +69,9 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	entry->idx = x86->ireg;
 	entry->scala = x86->scale;
 
-	hdump(0, "entry:", entry, 24);
-	printf("disp=%llx, disp_size=%d\n", x86->disp, x86->disp_size);
+	//hdump(0, "entry:", entry, 24);
+	//printf("disp=%llx, disp_size=%d\n", x86->disp, x86->disp_size);
+	//printf("insn '%s' at <%#08llx>\n", x86->mnemonic, instr->new_addr);
 	
 	hnotice(4, "Push trampoline structure into stack before the target MOV...\n");
 	size = sizeof(insn_entry);	// size of the structure
