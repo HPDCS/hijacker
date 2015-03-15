@@ -56,13 +56,21 @@ trampoline:
 	push	%r14
 	push	%r15
 
-	# TODO: salvare gli altri 8 registri general purpose
-
+	# Push dei primi 4 registri vettoriali
+	sub	$16,%rsp
+	movsd	%xmm0,(%rsp)
+	sub	$16,%rsp
+	movsd	%xmm1,(%rsp)
+	sub	$16,%rsp
+	movsd	%xmm2,(%rsp)
+	sub	$16,%rsp
+	movsd	%xmm3,(%rsp)
+	
 # OCCHIO CHE QUESTO DEVE ESSERE GESTITO DA HIJACKER NELLA GENERAZIONE DELLE ISTRUZIONI INTORNO ALLA CALL
 #	pushfw				# salva il registro EFLAGS
 
 	mov	%rsp, %rbp		# (12->24) Crea la finestra dello stack
-	add	$120, %rbp		# (4->8) %rbp deve puntare il valore di %rax nello stack
+	add	$184, %rbp		# (4->8) %rbp deve puntare il valore di %rax nello stack
 
 	# ???
 #	mov	8(%rbp), %rsi		# (4->8) Carica il valore di ritorno della funzione chiamante in %rsi
@@ -142,6 +150,16 @@ trampoline:
 
 
 	.Fine:
+
+	movsd	(%rsp),%xmm3
+	add	$16,%rsp
+	movsd	(%rsp),%xmm2
+	add	$16,%rsp
+	movsd	(%rsp),%xmm1
+	add	$16,%rsp
+	movsd	(%rsp),%xmm0
+	add	$16,%rsp
+
 #	popfw
 	pop	%r15
 	pop	%r14
