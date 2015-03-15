@@ -133,7 +133,7 @@ trampoline:
 	#call	increment_stack_mov_count  # Chiama la funzione per il calcolo delle stack mov
 	
 	#cmp 	%rdi, %rsp		# Nello stack?
-	jb	.Fine				# Se %esp è minore di %edi
+	#jb	.Fine				# Se %esp è minore di %edi
 
 	# La calling convention del System V ABI prevede che vengano passati
 	# per primi i registri %rdi e %rsi, in questa sequenza

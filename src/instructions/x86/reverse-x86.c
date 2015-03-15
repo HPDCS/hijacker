@@ -63,12 +63,15 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 
 	// fill the structure
 	entry->size = x86->span;
-	entry->offset = x86->disp;
+	entry->offset = (signed) x86->disp;
 	entry->flags = x86->flags;
 	entry->base = x86->breg;
 	entry->idx = x86->ireg;
 	entry->scala = x86->scale;
 
+	hdump(0, "entry:", entry, 24);
+	printf("disp=%llx, disp_size=%d\n", x86->disp, x86->disp_size);
+	
 	hnotice(4, "Push trampoline structure into stack before the target MOV...\n");
 	size = sizeof(insn_entry);	// size of the structure
 	num = size / 4;				// number of the mov instructions needed to copy all the struture fields
