@@ -115,7 +115,7 @@ trampoline:
 	movsbq	6(%rdx), %rcx				# Carica in %rcx il valore dell'indice
 	negq	%rcx
 	movq	(%rbp, %rcx, 8), %rdi		# Salva il valore che era contenuto nel registro indice
-	movsbq	7(%rdx), %rdi				# Recupera la scala in %rdi
+	movsbq	7(%rdx), %rcx				# Recupera la scala in %rcx
 	imul	%rcx, %rdi					# e la moltiplica per l'indice
 
 	.NoIndex:
