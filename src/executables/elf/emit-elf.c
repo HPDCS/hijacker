@@ -1163,7 +1163,7 @@ void elf_generate_file(char *path) {
 
 	// if not a valid path is provided, the standard one is used
 	if(!path) {
-		path = malloc(sizeof(char *));
+		path = malloc(strlen(DEFAULT_OUT_NAME) + 1);
 		strcpy(path, DEFAULT_OUT_NAME);
 	}
 

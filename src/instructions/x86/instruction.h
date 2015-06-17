@@ -43,7 +43,7 @@ typedef struct insn_info_x86 {
 	unsigned long flags;		// Insieme di flags contenente informazioni utili generiche riguardo l'istruzione
 	unsigned char insn[15];		// I byte dell'istruzione (15 è il limite massimo)
 	unsigned char opcode[2];	// L'opcode dell'istruzione
-	char mnemonic[8];		// Il nome dell'istruzione
+	char mnemonic[16];		// Il nome dell'istruzione
 	unsigned long initial;		// Posizione iniziale nel testo
 	unsigned long insn_size;	// Lunghezza dell'istruzione
 	unsigned long addr;		// Indirizzo puntato dall'istruzione, o 0x00

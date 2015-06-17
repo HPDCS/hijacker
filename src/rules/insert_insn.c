@@ -142,7 +142,7 @@ static void update_instruction_references(insn_info *target, int shift) {
 
 		instr = foo->insn;
 		while(instr != NULL) {
-			
+
 			if(IS_JUMP(instr) && instr->jumpto != NULL) {
 				jumpto = (insn_info *)instr->jumpto;
 				x86 = &(instr->i.x86);
@@ -252,7 +252,7 @@ static void update_instruction_references(insn_info *target, int shift) {
 		}*/
 
 		hnotice(5, "Updating instructions in function '%s'\n", foo->name);
-		
+
 		instr = foo->insn;
 		while(instr != NULL) {
 			old_offset = instr->new_addr;
@@ -364,7 +364,7 @@ static void substitute_insn_with(insn_info *target, insn_info *instr) {
 
 	// we have to update all the references
 	// delta shift should be the: d = (old size - the new one) [signed, obviously]
-	
+
 	// Copy addresses
 	instr->orig_addr = target->orig_addr;
 	instr->new_addr = target->new_addr;
@@ -398,10 +398,12 @@ int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size
 	// and adds the relative instruction to the current representation
 	pos = 0;
 	count = 0;
-	
+
 	while(pos < size) {
 		// Interprets the binary bytes and packs the next instruction
 		instr = malloc(sizeof(insn_info));
+		bzero(instr, sizeof(insn_info));
+
 		parse_instruction_bytes(binary, &pos, &instr);
 
 		// Adds the newly creaed instruction descriptor to the
