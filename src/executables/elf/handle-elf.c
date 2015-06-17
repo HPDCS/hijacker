@@ -239,7 +239,7 @@ symbol *create_symbol_node(unsigned char *name, int type, int bind, int size) {
 					sym = sym->next;
 					continue;
 				}
-				
+
 				sym->index = index++;
 				printf("%s - %d (t=%d, b=%d)\n", sym->name, sym->index, sym->type, sym->bind);
 				sym = sym->next;
@@ -548,6 +548,12 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 	// '.rodata' sections within the symbol list and retrieve its size to append at the end the new
 	// entries.
 	rodata = find_symbol((unsigned char *)".rodata");
+
+	if (!rodata) {
+		hnotice(4, "Missing '.rodata' section, no relocation entries to add\n");
+		return;
+	}
+
 	offset = rodata->size;
 
 	sym = original;
@@ -559,7 +565,7 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 			sym->relocation.secname != NULL &&
 			!strcmp((const char *)sym->relocation.secname, ".rodata") &&
 			sym->version == 0) {
-			
+
 			ref = symbol_check_shared(ref);
 
 			ref->relocation.offset = offset;
@@ -598,7 +604,7 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 
 			// Each relocation displaces of 4 bytes (32 bits) at a time
 			// TODO: It is safe to suppose that relocations are always 8 bytes long?
-			
+
 			//FIXME: Da identificare perché la prima rilocazione viene scritta
 			// 8 byte più avanti rispetto alle altre. Questo workaround consente di
 			// instrumentare le tabelle per gli switch case in alcune condizioni
@@ -610,7 +616,7 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 
 		sym = sym->next;
 	}
-	
+
 	hnotice(4, "Added new relocation entries in '.rodata' section (%d bytes)\n", rodata->size);
 }
 
