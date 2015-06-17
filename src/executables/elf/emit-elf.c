@@ -769,8 +769,11 @@ static void elf_build(void) {
 	elf_name_section(bss, ".bss");
 
 	sym = find_symbol((unsigned char *)".rodata");
-	rodata = elf_create_section(SHT_PROGBITS, sym->size, SHF_ALLOC);
-	elf_name_section(rodata, ".rodata");
+
+	if (sym) {
+		rodata = elf_create_section(SHT_PROGBITS, sym->size, SHF_ALLOC);
+		elf_name_section(rodata, ".rodata");
+	}
 
 	// count the number of the registered symbols and creates a
 	// new section with the right dimension
