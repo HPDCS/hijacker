@@ -19,13 +19,16 @@
 * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *
 * @file utils.c
-* @brief Utility functions
+* @brief Utility functions and data structures
 * @author Davide Cingolani
+* @author Simone Economo
 * @date April 17, 2014
 */
 
 #include <stdio.h>
-#include "utils.h"
+#include <stdlib.h>
+
+#include <utils.h>
 
 /**
  * Perform a hexdump of data.
@@ -92,3 +95,146 @@ void hexdump (void *addr, int len) {
 	// And print the final ASCII bit.
 	printf ("  |%s|\n", buff);
 }
+
+void ll_move(linked_list *from, linked_list *to) {
+	to->first = from->first;
+	from->first = NULL;
+	to->last = from->last;
+	from->last = NULL;
+}
+
+inline bool ll_empty(linked_list *list) {
+	return (list->first ? false : true);
+}
+
+void ll_push(linked_list *list, void *elem) {
+	ll_node *node;
+
+	node = calloc(sizeof(ll_node), 1);
+  node->elem = elem;
+
+  if (ll_empty(list)) {
+    list->first = list->last = node;
+  }
+  else if (list->first == list->last) {
+  	list->last = list->first->next = node;
+  	node->prev = list->first;
+  }
+  else {
+  	list->last->next = node;
+  	node->prev = list->last;
+  	list->last = node;
+  }
+}
+
+void ll_push_first(linked_list *list, void *elem) {
+	ll_node *node;
+
+	node = calloc(sizeof(ll_node), 1);
+  node->elem = elem;
+
+  if (ll_empty(list)) {
+    list->first = list->last = node;
+  }
+  else if (list->first == list->last) {
+  	list->first = list->last->prev = node;
+  	node->next = list->last;
+  }
+  else {
+  	list->first->prev = node;
+  	node->next = list->first;
+  	list->first = node;
+  }
+}
+
+void *ll_pop(linked_list *list) {
+	ll_node *node;
+	void *elem;
+
+  if (!ll_empty(list)) {
+		if (list->first == list->last) {
+			node = list->last;
+			list->first = list->last = NULL;
+		}
+		else if (list->first->next == list->last) {
+			node = list->last;
+			list->first->next = NULL;
+			list->last = list->first;
+		}
+		else {
+			node = list->last;
+			list->last->prev->next = NULL;
+			list->last = list->last->prev;
+		}
+	}
+
+	if (node) {
+		elem = node->elem;
+		free(node);
+	}
+
+	return elem;
+}
+
+void *ll_pop_first(linked_list *list) {
+	ll_node *node;
+	void *elem;
+
+  if (!ll_empty(list)) {
+		if (list->first == list->last) {
+			node = list->first;
+			list->first = list->last = NULL;
+		}
+		else if (list->first->next == list->last) {
+			node = list->first;
+			list->last->prev = NULL;
+			list->first = list->last;
+		}
+		else {
+			node = list->first;
+			list->first->next->prev = NULL;
+			list->first = list->first->next;
+		}
+	}
+
+	if (node) {
+		elem = node->elem;
+		free(node);
+	}
+
+	return elem;
+}
+
+// static ll_node *ll_find(linked_list *list, void *elem) {
+// 	ll_node *node;
+
+// 	node = list->first;
+// 	while (node) {
+// 		if (node->elem == elem) {
+// 			break;
+// 		}
+
+// 		node = node->next;
+// 	}
+
+// 	return node;
+// }
+
+// void ll_remove(linked_list *list, void *elem) {
+// 	ll_node *node;
+
+// 	node = ll_find(list, elem);
+
+// 	if (node) {
+// 		if (list->first == node) {
+// 			ll_pop_first(list);
+// 		}
+// 		else if (list->last == node) {
+// 			ll_pop(list);
+// 		}
+// 		else {
+// 			node->prev->next = node->next;
+// 			node->next->prev = node->prev;
+// 		}
+// 	}
+// }

@@ -50,6 +50,8 @@ static section *symbols = 0;		/// List of all symbols parsed
 static section *code = 0;		/// List of whole code sections parsed
 static function *functions = 0;		/// List of resolved functions
 static char *strings = 0;		/// Array of strings
+static insn_info *last_insn = 0; /// [SE] Last occurring instruction in the code
+static block *blocks = 0;		/// [SE] List of recognized basic blocks
 
 // FIXME: redundancy with 'add_section'
 /**
@@ -202,9 +204,11 @@ static void elf_code_section(int sec) {
 
 	}
 
+	last_insn = curr->prev;
+
 	// TODO: we left a blank node at the end of the chain!
-	//curr->prev->next = 0;
-	//free(curr);
+	curr->prev->next = NULL;
+	free(curr);
 
 	// At this time, we consider the sections just as a sequence of instructions.
 	// Later, a second pass on this sequence will divide instructions in functions,
@@ -613,6 +617,32 @@ void link_jump_instructions(function *func, function *code_version) {
 
 				hnotice(3, "Call instruction at <%#08llx> linked to address <%#08llx>\n", instr->orig_addr, callee->orig_addr);
 			}
+
+			// [SE] Handle regular calls
+			// [SE] TODO: Merge with previous case?
+			else {
+				jmp_addr = instr->reference->position;
+
+				// It means the function is defined elsewhere (i.e. in a different file object)
+				if(instr->reference->size <= 0) {
+					instr = instr->next;
+					continue;
+				}
+
+				// look for the relative function called
+				callee = code_version;
+				while(callee) {
+
+					if(callee->orig_addr == jmp_addr)
+						break;
+
+					callee = callee->next;
+				}
+
+				instr->jumpto = callee->insn;
+
+				hnotice(3, "Call instruction at <%#08llx> linked to address <%#08llx>\n", instr->orig_addr, callee->orig_addr);
+			}
 		}
 
 		instr = instr->next;
@@ -673,7 +703,7 @@ static void resolve_symbols(void) {
 			func->symbol = sym;
 
 			hnotice(2, "Function '%s' (%d bytes long) :: <%#08llx>\n", sym->name, sym->size, func->orig_addr);
-			
+
 			curr = prev = head;
 			while(curr) {
 				if(func->orig_addr <= curr->orig_addr) {
@@ -681,7 +711,7 @@ static void resolve_symbols(void) {
 				//	prev->next = func;
 					break;
 				}
-				
+
 				prev = curr;
 				curr = curr->next;
 			}
@@ -930,7 +960,7 @@ static void resolve_relocation(void) {
 					sym_2->relocation.ref_insn = instr;
 					instr->pointedby = sym_2;
 				}
-				
+
 				hnotice(2, "Added symbol reference to <%#08llx> + %d\n\n", rel->offset, rel->addend);
 			}
 
@@ -946,14 +976,189 @@ static void resolve_relocation(void) {
 
 static void resolve_jumps(void) {
 	function *func;
-	
+
 	// links the jump instructions
 	func = functions;
 	while(func) {
 		link_jump_instructions(func, functions);
-		
+
 		func = func->next;
 	}
+}
+
+
+
+static void resolve_blocks(void) {
+	function *func;
+	insn_info *instr;
+	block *current_blk, *new_blk, *temp_blk, *temp_new_blk;
+
+	hnotice(1, "Resolving blocks...\n");
+
+	// The first block comprises the entire program, then it will be
+	// progressively split until we obtain basic blocks
+	current_blk = block_create();
+	current_blk->begin = functions->insn;
+	current_blk->end = last_insn;
+
+	hnotice(2, "Program block #%u created from <%#08llx> to <%#08llx>\n",
+		current_blk->id, current_blk->begin->orig_addr, current_blk->end->orig_addr);
+
+	blocks = current_blk;
+
+	// For each instruction in each function, we begin iteratively
+	// splitting current blocks into smaller and smaller chunks
+	func = functions;
+	while(func) {
+
+		instr = func->insn;
+		while(instr) {
+
+			// We've moved to a block which was already created during
+			// a previous iteration
+			if (instr->orig_addr > current_blk->end->orig_addr) {
+				current_blk = current_blk->next;
+
+				// Every instruction of the program must be mapped to its own block
+				if (!current_blk) {
+					hinternal();
+				}
+			}
+
+			// Beginning of a function
+			if (!instr->prev) {
+				hnotice(2, "Function %s begin breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
+
+				current_blk = block_split(current_blk, instr, BLOCK_SPLIT_FIRST);
+				func->being_blk = current_blk;
+			}
+			// End of a function
+			// [SE] TODO: Must check for RET, too
+			if (!instr->next) {
+				func->end_blk = current_blk;
+
+				// Hackish way to make the splitting work as expected
+				// [SE] TODO: Find a better way
+				if (func->next) {
+					instr->next = func->next->insn;
+				}
+
+				hnotice(2, "Function %s end breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
+
+				current_blk = block_split(current_blk, instr, BLOCK_SPLIT_LAST);
+
+				// Restoring end of function... you haven't seen anything, shhh! ;-)
+				// [SE] TODO: Find a better way
+				instr->next = NULL;
+			}
+
+			// Other special cases
+			if (IS_JUMP(instr)) {
+				hnotice(2, "Jump instruction %s breakpoint at <%#08llx> to target <%#08llx>\n",
+					(IS_CONDITIONAL(instr) ? "(conditional)" : "(absolute)"),
+					instr->orig_addr, instr->jumpto->orig_addr);
+
+				new_blk = block_split(current_blk, instr, BLOCK_SPLIT_LAST);
+
+				// The target of a jump creates a link between blocks, but we keep
+				// splitting blocks in an ordered manner: from first to last instruction
+				hnotice(2, "Jump target breakpoint at <%#08llx>\n", instr->jumpto->orig_addr);
+
+				temp_blk = block_find(instr->jumpto);
+				temp_new_blk = block_split(temp_blk, instr->jumpto, BLOCK_SPLIT_FIRST);
+
+				// If the instruction *before* the target one is not a jump,
+				// then it is a labeled instruction and there's no flow control
+				// hijacking between the two resulting blocks
+				// For this reason, they must be explicitly connected
+				if (!IS_JUMP(instr->jumpto->prev)) {
+					block_link(temp_blk, temp_new_blk);
+				}
+
+				// The current block gets linked with the block whose first
+				// instruction is the target of the jump
+				block_link(current_blk, temp_new_blk);
+
+				// Conditional jumps can branch into the new block, therefore
+				// in that case we need to connect the old block with the new
+				if (IS_CONDITIONAL(instr)) {
+					block_link(current_blk, new_blk);
+				}
+
+				current_blk = new_blk;
+			}
+
+			else if (IS_CALL(instr)) {
+				hnotice(2, "Call instruction breakpoint at <%#08llx> to function %s\n",
+					instr->orig_addr, instr->reference->name);
+
+				new_blk = block_split(current_blk, instr, BLOCK_SPLIT_LAST);
+
+				// We skip function declarations that don't have an actual
+				// definition in our relocatable object
+				if (instr->jumpto) {
+
+					// Same as before, we split blocks at the target instruction
+					temp_blk = block_find(instr->jumpto);
+					temp_new_blk = block_split(temp_blk, instr->jumpto, BLOCK_SPLIT_FIRST);
+
+					// No need to explicitly connect the blocks resulting from the
+					// previous split, since the last instruction of a function
+					// is never connected to the first instruction of another function
+					// block_link(temp_blk, temp_new_blk);
+
+					block_link(current_blk, temp_new_blk);
+				}
+
+				// If there's no matching definition for the callee, we ignore it
+				// and connect the block resulting from the split at the CALL instruction
+				else {
+					block_link(current_blk, new_blk);
+				}
+			}
+
+			else if (IS_JUMPIND(instr)) {
+				hnotice(2, "Indirect jump breakpoint at <%#08llx>\n", instr->orig_addr);
+				// [SE] TODO: To implement this part, jump tables must be resolved first
+			}
+
+			instr = instr->next;
+		}
+
+		func = func->next;
+	}
+
+	// We still need to link function ending blocks so that they return to all
+	// the possible caller blocks
+	func = functions;
+	while(func) {
+		ll_node *callee;
+
+		// For all callers of this function, its final block
+		// must be linked to the blocks that follow the callers
+		current_blk = func->being_blk;
+		new_blk = func->end_blk;
+
+		callee = current_blk->in.first;
+		while(callee) {
+			temp_blk = callee->elem;
+
+			// [SE] TODO: Check if next exists and is the correct block to link
+			block_link(new_blk, temp_blk->next);
+
+			callee = callee->next;
+		}
+
+		func = func->next;
+	}
+
+	// We spit out some boring textual representation of both the balanced tree
+	// and the final flow graph, but the idea is to move to a visual tool
+	// like Graphviz as fast as we can.
+	block_tree_print();
+	block_graph_print(blocks);
+
+	hsuccess();
 }
 
 
@@ -1042,14 +1247,15 @@ void elf_create_map(void) {
 	// Ultimates the binary representation
 	resolve_symbols();
 	resolve_relocation();
+	resolve_jumps();
+	resolve_blocks(); 					// [SE] Creates the basic blocks overlay
 
 	// Updates the internal binary representation's pointers
 	PROGRAM(symbols) = symbols->payload;
 	PROGRAM(code) = PROGRAM(v_code)[0] = functions;
 	PROGRAM(rawdata) = 0;
 	PROGRAM(versions)++;
-
-	resolve_jumps();
+	PROGRAM(blocks) = blocks; 	// [SE] TODO: Multi-versioning here?
 
 	hnotice(1, "ELF parsing terminated\n\n");
 	hsuccess();

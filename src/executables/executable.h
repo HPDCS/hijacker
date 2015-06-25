@@ -30,8 +30,31 @@
 
 #include <elf/elf-defs.h>
 
+#include <utils.h>
 #include <instruction.h>
 #include <rules.h>
+
+typedef enum {BLOCK_SPLIT_FIRST, BLOCK_SPLIT_LAST} block_split_mode;
+
+typedef struct _block {
+  unsigned int id;
+
+  insn_info *begin;         // First instruction of the block
+  insn_info *end;           // Last instruction of the block
+  struct _block *next;       // Ordered list of blocks
+
+  // Flowgraph-related fields
+  linked_list out;          // Double-linked list of next blocks
+  linked_list in;           // Double-linked list of previous blocks
+
+  // Tree-related fields
+  int balance;              // The balance factor of the AVL tree rooted at this block
+  unsigned int height;        // The height of the AVL tree rooted at this block
+  struct _block *left;       // Left child in the AVL tree
+  struct _block *right;      // Right child in the AVL tree
+  struct _block *parent;     // Parent block in the AVL tree
+} block;
+
 
 
 #define SYMBOL_VARIABLE	1
@@ -70,6 +93,8 @@ typedef struct _symbol {
 
 
 typedef struct _function {
+  block *being_blk; // [SE]
+  block *end_blk;   // [SE]
 	int			passes;
 	unsigned char		*name;
 	unsigned long long	orig_addr;
@@ -108,6 +133,8 @@ typedef struct _section {
 	struct _section	*next;
 } section;
 
+
+
 #define EXECUTABLE_ELF	1
 
 #define MAX_VERSIONS	256
@@ -129,8 +156,8 @@ typedef struct _executable {
 	section		*sections;
 	function	*code;		// [DC] Added this field to handle the parsed functions
 	void 	*rawdata;		// [DC] Added this filed to handle preallocated raw data
+	block *blocks;		// [SE] Basic block overlay
 } executable_info;
-
 
 
 //extern void add_section(int type, void *header, void *payload);
@@ -138,6 +165,13 @@ extern void add_section(int type, int secndx, void *payload);
 extern section *get_section_type(int type);
 extern void load_program(char *path);
 extern void output_object_file(char *pathname);
+
+extern block *block_create(void);
+extern block *block_split(block *node, insn_info *breakpoint, block_split_mode mode);
+extern block *block_find(insn_info *instr);
+extern void block_link(block *from, block *to);
+extern void block_tree_print();
+extern void block_graph_print(block *start);
 
 #endif /* _EXECUTABLE_H */
 

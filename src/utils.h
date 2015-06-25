@@ -19,13 +19,16 @@
 * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *
 * @file utils.h
-* @brief Utility functions
+* @brief Utility functions and data structures
 * @author Davide Cingolani
+* @author Simone Economo
 * @date April 17, 2014
 */
 
 #ifndef _UTILS_H_
 #define _UTILS_H_
+
+#include <stdbool.h>
 
 /**
  * Perform a hexdump of data.
@@ -37,5 +40,30 @@
  * @param len Number of byte to read
  */
 void hexdump (void *addr, int len);
+
+
+
+typedef struct ll_node {
+  struct ll_node *next;
+  struct ll_node *prev;
+  void *elem;
+} ll_node;
+
+typedef struct {
+  ll_node *first;
+  ll_node *last;
+} linked_list;
+
+extern linked_list *ll_create();
+extern void ll_move(linked_list *from, linked_list *to);
+extern bool ll_empty(linked_list *list);
+
+extern void ll_push(linked_list *list, void *elem);
+extern void ll_push_first(linked_list *list, void *elem);
+
+extern void *ll_pop(linked_list *list);
+extern void *ll_pop_first(linked_list *list);
+
+extern void ll_remove(linked_list *list, void *elem);
 
 #endif /* _UTILS_H_ */
