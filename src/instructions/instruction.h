@@ -109,7 +109,15 @@ typedef struct instruction {
 		insn_info_x86		x86;
 	} i;
 	//void *reference;			// May represent a reference to either a relocation symbol or an instruction (jump)
+
 	struct instruction *jumpto;
+
+	// [SE] Added jump table field
+	struct {
+		unsigned long long size;
+		struct instruction **insn;
+	} jumptable;
+
 	struct _symbol *reference;
 	struct _symbol *pointedby;
 	struct instruction *prev;	// Instructions are organized in a chain

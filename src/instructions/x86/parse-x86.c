@@ -4332,6 +4332,10 @@ void format_addr_i (struct disassembly_state *state, enum addr_method addr, enum
 	}
 
 	// A questo punto immed_data contiene i dati immediati dell'istruzione
+  // [SE] Populating immed_* fields
+  state->instrument->immed_offset = state->immed_offset = state->pos;
+  state->instrument->immed_size = state->immed_size = immed_size;
+  state->instrument->immed = immed_data;
 
 	state->pos += immed_size; // Salta i dati immediati appena gestiti
 }

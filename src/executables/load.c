@@ -75,6 +75,7 @@ static void check_instruction_set(void) {
 }
 
 
+
 static void create_map(void) {
 
 	hprint("Creating program map...\n");
@@ -139,6 +140,7 @@ void add_section(int type, int secndx, void *payload) {
 
 	return first;
 }*/
+
 
 void load_program(char *path) {
 

@@ -22,6 +22,7 @@
 * @brief Transforms an ELF object file in the hijacker's intermediate representation
 * @author Alessandro Pellegrini
 * @author Davide Cingolani
+* @author Simone Economo
 * @date September 19, 2008
 */
 
@@ -44,6 +45,8 @@
 #include "handle-elf.h"
 #include <x86/x86.h>
 
+
+#define MAX_LOOKBEHIND   10 // [SE] Used while reverse-parsing instruction to resolve jump tables
 
 static section *relocs = 0;		/// List of all relocations sections parsed
 static section *symbols = 0;		/// List of all symbols parsed
@@ -497,6 +500,111 @@ static void split_function(symbol *sym, function *func) {
 }
 
 
+
+// [SE]
+insn_info *find_insn_from_addr(function *func, unsigned long long addr, bool orig) {
+	insn_info *instr;
+
+	instr = func->insn;
+	while(instr) {
+		if (instr->orig_addr == addr && orig) {
+			break;
+		}
+		else if (instr->new_addr == addr && !orig) {
+			break;
+		}
+
+		instr = instr->next;
+	}
+
+	return instr;
+}
+
+
+
+static void resolve_jump_table(function *func, insn_info *instr, section *sec,
+	unsigned long addr, unsigned long long size) {
+	section *relsec;
+	reloc *rel;
+	unsigned int i;
+
+	instr->jumptable.size = size;
+	instr->jumptable.insn = malloc(sizeof(insn_info *) * size);
+
+	// Find the relocation section relative to 'sec'
+	relsec = relocs;
+	while(relsec) {
+		if (!strncmp(".rela", sec_name(relsec->index), strlen(".rela"))
+				&& !strcmp(sec_name(relsec->index) + strlen(".rela"), sec_name(sec->index))) {
+		// if (!strncmp(".rela", relsec->name, strlen(".rela"))
+		//     && !strcmp(relsec->name + strlen(".rela"), sec->name)) {
+			break;
+		}
+
+		relsec = relsec->next;
+	}
+
+	if (!relsec) {
+		hinternal();
+	}
+
+	rel = relsec->payload;
+
+	// Start iterating over relocation entries until we find
+	// the one that refers to address 'addr'
+	while(rel) {
+
+		if (rel->offset == addr) {
+			break;
+		}
+
+		rel = rel->next;
+	}
+
+	if (!rel) {
+		// hinternal();
+		// [SE] TODO: clone_rodata_relocation in handle-elf.c non riflette
+		// l'inserimento di nuove rilocazioni dentro la rispettiva struct section
+		// quindi al momento dell'instrumentazione (cioè a parsing già terminato)
+		// si incappa in questo branch
+		// Per ora ignoro tutto, però 'sta cosa andrebbe un attimo rivista
+		return;
+	}
+
+	// Keep parsing relocation entries until we reach the
+	// boundary of the jump table
+	i = 0;
+	while(i < size && rel) {
+		instr->jumptable.insn[i] = find_insn_from_addr(func, rel->addend, true);
+
+		hnotice(4, "Call instruction at <%#08llx> linked to address <%#08llx>\n",
+			instr->orig_addr, instr->jumptable.insn[i]->orig_addr);
+
+		i += 1;
+		rel = rel->next;
+	}
+}
+
+
+/**
+ * Looks for the section with the index specified.
+ *
+ * @return Returns the pointer to the section found, if any, NULL otherwise.
+ */
+inline section * find_section(unsigned int idx) {
+	section *sec = 0;
+
+	sec = PROGRAM(sections);
+	while(sec) {
+		if(sec->index == idx)
+			break;
+		sec = sec->next;
+	}
+
+	return sec;
+}
+
+
 /**
  * Links jumps instructions to destination ones.
  * Provided a valid function's descriptors, it will look up for all the jump instructions
@@ -557,11 +665,77 @@ void link_jump_instructions(function *func, function *code_version) {
 			// At this point 'dest' will point to the destination instruction relative to the jump 'instr'
 			instr->jumpto = dest;
 
+			// [SE] If the instruction is an indirect jump, try to resolve its
+			// associated jump table (currently only for switch-case statements)
+			// NOTE: This is a very naive and loose algorithm that may fail
+			// in several cases, but it's still better than nothing
+			if (IS_JUMPIND(instr)) {
+				insn_info *indjump;
+				section *sec;
+				unsigned long start;
+				unsigned long long size;
+				unsigned int i;
+
+				indjump = instr;
+				i = 0;
+
+				instr = instr->prev;
+				while(instr && i < MAX_LOOKBEHIND) {
+
+					if (IS_MEMRD(instr)) {
+						symbol *sym;
+
+						sym = instr->reference;
+						if (sym && !strcmp(sym->name, ".rodata")) {
+							sec = find_section(sym->secnum);
+							start = sym->relocation.addend;
+
+							// printf("JT start address: %s + <%#08llx>\n", sec_name(sym->secnum), start);
+						}
+					}
+					else if (IS_CTRL(instr)) {
+						switch(PROGRAM(insn_set)) {
+						case X86_INSN:
+							// [SE] TODO: Bisognerebbe beccare non semplicemente una CMP, ma quella
+							// che ha come destinazione il registro utilizzato nella MOV precedente,
+							// cioè quello impiegato come valore di indice per la jump table
+							// Detto ciò, per ora ce ne sbattiamo allegramente e viviamo felici
+							// nella nostra superficialità!
+							size = instr->i.x86.immed;
+							break;
+
+						default:
+							size = 0;
+						}
+
+						// printf("JT highest case number: %d\n", size);
+
+						instr = indjump;
+						break;
+					}
+
+					instr = instr->prev;
+					i = i + 1;
+				}
+
+				// [SE] It doesn't make sense to have zero-sized jump tables, therefore
+				// I assume that this check is safe enough...
+				if (size != 0) {
+					// The immediate value of the previous CMP instruction is inclusive of
+					// the last case statement, hence it must be increased by one if we
+					// wish to use it as the size of the jump table
+					// [SE] TODO: Verificare che non esistano eccezioni
+					size = size + 1;
+					resolve_jump_table(func, instr, sec, start, size);
+				}
+			}
+
 			hnotice(4, "Jump instruction at <%#08llx> linked to instruction at <%#08llx>\n", instr->orig_addr, dest->orig_addr);
 
+		}
 
 		// a CALL could be seen as a JUMP and could help in handling the embedded offset to local functions
-		} else if(IS_CALL(instr)) {
+		else if(IS_CALL(instr)) {
 			// must create the reference only if the 4-bytes offset is not null
 			// Provided a jump instruction, look for the destination address
 			switch(PROGRAM(insn_set)) {
@@ -615,21 +789,19 @@ void link_jump_instructions(function *func, function *code_version) {
 						break;
 				}
 
-				hnotice(3, "Call instruction at <%#08llx> linked to address <%#08llx>\n", instr->orig_addr, callee->orig_addr);
+				hnotice(4, "Call instruction at <%#08llx> linked to address <%#08llx>\n", instr->orig_addr, callee->orig_addr);
 			}
 
-			// [SE] Handle regular calls
-			// [SE] TODO: Merge with previous case?
+			// [SE] Handle regular calls (i.e. not local, associated with relocation)
 			else {
 				jmp_addr = instr->reference->position;
 
 				// It means the function is defined elsewhere (i.e. in a different file object)
-				if(instr->reference->size <= 0) {
+				if(instr->reference->size == 0) {
 					instr = instr->next;
 					continue;
 				}
 
-				// look for the relative function called
 				callee = code_version;
 				while(callee) {
 
@@ -641,31 +813,13 @@ void link_jump_instructions(function *func, function *code_version) {
 
 				instr->jumpto = callee->insn;
 
-				hnotice(3, "Call instruction at <%#08llx> linked to address <%#08llx>\n", instr->orig_addr, callee->orig_addr);
+				hnotice(4, "Call instruction at <%#08llx> linked to address <%#08llx>\n", instr->orig_addr, callee->orig_addr);
 			}
 		}
 
 		instr = instr->next;
 	}
 
-}
-
-/**
- * Looks for the section with the index specified.
- *
- * @return Returns the pointer to the section found, if any, NULL otherwise.
- */
-static inline section * find_section(unsigned int idx) {
-	section *sec = 0;
-
-	sec = PROGRAM(sections);
-	while(sec) {
-		if(sec->index == idx)
-			break;
-		sec = sec->next;
-	}
-
-	return sec;
 }
 
 
@@ -987,7 +1141,7 @@ static void resolve_jumps(void) {
 }
 
 
-
+// [SE]
 static void resolve_blocks(void) {
 	function *func;
 	insn_info *instr;
@@ -1053,7 +1207,42 @@ static void resolve_blocks(void) {
 			}
 
 			// Other special cases
-			if (IS_JUMP(instr)) {
+			if (IS_JUMPIND(instr)) {
+				unsigned long idx;
+				insn_info *target;
+
+				hnotice(2, "Indirect jump breakpoint at <%#08llx>\n", instr->orig_addr);
+
+				new_blk = block_split(current_blk, instr, BLOCK_SPLIT_LAST);
+
+				idx = 0;
+				while (idx < instr->jumptable.size) {
+					target = instr->jumptable.insn[idx];
+
+					hnotice(2, "Jump target breakpoint (jumptable) at <%#08llx>\n", target->orig_addr);
+
+					temp_blk = block_find(target);
+					temp_new_blk = block_split(temp_blk, target, BLOCK_SPLIT_FIRST);
+
+					// If the instruction *before* the target one is not a jump,
+					// then it is a labeled instruction and there's no flow control
+					// hijacking between the two resulting blocks
+					// For this reason, they must be explicitly connected
+					if (!IS_JUMP(target->prev)) {
+						block_link(temp_blk, temp_new_blk);
+					}
+
+					// The current block gets linked with the block whose first
+					// instruction is the target of the jump
+					block_link(current_blk, temp_new_blk);
+
+					idx = idx + 1;
+				}
+
+				current_blk = new_blk;
+			}
+
+			else if (IS_JUMP(instr)) {
 				hnotice(2, "Jump instruction %s breakpoint at <%#08llx> to target <%#08llx>\n",
 					(IS_CONDITIONAL(instr) ? "(conditional)" : "(absolute)"),
 					instr->orig_addr, instr->jumpto->orig_addr);
@@ -1117,11 +1306,6 @@ static void resolve_blocks(void) {
 				}
 			}
 
-			else if (IS_JUMPIND(instr)) {
-				hnotice(2, "Indirect jump breakpoint at <%#08llx>\n", instr->orig_addr);
-				// [SE] TODO: To implement this part, jump tables must be resolved first
-			}
-
 			instr = instr->next;
 		}
 
@@ -1155,8 +1339,8 @@ static void resolve_blocks(void) {
 	// We spit out some boring textual representation of both the balanced tree
 	// and the final flow graph, but the idea is to move to a visual tool
 	// like Graphviz as fast as we can.
-	block_tree_print();
-	block_graph_print(blocks);
+	block_tree_dump("treedump.txt");
+	block_graph_dump(blocks, "graphdump.txt");
 
 	hsuccess();
 }

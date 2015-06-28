@@ -29,9 +29,6 @@
 
 static block *root = NULL;
 
-#define TREEDUMP_FILE   "treedump.txt"
-#define GRAPHDUMP_FILE  "graphdump.txt"
-
 block *block_create() {
   block *blk;
   static int id;
@@ -67,7 +64,7 @@ static void block_tree_balance_update(block *blk) {
   blk->balance = left_height - right_height;
 }
 
-static void block_tree_replace(block *replaced, block *replacement) {
+static void block_tree_parent_update(block *replaced, block *replacement) {
   replacement->parent = replaced->parent;
 
   if (!replaced->parent) {
@@ -86,7 +83,7 @@ static void block_tree_rotate_left(block **parent, block **child) {
 
   // 'parent' becomes the left block of the one denoted 'child'
 
-  block_tree_replace(*parent, *child);
+  block_tree_parent_update(*parent, *child);
 
   (*parent)->parent = (*child);
   (*parent)->right = (*child)->left;
@@ -108,7 +105,7 @@ static void block_tree_rotate_right(block **parent, block **child) {
 
   // 'parent' becomes the right block of the one denoted 'child'
 
-  block_tree_replace(*parent, *child);
+  block_tree_parent_update(*parent, *child);
 
   (*parent)->parent = (*child);
   (*parent)->left = (*child)->right;
@@ -130,32 +127,28 @@ static void block_tree_rebalance(block *orig, block *new) {
 
   // Node insertion: the right-most block replaces the original
   // and the latter becomes the left child of the former
-  block_tree_replace(orig, new);
-
-  orig->parent = new;
-  new->left = orig;
+  new->parent = orig;
   new->right = orig->right;
+  orig->right = new;
 
   if (new->right) {
     new->right->parent = new;
   }
 
-  orig->right = NULL;
-
   // We now check if there's need to re-balance the tree
   // and at the same time we recompute all balance factors
   // that have changed since the latest insertion
-  parent = orig;
-  first = orig->left;
-  second = (first ? first->left : NULL);
+  parent = new;
+  first = new->right;
 
   while (parent) {
     block_tree_balance_update(parent);
     hnotice(3, "Checking whether block #%u needs re-balancing (balance %d)\n", parent->id, parent->balance);
 
-    if (parent->balance == 2) {
+    if (parent->balance >= 2) {
       // LEFT RIGHT case
-      if (first->balance == -1) {
+      if (first->balance <= -1) {
+        second = first->right;
         hnotice(4, "Re-balancing block #%u, LEFT RIGHT case\n", parent->id);
         block_tree_rotate_left(&first, &second);
       }
@@ -164,9 +157,10 @@ static void block_tree_rebalance(block *orig, block *new) {
       block_tree_rotate_right(&parent, &first);
     }
 
-    else if (parent->balance == -2) {
+    else if (parent->balance <= -2) {
       // RIGHT LEFT case
-      if (first->balance == 1) {
+      if (first->balance >= 1) {
+        second = first->left;
         hnotice(4, "Re-balancing block #%u, RIGHT LEFT case\n", parent->id);
         block_tree_rotate_right(&first, &second);
       }
@@ -208,8 +202,8 @@ block *block_find(insn_info *instr) {
 block *block_split(block *blk, insn_info *breakpoint, block_split_mode mode) {
   block *new_blk;
 
-  // This covers the cases of the first and last instructions
-  // of the entire program
+  // If the block is already split at the desired breakpoint
+  // just return it
   if (blk->begin == breakpoint && mode == BLOCK_SPLIT_FIRST)
     return blk;
   if (blk->end == breakpoint && mode == BLOCK_SPLIT_LAST)
@@ -268,6 +262,8 @@ block *block_split(block *blk, insn_info *breakpoint, block_split_mode mode) {
   // We maintain a balanced tree of blocks for fast lookup
   block_tree_rebalance(blk, new_blk);
 
+  // block_tree_dump(NULL);
+
   return new_blk;
 }
 
@@ -279,8 +275,6 @@ void block_link(block *from, block *to) {
     return;
   }
 
-  hnotice(3, "Linking block #%u with block #%u\n", from->id, to->id);
-
   out = &(from->out);
   in = &(to->in);
 
@@ -289,21 +283,27 @@ void block_link(block *from, block *to) {
 
   // Connect destination to source
   ll_push(in, from);
+
+  hnotice(3, "Linking block #%u with block #%u\n", from->id, to->id);
 }
 
-void block_tree_print() {
+void block_tree_dump(char *filename) {
   FILE *f;
   block *blk;
   linked_list *queue, *queue_temp;
 
-  f = fopen(TREEDUMP_FILE, "w+");
+  if (!root) {
+    return;
+  }
+
+  if (filename) {
+    f = fopen(filename, "w+");
+  } else {
+    f = stdout;
+  }
 
   queue = calloc(sizeof(linked_list), 1);
   queue_temp = calloc(sizeof(linked_list), 1);
-
-  if (!root) {
-    return NULL;
-  }
 
   ll_push(queue, root);
 
@@ -337,15 +337,25 @@ void block_tree_print() {
   free(queue);
   free(queue_temp);
 
-  fclose(f);
+  if (filename) {
+    fclose(f);
+  }
 }
 
-void block_graph_print(block *start) {
+void block_graph_dump(block *start, char *filename) {
   FILE *f;
   block *current_blk, *temp_blk;
   ll_node *to_node, *from_node;
 
-  f = fopen(GRAPHDUMP_FILE, "w+");
+  if (!start) {
+    return;
+  }
+
+  if (filename) {
+    f = fopen(filename, "w+");
+  } else {
+    f = stdout;
+  }
 
   current_blk = start;
   while(current_blk) {
@@ -381,5 +391,9 @@ void block_graph_print(block *start) {
     fprintf(f, "\n");
 
     current_blk = current_blk->next;
+  }
+
+  if (filename) {
+    fclose(f);
   }
 }

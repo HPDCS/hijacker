@@ -22,6 +22,7 @@
 * @brief Structures to map object files to internal representation
 * @author Alessandro Pellegrini
 * @author Davide Cingolani
+* @author Simone Economo
 */
 
 #pragma once
@@ -116,6 +117,7 @@ typedef struct _reloc {
 } reloc;
 
 
+
 #define SECTION_CODE 	1
 #define SECTION_SYMBOLS	2
 #define SECTION_NAMES	3
@@ -170,8 +172,8 @@ extern block *block_create(void);
 extern block *block_split(block *node, insn_info *breakpoint, block_split_mode mode);
 extern block *block_find(insn_info *instr);
 extern void block_link(block *from, block *to);
-extern void block_tree_print();
-extern void block_graph_print(block *start);
+extern void block_tree_dump(char *filename);
+extern void block_graph_dump(block *start, char *filename);
 
 #endif /* _EXECUTABLE_H */
 
