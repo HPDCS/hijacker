@@ -132,6 +132,55 @@ static void update_instruction_references(insn_info *target, int shift) {
 	//func->symbol->size += shift;
 
 
+	// now, we have to update the addresses of all the remaining instructions in the function
+	// ATTENZIONE! Non è corretto fare questo perché gli offset delle istruzioni sono a partire
+	// dall'inizio della sezione .text quindi sarebbe necessario aggiornare TUTTI i riferimenti
+	// e non solo quelli relativi alla funzione in questione (... a meno che non si cambi la
+	// logica degli offset nel descrittore di istruzione a rappresentare lo spiazzamento
+	// relativo all'interno della funzione di appartenenza, ma non so quali altri problemi comporta)
+	hnotice(4, "Recalculate instructions' addresses\n");
+	//hnotice(5, "Updating instructions in function '%s'\n", func->name);
+
+	// Instruction addresses are recomputed from scratch starting from the very beginning
+	// of the code section. Either a new instruction is inserted or substituted, an 'offset'
+	// variable holds the incremental address which takes into account the sizes of each
+	// instruction encountered.
+	//foo = func;
+	foo = PROGRAM(code);
+	offset = 0;
+	while(foo) {
+
+		// Looks only for functions that are beyond the instruction instrumented,
+		// in order to reduce the number of total iterations
+		/*if(foo->new_addr < target->new_addr) {
+			foo = foo->next;
+			continue;
+		}*/
+
+		hnotice(5, "Updating instructions in function '%s'\n", foo->name);
+
+		instr = foo->insn;
+		while(instr != NULL) {
+			old_offset = instr->new_addr;
+			instr->i.x86.addr = instr->new_addr = offset;
+			offset += instr->size;
+			//insn->i.x86.addr = insn->new_addr += shift;
+
+			hnotice(6, "Instruction '%s' at offset <%#08x> shifted to new address <%#08llx>\n",
+				instr->i.x86.mnemonic, old_offset, instr->new_addr);
+
+			instr = instr->next;
+		}
+
+		foo->new_addr = foo->insn->new_addr;
+		foo->symbol->size = offset;
+
+		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n", foo->symbol->name, foo->new_addr, foo->symbol->size);
+
+		foo = foo->next;
+	}
+
+
 	// update jump refs, if any, from this function to end of code
 	hnotice(4, "Check jump displacements\n");
 
@@ -150,6 +199,7 @@ static void update_instruction_references(insn_info *target, int shift) {
 				offset = x86->opcode_size;
 				size = x86->insn_size - x86->opcode_size - x86->disp_size;
 				jump_displacement = jumpto->new_addr - (instr->new_addr + instr->size);
+
 				// (insn->new_addr + insn->size) will give %rip value, then we have to subtract
 				// the address of jump destination instruction
 
@@ -226,53 +276,7 @@ static void update_instruction_references(insn_info *target, int shift) {
 	}
 
 
-	// now, we have to update the addresses of all the remaining instructions in the function
-	// ATTENZIONE! Non è corretto fare questo perché gli offset delle istruzioni sono a partire
-	// dall'inizio della sezione .text quindi sarebbe necessario aggiornare TUTTI i riferimenti
-	// e non solo quelli relativi alla funzione in questione (... a meno che non si cambi la
-	// logica degli offset nel descrittore di istruzione a rappresentare lo spiazzamento
-	// relativo all'interno della funzione di appartenenza, ma non so quali altri problemi comporta)
-	hnotice(4, "Recalculate instructions' addresses\n");
-	//hnotice(5, "Updating instructions in function '%s'\n", func->name);
 
-	// Instruction addresses are recomputed from scratch starting from the very beginning
-	// of the code section. Either a new instruction is inserted or substituted, an 'offset'
-	// variable holds the incremental address which takes into account the sizes of each
-	// instruction encountered.
-	//foo = func;
-	foo = PROGRAM(code);
-	offset = 0;
-	while(foo) {
-
-		// Looks only for functions that are beyond the instruction instrumented,
-		// in order to reduce the number of total iterations
-		/*if(foo->new_addr < target->new_addr) {
-			foo = foo->next;
-			continue;
-		}*/
-
-		hnotice(5, "Updating instructions in function '%s'\n", foo->name);
-
-		instr = foo->insn;
-		while(instr != NULL) {
-			old_offset = instr->new_addr;
-			instr->i.x86.addr = instr->new_addr = offset;
-			offset += instr->size;
-			//insn->i.x86.addr = insn->new_addr += shift;
-
-			hnotice(6, "Instruction '%s' at offset <%#08x> shifted to new address <%#08llx>\n", instr->i.x86.mnemonic,
-				old_offset, instr->new_addr);
-
-			instr = instr->next;
-		}
-
-		foo->new_addr = foo->insn->new_addr;
-		foo->symbol->size = offset;
-
-		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n", foo->symbol->name, foo->new_addr, foo->symbol->size);
-
-		foo = foo->next;
-	}
 
 
 	// update all the relocation that ref instructions
