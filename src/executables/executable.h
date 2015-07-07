@@ -39,6 +39,7 @@ typedef enum {BLOCK_SPLIT_FIRST, BLOCK_SPLIT_LAST} block_split_mode;
 
 typedef struct _block {
   unsigned int id;
+  unsigned long length;			// Number of instructions that make up the block
 
   insn_info *begin;         // First instruction of the block
   insn_info *end;           // Last instruction of the block

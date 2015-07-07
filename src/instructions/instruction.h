@@ -52,6 +52,7 @@
 #define I_PUSHPOP	0x4000	// Istruzione di tipo "push" o di tipo "pop"
 #define I_STACK		0x8000	// Se l'istruzione opera nello stack
 #define I_JUMPIND	0x10000	// Indirect Branch
+#define I_CALLIND 0x20000 // [SE] Indirect Call
 
 
 // [FV] Macro per il testing dei flags
@@ -61,6 +62,7 @@
 #define IS_JUMP(X)		((X)->flags & I_JUMP)
 #define IS_JUMPIND(X)		((X)->flags & I_JUMPIND)
 #define IS_CALL(X)		((X)->flags & I_CALL)
+#define IS_CALLIND(X)		((X)->flags & I_CALLIND)
 #define IS_RET(X)		((X)->flags & I_RET)
 #define IS_CONDITIONAL(X)	((X)->flags & I_CONDITIONAL)
 #define IS_STRING(X)		((X)->flags & I_STRING)
@@ -81,6 +83,7 @@
 #define I_JUMP_S	"I_JUMP"
 #define I_JUMPIND_S	"I_JUMPIND"
 #define I_CALL_S	"I_CALL"
+#define I_CALLIND_S	"I_CALLIND"
 #define I_RET_S		"I_RET"
 #define I_CONDITIONAL_S	"I_CONDITIONAL"
 #define I_STRING_S	"I_STRING"

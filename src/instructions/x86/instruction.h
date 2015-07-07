@@ -56,11 +56,11 @@ typedef struct insn_info_x86 {
 	char breg_mnem[8];		// Mnemonico del registro
 	bool has_scale;			// L'indirizzamento utilizza una scala
 	unsigned long scale;		// La scala
-	unsigned long disp_offset;	// Lo spiazzamento del displacement dall'inizio del testo o 0
-	int disp_size;			// Dimensione in byte del displacement o 0
+	unsigned long disp_offset;	// Lo spiazzamento del displacement dall'inizio del testo, o 0x00
+	int disp_size;			// Dimensione in byte del displacement, o 0x00
 	unsigned long long disp;	// Il valore dello spiazzamento
-	unsigned long immed_offset;	// [SE] L'inizio dei dati immediati o 0
-	int immed_size;		// [SE] La dimensione dei dati immediati
+	unsigned long immed_offset;	// [SE] Lo spiazzamento dei dati immediati dall'inizio del testo, o 0x00
+	int immed_size;		// [SE] La dimensione dei dati immediati, o 0x00
 	unsigned long long immed;	// [SE] Il valore dei dati immediati
 	unsigned int opcode_size;	// [DC] Dimensione dell'opcode per l'istruzione
 	int32_t jump_dest;		// Dove punta la jmp

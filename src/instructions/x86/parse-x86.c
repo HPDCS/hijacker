@@ -3401,7 +3401,7 @@ void grp_5(struct disassembly_state *state) { /* opcode FF */
 			break;
 		case 0x02:
 		case 0x03:
-			state->instrument->flags = I_CALL;
+			state->instrument->flags = I_CALLIND | I_CALL;
 			break;
 		case 0x04:
 		case 0x05:
