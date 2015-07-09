@@ -49,6 +49,8 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	int idx;
 	int value;
 
+	unsigned char flags; // [SE]
+
 	// Retrieve information to fill the structure
 	// from the instruction descriptor get the x86 instrucion one
 	hnotice(4, "Retrieve meta-info about target MOV instruction...\n");
@@ -61,10 +63,25 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	}
 	bzero(entry, sizeof(insn_entry));
 
+	// [SE] Added to correctly pass addressing mode flags to the trampoline routine
+	// Note that as of the date of this commit, handling of MOVS and STOS instruction
+	// is commented out of the trampoline routine, so I don't treat the respective
+	// flags in the code below.
+	flags = 0;
+
+	if (x86->has_base_register) {
+		flags |= BASE;
+	}
+	if (x86->has_index_register) {
+		flags |= IDX;
+	}
+	// [/SE]
+
 	// fill the structure
 	entry->size = x86->span;
 	entry->offset = (signed) x86->disp;
-	entry->flags = x86->flags;
+	// entry->flags = x86->flags;
+	entry->flags = flags;
 	entry->base = x86->breg;
 	entry->idx = x86->ireg;
 	entry->scala = x86->scale;
@@ -72,7 +89,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	//hdump(0, "entry:", entry, 24);
 	//printf("disp=%llx, disp_size=%d\n", x86->disp, x86->disp_size);
 	//printf("insn '%s' at <%#08llx>\n", x86->mnemonic, instr->new_addr);
-	
+
 	hnotice(4, "Push trampoline structure into stack before the target MOV...\n");
 	size = sizeof(insn_entry);	// size of the structure
 	num = size / 4;				// number of the mov instructions needed to copy all the struture fields
@@ -103,7 +120,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	// The idea is to generalize the calling method, the aforementioned
 	// symbol will be properly relocated to whichever function the user has
 	// specified in the rules files in the AddCall tag's 'function' field
-	
+
 	// Now, we have either the function symbol to be called and the stack filled up;
 	// the only thing that remains to do is to adds a relocation entry from the last
 	// long-word of the pushed entry towards the new function symbol.
@@ -111,7 +128,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	// in order to make the correct relocation we have to look for its predecessor (twice)
 	// which (should) be the last MOV that should pushes the calling address on the stack
 	hnotice(4, "Push the function pointer to '%s' in the trampoline structure\n", func);
-	
+
 	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
 	instruction_rela_node(sym, instr->prev, RELOCATE_ABSOLUTE_64);
 
