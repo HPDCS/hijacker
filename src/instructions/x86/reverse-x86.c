@@ -44,7 +44,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	insn_info *instr;
 	insn_entry *entry;
 	symbol *sym;
-	int size;
+	unsigned int size;
 	int num;
 	int idx;
 	int value;
@@ -94,12 +94,25 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	size = sizeof(insn_entry);	// size of the structure
 	num = size / 4;				// number of the mov instructions needed to copy all the struture fields
 
+	// [SE] This is a guard added to make sure that Hijacker never writes on the Red Zone,
+	// a safe area on the stack on which leaf functions can operate without explicitly
+	// allocating space (i.e., without moving the top of the stack).
+	// The guard makes sure that the displacement from the current stack pointer is of at least
+	// 128 bytes, which is the maximum size of the Red Zone as mandated by the System V X86-64 ABI.
+	size = (size < 128) ? 128 : size;
+
 	// Creates bytes array of the main instructions needed to manage
 	// the stack in order to save trampoline's structure
-	unsigned char sub[4] = {0x48, 0x83, 0xec, (char) size};
-	unsigned char add[4] = {0x48, 0x83, 0xc4, (char) size};
+	// unsigned char sub[4] = {0x48, 0x83, 0xec, (char) size};
+	// unsigned char add[4] = {0x48, 0x83, 0xc4, (char) size};
+	unsigned char sub[7] = {0x48, 0x81, 0xec, 0x00, 0x00, 0x00, 0x00}; // [SE]
+	unsigned char add[7] = {0x48, 0x81, 0xc4, 0x00, 0x00, 0x00, 0x00}; // [SE]
 	unsigned char call[5] = {0xe8, 0x00, 0x00, 0x00, 0x00};
 	unsigned char mov[8] = {0xc7, 0x44, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+	// [SE] This is a bit overkill, i.e. it only makes sense when 'size' >= 256
+	memcpy((sub + 3), &size, sizeof(size));
+	memcpy((add + 3), &size, sizeof(size));
 
 	// add the SUB instruction in order to create a sufficent stack window for the structure
 	insert_instructions_at(target, sub, sizeof(sub), INSERT_BEFORE, &instr);
