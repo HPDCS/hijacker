@@ -47,7 +47,6 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	unsigned int size;
 	int num;
 	int idx;
-	int value;
 
 	unsigned char flags; // [SE]
 
@@ -110,9 +109,8 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	unsigned char call[5] = {0xe8, 0x00, 0x00, 0x00, 0x00};
 	unsigned char mov[8] = {0xc7, 0x44, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-	// [SE] This is a bit overkill, i.e. it only makes sense when 'size' >= 256
-	memcpy((sub + 3), &size, sizeof(size));
-	memcpy((add + 3), &size, sizeof(size));
+	*(unsigned int *)(sub + 3) = size;
+	*(unsigned int *)(add + 3) = size;
 
 	// add the SUB instruction in order to create a sufficent stack window for the structure
 	insert_instructions_at(target, sub, sizeof(sub), INSERT_BEFORE, &instr);
@@ -121,9 +119,11 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	for (idx = 0; idx < num; idx++) {
 		bzero((mov + 3), 5);
 
-		mov[3] = idx * sizeof(int);							// displacement from the new stack pointer
-		memcpy(&value, (((char *) entry) + idx * sizeof(int)), sizeof(int));	// retrieve the next chunk of 4 bytes
-		memcpy((mov + 4), &value, sizeof(int));				// embed the immediate into the instruction
+		// displacement from the new stack pointer
+		mov[3] = idx * sizeof(int);
+
+		// retrieve the next chunk of 4 bytes and embed the immediate into the instruction
+		*(unsigned int *)(mov + 4) = *((int *)entry + idx);
 
 		// create and add the new instruction to the rest of code
 		insert_instructions_at(instr, mov, sizeof(mov), INSERT_AFTER, &instr);
