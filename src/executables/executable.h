@@ -163,6 +163,15 @@ typedef struct _executable {
 } executable_info;
 
 
+extern void update_instruction_addresses(void);
+extern void update_jump_displacements(void);
+
+extern void set_jumpto_reference(insn_info *jump, insn_info *target);
+extern void set_jumptable_entry(insn_info *jump, insn_info *entry, unsigned int idx);
+extern void set_virtual_reference(insn_info *target, insn_info *virtual);
+
+
+
 //extern void add_section(int type, void *header, void *payload);
 extern void add_section(int type, int secndx, void *payload);
 extern section *get_section_type(int type);

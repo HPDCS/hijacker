@@ -71,11 +71,11 @@ static void apply_rule_link (char *filename) {
 	if(!file_exists(filename)) {
 		herror(true, "The XML rules file has specified a file that does not exists!\n");
 	}
-	
+
 	// Just compile the given module's source.
 	// The resulting object file will be linked in the final stage.
 	compile(filename, "-c", "-o", "current.o");
-	
+
 	if(file_exists("incremental.o")) {
 		link("-r", "incremental.o", "current.o", "-o", "__incremental.o");
 		unlink("current.o");
@@ -389,7 +389,7 @@ void apply_rules(void) {
 		// Iterates all over the XML inject tag in the Executable
 		for (tag = 0; tag < exec->nInjects; tag++) {
 			// Retrive the next inject tag and process it
-			hnotice(2, "Instruction tag met, applying the rule\n");
+			hnotice(2, "Inject tag met, applying the rule\n");
 			module = (char *)exec->injectFiles[tag];
 			hnotice(3, "Looking for the instruction with flags '%s'\n", module);
 			apply_rule_link(module);
@@ -415,6 +415,13 @@ void apply_rules(void) {
 			tagFunction = exec->functions[tag];
 			hnotice(3, "Looking for the function '%s'\n", tagFunction->name);
 			instrumented += apply_rule_function(exec, tagFunction);
+		}
+
+		if (version && instrumented) {
+			// [SE] If some actual instrumentation has been carried out, first update
+			// instruction addresses and then recompute jump displacements
+			update_instruction_addresses();
+			update_jump_displacements();
 		}
 
 		hnotice(1, "Instrumentation of executable version %d terminated: %d instructions have been instrumented\n",

@@ -23,6 +23,7 @@
 * @author Davide Cingolani
 * @author Alessandro Pellegrini
 * @author Roberto Vitali
+* @author Simone Economo
 */
 
 #include <stdlib.h>
@@ -96,66 +97,36 @@ static void parse_instruction_bytes (unsigned char *bytes, unsigned long int *po
 
 
 /**
- * Updates all the instruction addresses and references, either jump destinations and relocation entries.
- * Starting from the target instruction, that is the one newly created or subsituted, the function will
- * perform an update of all the addresses and refereces of the following instructions. Address is shifted
- * by the parameter 'shift'; this is an unsigned value. To properly work, it is needed that the newly
- * created instruction node has the right address, namely the one that should have in the final result.
- * Then, this function will eventually update the address of the other instructions, but the target's one
- * must be correctly set, already.
- *
- * @param func Function description to which the target instruction belongs
- * @param target Target instruction (either the substituted or newly created one)
- * @param shift (Signed) number of bytes by which to shift all the references
+ * Updates all the instruction addresses, starting from the beginning of the program all the way
+ * to its end. An offset variable takes into account the sizes of each instruction already met,
+ * and incrementally determines the final address of the next instruction. Notice that the
+ * function only updates the `new_addr` field, leaving the original address untouched for
+ * debugging purposes.
  */
-static void update_instruction_references(insn_info *target, int shift) {
-
-	insn_info *instr = NULL	;
-	insn_info *jumpto;
-	insn_info_x86 *x86;
-	symbol *sym;
-	//~symbol *ref;
-	//~section *sec;
-	//~reloc *rel;
+void update_instruction_addresses(void) {
 	function *foo;
-	int old_offset;
+	insn_info *instr;
 
 	int offset;
-	int size;
-	long long jump_displacement;
-	unsigned char bytes[6];
-	//~char jump_type;
-
-	//hnotice(3, "Updating instructions' refs beyond the one intrumented... (shift = %+d)\n", shift);
-
-	// updates the dimension of the function symbol
-	//func->symbol->size += shift;
-
+	int old_offset;
 
 	// now, we have to update the addresses of all the remaining instructions in the function
+
 	// ATTENZIONE! Non è corretto fare questo perché gli offset delle istruzioni sono a partire
 	// dall'inizio della sezione .text quindi sarebbe necessario aggiornare TUTTI i riferimenti
 	// e non solo quelli relativi alla funzione in questione (... a meno che non si cambi la
 	// logica degli offset nel descrittore di istruzione a rappresentare lo spiazzamento
 	// relativo all'interno della funzione di appartenenza, ma non so quali altri problemi comporta)
-	hnotice(4, "Recalculate instructions' addresses\n");
 	//hnotice(5, "Updating instructions in function '%s'\n", func->name);
+	//foo = func;
+
+	hnotice(4, "Recalculate instructions' addresses\n");
 
 	// Instruction addresses are recomputed from scratch starting from the very beginning
-	// of the code section. Either a new instruction is inserted or substituted, an 'offset'
-	// variable holds the incremental address which takes into account the sizes of each
-	// instruction encountered.
-	//foo = func;
+	// of the code section.
 	foo = PROGRAM(code);
 	offset = 0;
 	while(foo) {
-
-		// Looks only for functions that are beyond the instruction instrumented,
-		// in order to reduce the number of total iterations
-		/*if(foo->new_addr < target->new_addr) {
-			foo = foo->next;
-			continue;
-		}*/
 
 		hnotice(5, "Updating instructions in function '%s'\n", foo->name);
 
@@ -164,10 +135,9 @@ static void update_instruction_references(insn_info *target, int shift) {
 			old_offset = instr->new_addr;
 			instr->i.x86.addr = instr->new_addr = offset;
 			offset += instr->size;
-			//insn->i.x86.addr = insn->new_addr += shift;
 
-			hnotice(6, "Instruction '%s' at offset <%#08x> shifted to new address <%#08llx>\n",
-				instr->i.x86.mnemonic, old_offset, instr->new_addr);
+			hnotice(6, "Instruction '%s' at offset <%#08x> (size %u) shifted to new address <%#08llx>\n",
+				instr->i.x86.mnemonic, old_offset, instr->size, instr->new_addr);
 
 			instr = instr->next;
 		}
@@ -175,109 +145,75 @@ static void update_instruction_references(insn_info *target, int shift) {
 		foo->new_addr = foo->insn->new_addr;
 		foo->symbol->size = offset;
 
-		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n", foo->symbol->name, foo->new_addr, foo->symbol->size);
+		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n",
+			foo->symbol->name, foo->new_addr, foo->symbol->size);
 
 		foo = foo->next;
 	}
 
+}
 
-	// update jump refs, if any, from this function to end of code
-	hnotice(4, "Check jump displacements\n");
+/**
+ * Starting from the target instruction, the function will perform an update of all the addresses
+ * of the instructions that follow. More precisely, address is shifted by an amount 'shift' which
+ * is an unsigned value. To properly work, it is needed that the newly created instruction node has
+ * the right address, namely the one that should have in the final result.
+ *
+ * @param target Target instruction starting from which address shifting is performed
+ * @param shift (Signed) number of bytes by which to shift all the addresses
+ */
+static void shift_instruction_addresses(insn_info *target, int shift) {
+	function *foo, *prev;
+	insn_info *instr;
 
 	foo = PROGRAM(code);
+	prev = NULL;
+	instr = NULL;
+
+	hnotice(4, "Shifting the addresses of instruction beyond <%#08llx> by %+d bytes\n",
+		target->new_addr, shift);
+
+	// Skip functions that are before the target instruction,
+	// so to reduce the number of total iterations
 	while(foo) {
 
-		hnotice(5, "In function '%s'\n", foo->name);
+		if(foo->insn->new_addr > target->new_addr) {
+			break;
+		}
+
+		prev = foo;
+		foo = foo->next;
+	}
+
+	foo = prev;
+	while(foo) {
 
 		instr = foo->insn;
-		while(instr != NULL) {
+		while(instr) {
 
-			if(IS_JUMP(instr) && instr->jumpto != NULL) {
-				jumpto = (insn_info *)instr->jumpto;
-				x86 = &(instr->i.x86);
-
-				offset = x86->opcode_size;
-				size = x86->insn_size - x86->opcode_size - x86->disp_size;
-				jump_displacement = jumpto->new_addr - (instr->new_addr + instr->size);
-
-				// (insn->new_addr + insn->size) will give %rip value, then we have to subtract
-				// the address of jump destination instruction
-
-				hnotice(6, "Jump instruction at <%#08llx> (originally <%#08llx>) +%#0llx points to address %#08llx (originally %#08llx)\n",
-					instr->new_addr, instr->orig_addr, jump_displacement, jumpto->new_addr, jumpto->orig_addr);
-
-				// TODO: Must implement support to near and far jump!
-				// Near jumps will use a relative offset, whereas far jumps use n absolute one
-				// this could not be embeded directly relying on the jumpto instruction refs
-				// cause this wuold give only the absolute address.
-
-				// TODO: check if this would work!
-				// prefix 0xff refres to an absolute jump instruction, hence the full jumpto instruction address
-				// must be used intead of the relative offset displacement
-
-				if ((x86->opcode[0] & 0xf0) == 0x70 || x86->opcode[0] == 0xeb) {
-					// for the short jump check it the jump is at more of 128 byte, otherwise
-					// the single 8-bits displacement for the short jump is unsiffucient
-					if (jump_displacement < -128 || jump_displacement > 128) {
-						hnotice(6, "Short jump will overflow with new displacement %#0llx\n", jump_displacement);
-
-						// in this case we need to substitute the short jump with a long one
-						bzero(bytes, sizeof(bytes));
-
-						// TODO: differenza tra jump condizionale e non!!
-
-						// updating the jump instruction, will also change its size, thus the displacement
-						// has to be updated againg in order to take into account the size increment
-
-						// TODO: embeddare l'update del displacement in questo modo non è sicuro
-						if(x86->opcode[0] == 0xeb) {
-							bytes[0] = 0xe9;
-
-							jump_displacement -= 3;
-							memcpy(bytes+1, &jump_displacement, 4);
-						} else {
-							bytes[0] = 0x0f;
-							bytes[1] = 0x80 | (x86->opcode[0] & 0xf);
-
-							jump_displacement -= 4;
-							memcpy(bytes+2, &jump_displacement, 4);
-						}
-
-						// TODO: debug
-						/*hprint("JUMP at %#08lx (previously at %#08lx) MUST BE SUBSTITUTED (offset= %d):\n", insn->new_addr, insn->orig_addr, jump_displacement);
-						hdump(1, "FROM", insn->i.x86.insn, insn->size);
-						hdump(1, "TO", bytes, sizeof(bytes));*/
-						substitute_instruction_with(instr, bytes, sizeof(bytes), &instr);
-
-						// XXX: TO CHECK: x86 è parte di instr, ma instr è
-						// soggetta a free() nella chiamata alla riga sopra...
-						// YYY: IN TEORIA ora non più...
-						x86 = &(instr->i.x86);
-						offset = x86->opcode_size;
-						size = x86->insn_size - x86->opcode_size;
-						instr->jumpto = jumpto;
-
-						hnotice(6, "Changed into a long jump\n");
-					}
-				}
-
-				//hnotice(5, "It's a long jump, just update the displacement to %#0llx\n", jump_displacement);
-				// XXX: TO CHECK: stessa cosa di poco sopra: x86 può essere in memoria free()
-				memcpy((x86->insn + offset), &jump_displacement, size);
-
-			// must be taken into account embedded CALL instructions (ie. for local functions)
-			// such that theirs offset are generated directly into the code instead of using a relocation
+			// Once the function containing 'target' is found,
+			// skip instruction that come before 'target'
+			if(instr->new_addr <= target->new_addr) {
+				instr = instr->next;
+				continue;
 			}
+
+			instr->i.x86.addr = instr->new_addr += shift;
+
+			hnotice(6, "Instruction '%s' at address <%#08llx> (size %u) shifted to new address <%#08llx>\n",
+				instr->i.x86.mnemonic, instr->orig_addr, instr->size, instr->new_addr);
 
 			instr = instr->next;
 		}
 
+		foo->new_addr = foo->insn->new_addr;
+		foo->symbol->size += shift;
+
+		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n",
+			foo->symbol->name, foo->new_addr, foo->symbol->size);
+
 		foo = foo->next;
 	}
-
-
-
-
 
 	// update all the relocation that ref instructions
 	// beyond the one instrumented. (ie. in case of switch tables)
@@ -304,6 +240,187 @@ static void update_instruction_references(insn_info *target, int shift) {
 
 		sym = sym->next;
 	}*/
+}
+
+/**
+ * Updates jump displacements in accordance with the new addresses of instructions.
+ * It is advisable to call this function only after addresses have already been recomputed
+ * (i.e. after calling `update_instruction_addresses`) otherwise displacements will be wrong
+ * the control flow correctness of the instrumented logic cannot be preserved.
+ */
+void update_jump_displacements(void) {
+	function *foo;
+	insn_info *instr;
+	insn_info *jumpto;
+	insn_info_x86 *x86;
+
+	int offset;
+	unsigned int size;
+	unsigned int old_size; // [SE]
+	long long jump_displacement;
+
+	unsigned char bytes[6];
+
+	hnotice(4, "Update jump displacements\n");
+
+	foo = PROGRAM(code);
+	while(foo) {
+
+		hnotice(5, "In function '%s'\n", foo->name);
+
+		instr = foo->insn;
+		while(instr != NULL) {
+
+			if(IS_JUMP(instr) && instr->jumpto != NULL) {
+				jumpto = (insn_info *)instr->jumpto;
+				x86 = &(instr->i.x86);
+
+				offset = x86->opcode_size;
+				size = x86->insn_size - x86->opcode_size - x86->disp_size;
+				old_size = instr->size; // [SE]
+
+				// The expression (insn->new_addr + insn->size) gives the value of %rip.
+				// By subtracting it from the address of the target instruction, we obtain
+				// the jump displacement
+				jump_displacement = jumpto->new_addr - (instr->new_addr + instr->size);
+
+				hnotice(6, "Jump instruction at <%#08llx> (originally <%#08llx>) +%#0llx points to instruction '%s' at <%#08llx> (originally <%#08llx>)\n",
+					instr->new_addr, instr->orig_addr, jump_displacement,
+					jumpto->i.x86.mnemonic, jumpto->new_addr, jumpto->orig_addr);
+
+				// TODO: Must implement support to near and far jump!
+				// Near jumps will use a relative offset, whereas far jumps use an absolute one
+				// this could not be embedded directly relying on the jumpto instruction refs
+				// cause this would give only the absolute address.
+
+				// TODO: check if this would work!
+				// prefix 0xff refers to an absolute jump instruction, hence the full jumpto instruction address
+				// must be used instead of the relative offset displacement
+
+				// If the jump instruction is a short jump, we must check whether the single 8-bit
+				// displacement is big enough to hold the new value for the jump displacement.
+				// In the negative case, we must replace the short jump with a long jump.
+				if ((x86->opcode[0] & 0xf0) == 0x70 || x86->opcode[0] == 0xeb) {
+
+					if (jump_displacement < -128 || jump_displacement > 128) {
+						// We need to substitute the short jump with a long one
+
+						hnotice(6, "Short jump will overflow due to jump displacement %#0llx\n", jump_displacement);
+
+						bzero(bytes, sizeof(bytes));
+
+						// TODO: embeddare l'update del displacement in questo modo non è sicuro
+						if(x86->opcode[0] == 0xeb) {
+							// Unconditional jump
+							bytes[0] = 0xe9;
+
+							jump_displacement -= 3;
+							memcpy(bytes+1, &jump_displacement, 4);
+						} else {
+							// Conditional jump
+							bytes[0] = 0x0f;
+							bytes[1] = 0x80 | (x86->opcode[0] & 0xf);
+
+							jump_displacement -= 4;
+							memcpy(bytes+2, &jump_displacement, 4);
+						}
+
+						hnotice(6, "Short jump at <%#08llx> (originally <%#08lx>) will be converted to a long jump:\n", instr->new_addr, instr->orig_addr);
+
+						hdump(6, "FROM", instr->i.x86.insn, instr->size);
+						hdump(6, "TO", bytes, sizeof(bytes));
+
+						substitute_instruction_with(instr, bytes, sizeof(bytes), &instr);
+
+						x86 = &(instr->i.x86);
+						offset = x86->opcode_size;
+						size = x86->insn_size - x86->opcode_size;
+						// instr->jumpto = jumpto;
+						// set_jumpto_reference(instr, jumpto);
+
+						// Updating the jump instruction will also change its size, thus the displacement
+						// has to be updated again in order to take into account the size increment
+
+						// [SE] The new jump displacement gets inserted into the instruction
+						// by the end of the iteration.
+						shift_instruction_addresses(instr, (instr->size - old_size));
+
+						if (instr->new_addr < instr->jumpto->new_addr) {
+							jump_displacement += (instr->size - old_size);
+						}
+						// [/SE]
+
+						hnotice(6, "Changed into a long jump\n");
+					}
+				}
+
+				memcpy((x86->insn + offset), &jump_displacement, size);
+
+				hnotice(6, "Long jump displacement updated to %#0llx\n", jump_displacement);
+			}
+
+			// TODO: Embedded CALL instructions (i.e. for local functions) could be taken into account
+			// in the same way as JUMP ones: their offsets can be generated directly into the code,
+			// instead of using relocation
+
+			instr = instr->next;
+		}
+
+		foo = foo->next;
+	}
+}
+
+inline void set_jumpto_reference(insn_info *jump, insn_info *target) {
+	jump->jumpto = target;
+
+	ll_push(&target->targetof, jump);
+
+	hnotice(4, "%s instruction at <%#08llx> (<%#08llx>) linked to instruction at address <%#08llx> (<%#08llx>)\n",
+		IS_JUMP(jump) ? "Jump" : "Call",
+		jump->orig_addr, jump->new_addr, target->orig_addr, target->new_addr);
+}
+
+inline void set_jumptable_entry(insn_info *jump, insn_info *entry, unsigned int idx) {
+	if (idx >= jump->jumptable.size) {
+		hinternal();
+	}
+
+	printf("%u\n", idx);
+
+	jump->jumptable.entry[idx] = entry;
+
+	hnotice(4, "%s instruction at <%#08llx> (<%#08llx>) linked to instruction at address <%#08llx> (<%#08llx>) in entry %u\n",
+		IS_JUMP(jump) ? "Jump" : "Call",
+		jump->orig_addr, jump->new_addr, entry->orig_addr, entry->new_addr, idx);
+}
+
+void set_virtual_reference(insn_info *target, insn_info *virtual) {
+	insn_info *jump;
+	unsigned int idx;
+
+	virtual->targetof = target->targetof;
+
+	while( !ll_empty(&target->targetof) ) {
+		jump = ll_pop_first(&target->targetof);
+
+		if (jump->jumpto) {
+			// if (jump->jumpto == target) {
+				jump->jumpto = virtual;
+			// }
+		}
+		else {
+			for(idx = 0; idx < jump->jumptable.size; ++idx) {
+				if (jump->jumptable.entry[idx] == target) {
+					jump->jumptable.entry[idx] = virtual;
+				}
+			}
+		}
+
+	}
+
+	target->virtual = virtual;
+
+	// [SE] TODO: Relocation entries
 }
 
 
@@ -344,7 +461,7 @@ static insn_info * insert_insn_at (insn_info *target, insn_info *instr, int flag
 	// Update instruction references
 	// since we are adding a new instruction, the shift amount
 	// is equal to the instruction's size
-	update_instruction_references(pivot, instr->size);
+	// update_instruction_addresses(pivot, instr->size);
 
 	//func = get_function(target);
 	//hnotice(4, "Inserted a new instruction node %s the instruction at offset <%#08lx> in function '%s'\n", flag == INSERT_AFTER ? "after" : "before", target->new_addr, func->symbol->name);
@@ -381,7 +498,7 @@ static void substitute_insn_with(insn_info *target, insn_info *instr) {
 	if(target->next)
 		target->next->prev = instr;
 
-	update_instruction_references(instr, (instr->size - target->size));
+	// update_instruction_addresses(instr, (instr->size - target->size));
 
 	//func = get_function(target);
 	//hnotice(4, "Substituting instruction at address <%#08lx> in function '%s'\n", target->orig_addr, func->symbol->name);
@@ -448,7 +565,7 @@ int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t
 
 	// we have to update all the references
 	// delta shift should be the: d = (new size - old size) [signed, obviously]
-	update_instruction_references(instr, (size - old_size));
+	// update_instruction_addresses(instr, (size - old_size));
 
 	count = 1;
 //	instr = target;

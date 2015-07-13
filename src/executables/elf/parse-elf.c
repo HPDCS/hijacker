@@ -612,6 +612,7 @@ static reloc *find_reloc(section *sec, unsigned long offset) {
 static void resolve_jump_table(function *func, insn_info *instr,
 	unsigned int secnum, unsigned long addr, unsigned long long size) {
 
+	insn_info *target;
 	section *sec;
 	reloc *rel;
 	function *foo;
@@ -635,7 +636,7 @@ static void resolve_jump_table(function *func, insn_info *instr,
 	}
 
 	instr->jumptable.size = size;
-	instr->jumptable.insn = malloc(sizeof(insn_info *) * size);
+	instr->jumptable.entry = malloc(sizeof(insn_info *) * size);
 
 	// Keep parsing relocation entries until we reach the
 	// boundary of the jump table
@@ -643,10 +644,9 @@ static void resolve_jump_table(function *func, insn_info *instr,
 	while(i < size && rel) {
 
 		if (IS_JUMPIND(instr)) {
-			instr->jumptable.insn[i] = find_insn(func, rel->addend, true);
+			target = find_insn(func, rel->addend, true);
 
-			hnotice(4, "Jump instruction at <%#08llx> linked to address <%#08llx>\n",
-				instr->orig_addr, instr->jumptable.insn[i]->orig_addr);
+			set_jumptable_entry(instr, target, i);
 		}
 
 		else if (IS_CALLIND(instr)) {
@@ -657,17 +657,19 @@ static void resolve_jump_table(function *func, insn_info *instr,
 				// from the address of another function and a displacement, but we
 				// handle that possibility anyway...
 				// [SE] TODO: Questo branch è abbastanza inutile
-				instr->jumptable.insn[i] = find_insn(NULL, foo->insn->orig_addr + rel->addend, true);
+				target = find_insn(NULL, foo->insn->orig_addr + rel->addend, true);
 
-				if (!instr->jumptable.insn[i]) {
+				if (!target) {
 					hinternal();
 				}
 			} else {
-				instr->jumptable.insn[i] = foo->insn;
+				target = foo->insn;
 			}
 
-			hnotice(4, "Call instruction at <%#08llx> linked to address <%#08llx> ('%s' + <%#08llx>)\n",
-				instr->orig_addr, instr->jumptable.insn[i]->orig_addr, foo->name, rel->addend);
+			// hnotice(4, "Call instruction at <%#08llx> linked to address <%#08llx> ('%s' + <%#08llx>)\n",
+			// 	instr->orig_addr, instr->jumptable.insn[i]->orig_addr, foo->name, rel->addend);
+
+			set_jumptable_entry(instr, target, i);
 		}
 
 		else {
@@ -792,10 +794,7 @@ static void *infer_jump_table(function *func, insn_info *instr) {
 		if (foo && size == 0) {
 			hnotice(6, "Function pointer to %s\n", foo->name);
 
-			instr->jumpto = foo->insn;
-
-			hnotice(4, "Call instruction at <%#08llx> linked to address <%#08llx>\n",
-				instr->orig_addr, instr->jumpto->orig_addr);
+			set_jumpto_reference(instr, foo->insn);
 
 		} else if (size) {
 			hnotice(6, "Array named %s starting at %s + <%#08llx> and sized %u\n",
@@ -879,10 +878,7 @@ void link_jump_instructions(function *func, function *code_version) {
 				}
 
 				// At this point 'dest' will point to the destination instruction relative to the jump 'instr'
-				instr->jumpto = dest;
-
-				hnotice(4, "Jump instruction at <%#08llx> linked to instruction at <%#08llx>\n",
-					instr->orig_addr, dest->orig_addr);
+				set_jumpto_reference(instr, dest);
 			}
 
 		}
@@ -983,10 +979,7 @@ void link_jump_instructions(function *func, function *code_version) {
 				if (callee) {
 					// CALL to local function detected, augment the intermediate representation
 					// with the appropriate linking between instructions.
-					instr->jumpto = callee->insn;
-
-					hnotice(4, "Call instruction at <%#08llx> linked to address <%#08llx>\n",
-						instr->orig_addr, callee->orig_addr);
+					set_jumpto_reference(instr, callee->insn);
 				}
 
 			}
@@ -1398,7 +1391,7 @@ static void resolve_blocks(void) {
 
 				idx = 0;
 				while (idx < instr->jumptable.size) {
-					target = instr->jumptable.insn[idx];
+					target = instr->jumptable.entry[idx];
 
 					hnotice(2, "Jump target breakpoint (jumptable) at <%#08llx>\n", target->orig_addr);
 
@@ -1485,7 +1478,7 @@ static void resolve_blocks(void) {
 				else {
 					idx = 0;
 					while (idx < instr->jumptable.size) {
-						target = instr->jumptable.insn[idx];
+						target = instr->jumptable.entry[idx];
 
 						hnotice(2, "Call target breakpoint (calltable) at <%#08llx>\n", target->orig_addr);
 

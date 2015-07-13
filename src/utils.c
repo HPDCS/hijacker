@@ -204,37 +204,3 @@ void *ll_pop_first(linked_list *list) {
 
 	return elem;
 }
-
-// static ll_node *ll_find(linked_list *list, void *elem) {
-// 	ll_node *node;
-
-// 	node = list->first;
-// 	while (node) {
-// 		if (node->elem == elem) {
-// 			break;
-// 		}
-
-// 		node = node->next;
-// 	}
-
-// 	return node;
-// }
-
-// void ll_remove(linked_list *list, void *elem) {
-// 	ll_node *node;
-
-// 	node = ll_find(list, elem);
-
-// 	if (node) {
-// 		if (list->first == node) {
-// 			ll_pop_first(list);
-// 		}
-// 		else if (list->last == node) {
-// 			ll_pop(list);
-// 		}
-// 		else {
-// 			node->prev->next = node->next;
-// 			node->next->prev = node->prev;
-// 		}
-// 	}
-// }

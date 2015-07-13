@@ -54,7 +54,7 @@ typedef struct {
   ll_node *last;
 } linked_list;
 
-extern linked_list *ll_create();
+
 extern void ll_move(linked_list *from, linked_list *to);
 extern bool ll_empty(linked_list *list);
 
@@ -63,7 +63,5 @@ extern void ll_push_first(linked_list *list, void *elem);
 
 extern void *ll_pop(linked_list *list);
 extern void *ll_pop_first(linked_list *list);
-
-extern void ll_remove(linked_list *list, void *elem);
 
 #endif /* _UTILS_H_ */

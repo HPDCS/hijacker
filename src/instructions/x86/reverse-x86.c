@@ -115,6 +115,16 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	// add the SUB instruction in order to create a sufficent stack window for the structure
 	insert_instructions_at(target, sub, sizeof(sub), INSERT_BEFORE, &instr);
 
+	// [SE] For the sake of correctness, any JUMP instruction toward `target` should now
+	// point to the first instruction of the trampoline's preamble.
+	// Note that since preambles are added one below another, it is sufficient to update
+	// the virtual reference only once, when the first trampoline's preamble is installed.
+	// Indeed, such preamble will have the lowest virtual address of all the ones that
+	// will be later installed.
+	if (!target->virtual) {
+		set_virtual_reference(target, instr);
+	}
+
 	// iterates all over the mov needed
 	for (idx = 0; idx < num; idx++) {
 		bzero((mov + 3), 5);
