@@ -27,12 +27,8 @@
 */
 
 #pragma once
-#ifndef _INSTRUCTIONS_H
-#define _INSTRUCTIONS_H
-
-#include <x86/instruction.h>
-
-#include <executable.h>
+#ifndef _INSTRUCTION_H
+#define _INSTRUCTION_H
 
 // [FV] Flags contenenti informazioni utili sul comportamento o la classe delle funzioni
 #define I_MEMRD		0x1	// Legge dalla memoria
@@ -101,45 +97,4 @@
 #define UNRECOG_INSN	0
 #define X86_INSN	7
 
-
-typedef struct instruction {
-	unsigned long		flags;
-	unsigned long long	orig_addr;
-	unsigned long long	new_addr;
-	unsigned int		size;
-	unsigned int		opcode_size;	// [DC] To keep trace of the opcode size
-	union {
-		insn_info_x86		x86;
-	} i;
-	//void *reference;			// May represent a reference to either a relocation symbol or an instruction (jump)
-
-	struct instruction *jumpto;
-
-	// [SE] Added jump table field
-	struct {
-		unsigned long long size;
-		struct instruction **entry;
-	} jumptable;
-
-	// [SE] Which instructions can be reached from the current one?
-	// [SE] TODO: To be implemented when support for jumptables is more reliable
-	// (e.g. possibly based on reasoning over the block overlay)
-	// linked_list jumpto;
-
-	// [SE] Which instructions can reach the current one?
-	linked_list targetof;
-
-	// [SE] The instruction that 'virtually' represents the current one
-	// as the target of a jump instruction.
-	// More precisely, this field is used (and useful) when the current
-	// instruction is subject to multiple instrumentation rules whose
-	// preambles are inserted one below another.
-	struct instruction *virtual;
-
-	struct _symbol *reference;
-	struct _symbol *pointedby;
-	struct instruction *prev;	// Instructions are organized in a chain
-	struct instruction *next;
-} insn_info;
-
-#endif /* _INSTRUCTIONS_H */
+#endif /* _INSTRUCTION_H */

@@ -27,8 +27,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-
 #include <utils.h>
+#include <prints.h>
 
 /**
  * Perform a hexdump of data.
@@ -111,47 +111,47 @@ void ll_push(linked_list *list, void *elem) {
 	ll_node *node;
 
 	node = calloc(sizeof(ll_node), 1);
-  node->elem = elem;
+	node->elem = elem;
 
-  if (ll_empty(list)) {
-    list->first = list->last = node;
-  }
-  else if (list->first == list->last) {
-  	list->last = list->first->next = node;
-  	node->prev = list->first;
-  }
-  else {
-  	list->last->next = node;
-  	node->prev = list->last;
-  	list->last = node;
-  }
+	if (ll_empty(list)) {
+		list->first = list->last = node;
+	}
+	else if (list->first == list->last) {
+		list->last = list->first->next = node;
+		node->prev = list->first;
+	}
+	else {
+		list->last->next = node;
+		node->prev = list->last;
+		list->last = node;
+	}
 }
 
 void ll_push_first(linked_list *list, void *elem) {
 	ll_node *node;
 
 	node = calloc(sizeof(ll_node), 1);
-  node->elem = elem;
+	node->elem = elem;
 
-  if (ll_empty(list)) {
-    list->first = list->last = node;
-  }
-  else if (list->first == list->last) {
-  	list->first = list->last->prev = node;
-  	node->next = list->last;
-  }
-  else {
-  	list->first->prev = node;
-  	node->next = list->first;
-  	list->first = node;
-  }
+	if (ll_empty(list)) {
+		list->first = list->last = node;
+	}
+	else if (list->first == list->last) {
+		list->first = list->last->prev = node;
+		node->next = list->last;
+	}
+	else {
+		list->first->prev = node;
+		node->next = list->first;
+		list->first = node;
+	}
 }
 
 void *ll_pop(linked_list *list) {
 	ll_node *node;
 	void *elem;
 
-  if (!ll_empty(list)) {
+	if (!ll_empty(list)) {
 		if (list->first == list->last) {
 			node = list->last;
 			list->first = list->last = NULL;
@@ -180,7 +180,7 @@ void *ll_pop_first(linked_list *list) {
 	ll_node *node;
 	void *elem;
 
-  if (!ll_empty(list)) {
+	if (!ll_empty(list)) {
 		if (list->first == list->last) {
 			node = list->first;
 			list->first = list->last = NULL;

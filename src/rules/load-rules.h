@@ -25,8 +25,8 @@
 */
 
 #pragma once
-#ifndef _INTRUMENTOR_RULES_H
-#define _INTRUMENTOR_RULES_H
+#ifndef _LOAD_RULES_H
+#define _LOAD_RULES_H
 
 #include <libxml/xmlmemory.h>
 #include <libxml/parser.h>
@@ -106,5 +106,5 @@ typedef struct Executable {
 
 int parseRuleFile(char *f, Executable ***rules);
 
-#endif /* _INTRUMENTOR_RULES_H */
+#endif /* _LOAD_RULES_H */
 

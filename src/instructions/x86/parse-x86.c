@@ -32,12 +32,12 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include <prints.h>
-#include <stdbool.h>
-#include <instructions/instruction.h>
+#include <instruction.h>
 
-#include "x86.h"
+#include <x86/x86.h>
 
 /* Prototipi delle funzioni */
 

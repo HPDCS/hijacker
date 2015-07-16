@@ -28,6 +28,9 @@
 #ifndef _INSTRUCTION_X86_H
 #define _INSTRUCTION_X86_H
 
+#include <stdint.h>
+#include <stdbool.h>
+
 
 /// Data fields in instructions are 32-bits
 #define	DATA_32 0x01

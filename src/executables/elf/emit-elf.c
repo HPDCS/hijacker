@@ -33,9 +33,9 @@
 #include <prints.h>
 #include <executable.h>
 
-#include "elf-defs.h"
-#include "handle-elf.h"
-#include "emit-elf.h"
+#include <elf/elf-defs.h>
+#include <elf/handle-elf.h>
+#include <elf/emit-elf.h>
 #include <x86/emit-x86.h>
 
 #define SECTION_INIT_SIZE 1024
@@ -265,6 +265,7 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 			// its starting offset it is already been evaluated in a previous pass
 			shndx = text[sym->version]->index;	// TODO: it must be updated in order to support multiple .text sections
 			sym->initial = sym->position;
+			sym->type = STT_FUNC;
 			break;
 
 		case SYMBOL_VARIABLE:
@@ -275,6 +276,7 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 				sym->position = elf_write_data(data_sec, &sym->position, sym->size);
 				shndx = data_sec->index;	// TODO: it must be updated in order to support multiple .data sections
 			}
+			sym->type = STT_OBJECT;
 			break;
 
 		case SYMBOL_SECTION:
