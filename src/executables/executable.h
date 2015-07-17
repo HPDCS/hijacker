@@ -95,7 +95,7 @@ typedef struct _symbol {
 
 
 typedef struct _function {
-  block *being_blk; // [SE]
+  block *begin_blk; // [SE]
   block *end_blk;   // [SE]
 	int			passes;
 	unsigned char		*name;

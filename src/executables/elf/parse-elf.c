@@ -520,7 +520,7 @@ inline section * find_section(unsigned int idx) {
 
 
 // [SE]
-inline insn_info *find_insn(function *func, unsigned long long addr, bool orig) {
+static insn_info *find_insn(function *func, unsigned long long addr, bool orig) {
 	insn_info *instr;
 
 	if (!func) {
@@ -1355,7 +1355,7 @@ static void resolve_blocks(void) {
 				hnotice(2, "Function %s begin breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
 
 				current_blk = block_split(current_blk, instr, BLOCK_SPLIT_FIRST);
-				func->being_blk = current_blk;
+				func->begin_blk = current_blk;
 			}
 
 
@@ -1537,7 +1537,7 @@ static void resolve_blocks(void) {
 
 		// For all callers of this function, its final block
 		// must be linked to the blocks that follow the callers
-		current_blk = func->being_blk;
+		current_blk = func->begin_blk;
 		new_blk = func->end_blk;
 
 		callee = current_blk->in.first;
