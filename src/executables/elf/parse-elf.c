@@ -524,7 +524,7 @@ static insn_info *find_insn(function *func, unsigned long long addr, bool orig) 
 	insn_info *instr;
 
 	if (!func) {
-		func = functions;
+		func = PROGRAM(code);
 	}
 
 	while (func) {
@@ -1212,13 +1212,14 @@ static void resolve_relocation(void) {
 					// Check for relocation duplicates
 					sym_2 = symbol_check_shared(sym);
 					sym_2->relocation.addend = rel->addend;
+					sym_2->relocation.offset = rel->offset;
 					sym_2->relocation.type = rel->type;
 					sym_2->relocation.secname = (unsigned char *)".text";
-					sym_2->relocation.ref_insn = instr;
 
 					// The instruction object will be bound to the proper symbol.
 					// This reference is read by the specific machine code emitter
 					// that is in charge to proper handle the relocation.
+					sym_2->relocation.ref_insn = instr;
 					instr->reference = sym_2;
 
 					hnotice(2, "Symbol reference added\n\n");
@@ -1612,6 +1613,8 @@ void elf_create_map(void) {
 
 	hnotice(1, "Found %u sections...\n", ELF(secnum));
 
+	PROGRAM(code) = functions;
+
 	// Scan ELF Sections and convert/parse them (if any to be)
 	for(sec = 0; sec < ELF(secnum); sec++) {
 
@@ -1671,7 +1674,7 @@ void elf_create_map(void) {
 
 	// Updates the internal binary representation's pointers
 	PROGRAM(symbols) = symbols->payload;
-	PROGRAM(code) = PROGRAM(v_code)[0] = functions;
+	PROGRAM(v_code)[0] = functions;
 	PROGRAM(rawdata) = 0;
 	PROGRAM(versions)++;
 	PROGRAM(blocks) = blocks; 	// [SE] TODO: Multi-versioning here?

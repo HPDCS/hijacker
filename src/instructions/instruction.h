@@ -115,26 +115,18 @@ typedef struct instruction {
 
 	struct instruction *jumpto;
 
+	// [SE] The instruction that 'virtually' represents the current one
+	// as the target of a jump instruction.
+	struct instruction *virtual;
+
 	// [SE] Added jump table field
 	struct {
 		unsigned long long size;
 		struct instruction **entry;
 	} jumptable;
 
-	// [SE] Which instructions can be reached from the current one?
-	// [SE] TODO: To be implemented when support for jumptables is more reliable
-	// (e.g. possibly based on reasoning over the block overlay)
-	// linked_list jumpto;
-
 	// [SE] Which instructions can reach the current one?
 	linked_list targetof;
-
-	// [SE] The instruction that 'virtually' represents the current one
-	// as the target of a jump instruction.
-	// More precisely, this field is used (and useful) when the current
-	// instruction is subject to multiple instrumentation rules whose
-	// preambles are inserted one below another.
-	struct instruction *virtual;
 
 	struct _symbol *reference;
 	struct _symbol *pointedby;

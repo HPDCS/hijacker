@@ -417,7 +417,7 @@ void apply_rules(void) {
 			instrumented += apply_rule_function(exec, tagFunction);
 		}
 
-		if (version && instrumented) {
+		if (version != 0 && instrumented) {
 			// [SE] If some actual instrumentation has been carried out, first update
 			// instruction addresses and then recompute jump displacements
 			update_instruction_addresses();

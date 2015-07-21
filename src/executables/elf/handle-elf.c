@@ -397,7 +397,7 @@ static symbol *clone_symbol_list (symbol *sym) {
 static insn_info * clone_instruction (insn_info *insn) {
 	insn_info *clone;
 
-	clone = (insn_info *) malloc(sizeof(insn_info));
+	clone = (insn_info *) calloc(sizeof(insn_info), 1);
 	if(!clone) {
 		herror(true, "Out of memory!\n");
 	}
@@ -405,6 +405,10 @@ static insn_info * clone_instruction (insn_info *insn) {
 	memcpy(clone, insn, sizeof(insn_info));
 
 	clone->jumpto = NULL;
+	clone->targetof.first = clone->targetof.last = NULL;
+	clone->jumptable.size = 0;
+	clone->jumptable.entry = NULL;
+	clone->virtual = NULL;
 
 	return clone;
 }
@@ -519,78 +523,87 @@ function * clone_function_descriptor (function *original, char *name) {
 
 
 static void clone_rodata_relocation(symbol *original, function *code, int version, unsigned char *suffix) {
-	symbol *sym, *ref, *rodata;
+	symbol *sym, *text, *ref, *rodata;
 	function *func;
 	insn_info *instr;
 	unsigned char name[256];
-	unsigned int offset = 0;
-	bool first = true;
+	unsigned int offset;
+	// bool first = true;
 
-	// Here we create also a new section symbol for the future
-	// .text section that will contain the previously cloned functions.
-	// This is a mandatory step in order to have the relocation towards
-	// the .text.xyz section aligned for the switch cases
+	// A new section symbol is created that represents the .text.xyz section
+	// holding the current version's code. This step is mandatory to have the
+	// relocation towards the .text.xyz section aligned for the switch cases.
 	bzero(name, sizeof(name));
 	strcpy(name, ".text.");
 	strcat(name, (unsigned char *)suffix);
-	ref = create_symbol_node((unsigned char *)name, SYMBOL_SECTION, SYMBOL_LOCAL, 0);
+	text = create_symbol_node((unsigned char *)name, SYMBOL_SECTION, SYMBOL_LOCAL, 0);
 
-	// We have create accordingly a new .rela.rodata.xyz in order to maintain aligned relocation
-	// offsets within sections, otherwise they will overwrite each other during the final linking stage.
-	// The new section is intended to handle switch cases, the remainder of the code should be fine.
-	/*bzero(name, sizeof(name));
-	strcpy(name, ".rodata.");
-	strcat(name, (unsigned char *)suffix);
-	from = create_symbol_node((unsigned char *)name, SYMBOL_SECTION, SYMBOL_LOCAL, 0);*/
-
-	// We reuse the same .rodata section to adds the relocation entries to the instrumented text
-	// without to create as many sections as the versions created. Therefore we will look for the
-	// '.rodata' sections within the symbol list and retrieve its size to append at the end the new
-	// entries.
+	// Rather than creating as many read-only sections as the number of executable
+	// versions, we reuse the same '.rodata' section for all versions. Specifically,
+	// the new relocation entries will have offsets that fall outside of '.rodata's
+	// original boundaries. The proper size will be later computed in the emit step.
 	rodata = find_symbol((unsigned char *)".rodata");
-
 	if (!rodata) {
-		hnotice(4, "Missing '.rodata' section, no relocation entries to add\n");
+		hnotice(4, "Missing '.rodata' section, no relocation entries to clone\n");
 		return;
 	}
 
 	offset = rodata->size;
-
 	sym = original;
 	while(sym) {
 
-		// Looks for refrences which applies to .text section only
-		// from .rodata (e.g. switch cases), from the original code
-		if(!strcmp((const char *)sym->name, ".text") &&
-			sym->relocation.secname != NULL &&
-			!strcmp((const char *)sym->relocation.secname, ".rodata") &&
-			sym->version == 0) {
-
-			ref = symbol_check_shared(ref);
-
-			ref->relocation.offset = offset;
-			ref->relocation.addend = sym->relocation.addend;
-			ref->relocation.type = sym->relocation.type;
-			ref->relocation.secname = rodata->name;
-
-			//printf("Cerco rilocazione verso .rodata contro .text con offset = %llx\n", sym->relocation.offset);
+		// Looks for relocations in '.rodata' that refer to '.text' addresses
+		// (i.e. case statements) from the original code
+		if(sym->version == 0 && !strcmp((const char *)sym->name, ".text") &&
+		   sym->relocation.secname != NULL && !strcmp((const char *)sym->relocation.secname, ".rodata")) {
 
 			func = code;
 			while(func) {
+
 				instr = func->insn;
 				while(instr) {
-					if(instr->reference && instr->reference->relocation.addend == sym->relocation.offset) {
-						instr->reference = symbol_check_shared(instr->reference);
-						instr->reference->relocation.addend = offset;
 
-						//printf("Aggiornata rilocazione: <%#08llx>%+d\n", instr->reference->relocation.offset, instr->reference->relocation.addend);
+					ref = NULL;
+
+					// If a relocation in '.text' refers to an address in '.rodata',
+					// that address *MIGHT BE* the beginning of a jump table.
+					// As such, the original symbol must be duplicated and its offset must be
+					// updated accordingly (since the entire jump table is duplicated)
+					if(instr->reference && instr->reference->relocation.addend == sym->relocation.offset &&
+					   instr->reference->relocation.secname != NULL &&
+					   !strcmp((const char *)instr->reference->relocation.secname, ".text") &&
+					   !strcmp((const char *)instr->reference->name, ".rodata")) {
+
+						ref = symbol_check_shared(instr->reference);
+
+						ref->relocation.offset = instr->reference->relocation.offset;
+						ref->relocation.addend = offset;
+						ref->relocation.type = instr->reference->relocation.type;
+						ref->relocation.secname = text->name;
+
+						instr->reference = ref;
+						ref->relocation.ref_insn = instr;
 					}
 
-					if(instr->new_addr == sym->relocation.addend) {
+					// If the instruction address is referred to by a relocation, duplicate
+					// the latter and update pointers in the intermediate representation
+					// so that the original relocation from version 0 and the instruction from
+					// the current version aren't linked anymore
+					else if(instr->new_addr == sym->relocation.addend) {
+						ref = symbol_check_shared(text);
+
+						ref->relocation.offset = offset;
+						ref->relocation.addend = sym->relocation.addend;
+						ref->relocation.type = sym->relocation.type;
+						ref->relocation.secname = rodata->name;
+
 						instr->pointedby = ref;
 						ref->relocation.ref_insn = instr;
+					}
 
-						//printf("Aggiornato il puntatore al simbolo che punta all'istruzione <%#08llx> alla versione %d\n", instr->new_addr, ref->version);
+					if (ref) {
+						hnotice(5, "Added new relocation in <%s + %x> to <%s + %x>\n",
+							ref->relocation.secname, ref->relocation.offset, ref->name, ref->relocation.addend);
 					}
 
 					instr = instr->next;
@@ -599,19 +612,16 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 				func = func->next;
 			}
 
-			hnotice(5, "Updated rodata relocation: <%#08llx>%+d to '%s'\n",
-				ref->relocation.offset, ref->relocation.addend, ref->relocation.secname);
-
-			// Each relocation displaces of 4 bytes (32 bits) at a time
-			// TODO: It is safe to suppose that relocations are always 8 bytes long?
-
-			//FIXME: Da identificare perché la prima rilocazione viene scritta
+			// FIXME: Da identificare perché la prima rilocazione viene scritta
 			// 8 byte più avanti rispetto alle altre. Questo workaround consente di
 			// instrumentare le tabelle per gli switch case in alcune condizioni
 			// che tuttavia non sono state ancora identificate...
-			offset += first ? 16 : 8;
-			rodata->size += 8;
-			first = false;
+			// offset += first ? 2 * sizeof(char *) : sizeof(char *);
+			// first = false;
+
+			// TODO: It is safe to suppose that relocations are always 8 bytes long?
+			offset += sizeof(char *);
+			rodata->size += sizeof(char *);
 		}
 
 		sym = sym->next;
