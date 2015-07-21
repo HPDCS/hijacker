@@ -289,7 +289,7 @@ static void elf_symbol_section(int sec) {
 			// This was breaking the generation of references in case of local calls.
 			// I don't know if it is safe to remove the "initial" field anyhow
 			sym->position = symbol_info(s, st_value);
-			sym->initial = symbol_info(s, st_value);
+			// sym->initial = symbol_info(s, st_value);
 			sym->bind = bind;
 
 			hnotice(2, "[%d] %s: '%s' in section %d :: %lld\n", sym->index, (sym->type == SYMBOL_FUNCTION ? "Function" :
@@ -1046,12 +1046,17 @@ static void resolve_symbols(void) {
 
 		case SYMBOL_VARIABLE:
 			if (sym->secnum != SHN_COMMON) {
-				sym->position = *(sec_content(sym->secnum) + sym->position);
+				// [SE] The symbol's initial value is copied into a private buffer,
+				// then later flushed to the new ELF file during the emit step
+				sym->initial = malloc(sym->size);
+				memcpy(sym->initial, sec_content(sym->secnum) + sym->position, sym->size);
+				// [/SE]
 			}
 
-			hnotice(2, "Variable '%s' (%d bytes long) :: %lld (%s)\n", sym->name, sym->size,
-					(sym->secnum != SHN_COMMON) ? *(sec_content(sym->secnum) + sym->position) : sym->position,
-							sym->secnum == SHN_COMMON ? "COM" : sec_name(sym->secnum));
+			hnotice(2, "Variable '%s' (%d bytes long) :: %lld (%s)\n",
+				sym->name, sym->size, sym->position, sym->secnum == SHN_COMMON ? "COM" : sec_name(sym->secnum));
+
+			hdump(3, sym->name, sym->initial, sym->size);
 			break;
 
 		case SYMBOL_UNDEF:

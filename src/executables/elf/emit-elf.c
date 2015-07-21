@@ -264,7 +264,6 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 		case SYMBOL_FUNCTION:
 			// its starting offset it is already been evaluated in a previous pass
 			shndx = text[sym->version]->index;	// TODO: it must be updated in order to support multiple .text sections
-			sym->initial = sym->position;
 			break;
 
 		case SYMBOL_VARIABLE:
@@ -272,7 +271,7 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 			// that is the variable is not allocated yet; otherwise .data section
 			// must be filled up with the relative content
 			if(sym->secnum != SHN_COMMON) {
-				sym->position = elf_write_data(data_sec, &sym->position, sym->size);
+				sym->position = elf_write_data(data_sec, sym->initial, sym->size);
 				shndx = data_sec->index;	// TODO: it must be updated in order to support multiple .data sections
 			}
 			break;
@@ -303,7 +302,7 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 
 		// write the symbol name into the string_table and get the offset to store in st_name
 		sym64->st_name = elf_write_string(string_table, (char *)sym->name);
-		sym64->st_value = sym->initial;
+		sym64->st_value = sym->position;
 		sym64->st_size = sym->size;
 		sym64->st_info = ELF64_ST_INFO(sym->bind, sym->type);
 		sym64->st_shndx = shndx;
@@ -315,7 +314,6 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 		case SYMBOL_FUNCTION:
 			// its starting offset it is already been evaluated in a previous pass
 			shndx = text[sym->version]->index;	// TODO: it must be updated in order to support multiple .text sections
-			sym->initial = sym->position;
 			break;
 
 		case SYMBOL_VARIABLE:
@@ -323,7 +321,7 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 			// that is the variable is not allocated yet; otherwise .data section
 			// must be filled up with the relative content
 			if(sym->secnum != SHN_COMMON) {
-				sym->position = elf_write_data(data_sec, &sym->position, sym->size);
+				sym->position = elf_write_data(data_sec, sym->initial, sym->size);
 				shndx = data_sec->index;	// TODO: it must be updated in order to support multiple .data sections
 			}
 			break;
