@@ -49,11 +49,15 @@ void hexdump (void *addr, int len) {
 		return;
 	}
 
-	printf ("       Address                     Hexadecimal values                      Printable\n" );
+	printf ("       Address                     Hexadecimal values                      Printable     \n" );
 	printf ("   ----------------  ------------------------------------------------  ------------------\n" );
 
 	// Process every byte in the data.
-	count = (((int) (len / 16) + 1) * 16);
+	if (len % 16 != 0)
+		count = (((int) (len / 16) + 1) * 16);
+	else
+		count = len;
+
 	for (i = 0; i < count; i++) {
 
 		// Multiple of 8 means mid-line (add a mid-space)
@@ -86,7 +90,11 @@ void hexdump (void *addr, int len) {
 
 		// Pad out last line if not exactly 16 characters.
 		else {
+
+			// Add a three-char long space for the missing character in the second column.
 			printf("   ");
+
+			// Add a printable dot for the missing character in the third column.
 			buff[i % 16] = '.';
 			buff[(i % 16) + 1] = '\0';
 		}
