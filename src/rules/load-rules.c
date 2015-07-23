@@ -32,9 +32,9 @@
 #include <libxml/parser.h>
 
 #include <hijacker.h>
-#include <rules.h>
 #include <instruction.h>
 #include <prints.h>
+#include <load-rules.h>
 
 /// Generate spacing to indent the output
 #define SPACES(level) 	{int __i;\

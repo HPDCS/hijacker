@@ -22,6 +22,7 @@
 * @brief Transforms an ELF object file in the hijacker's intermediate representation
 * @author Alessandro Pellegrini
 * @author Davide Cingolani
+* @author Simone Economo
 * @date September 19, 2008
 */
 
@@ -37,57 +38,24 @@
 
 #include <hijacker.h>
 #include <prints.h>
+#include <executable.h>
 #include <instruction.h>
 #include <utils.h>
 
-#include "elf-defs.h"
-#include "handle-elf.h"
+#include <elf/elf-defs.h>
+#include <elf/handle-elf.h>
 #include <x86/x86.h>
 
+
+#define MAX_LOOKBEHIND		10 // [SE] Used while reverse-parsing instruction to resolve jump tables
 
 static section *relocs = 0;		/// List of all relocations sections parsed
 static section *symbols = 0;		/// List of all symbols parsed
 static section *code = 0;		/// List of whole code sections parsed
 static function *functions = 0;		/// List of resolved functions
 static char *strings = 0;		/// Array of strings
-
-// FIXME: redundancy with 'add_section'
-/**
- * Create and link a new section descriptor.
- * Create a new section descriptor and add it into the list pointed to by the
- * 'first' argument passed.
- *
- * @param type An integer constant which represents the type of the section
- *
- * @param secndx Integer representing the index number of the section in the ELF file
- *
- * @param first Pointer to a list of sections to which append the new one
- */
-static void add_sec(int type, int secndx, void *payload, section **first) {
-	section *s;
-
-	// Create and populate the new node
-	section *new = (section *)malloc(sizeof(section));
-	if(!new){
-		herror(true, "Out of memory!\n");
-	}
-	bzero(new, sizeof(section));
-
-	new->type = type;
-	new->index = secndx;
-	new->header = sec_header(secndx);
-	new->payload = payload;
-
-	if(*first == NULL)
-		*first = new;
-	else {
-		s = *first;
-		while(s->next != NULL) {
-			s = s->next;
-		}
-		s->next = new;
-	}
-}
+static insn_info *last_insn = 0; /// [SE] Last occurring instruction in the code
+static block *blocks = 0;		/// [SE] List of recognized basic blocks
 
 // FIXME: is this really used?
 static unsigned char *strtab(unsigned int byte) {
@@ -124,7 +92,7 @@ static void elf_raw_section(int sec) {
 	hnotice(2, "Nothing to do here...\n");
 
 	// We do not need to perform any particular task here...
-	add_section(SECTION_RAW, sec, sec_content(sec));
+	add_section(SECTION_RAW, sec, sec_content(sec), NULL);
 
 	hdump(3, sec_name(sec), sec_content(sec), sec_size(sec));
 
@@ -138,11 +106,9 @@ static void elf_raw_section(int sec) {
 
 
 static void elf_code_section(int sec) {
-	insn_info 	*first,
-	*curr;
+	insn_info *first, *curr;
 
-	unsigned long 	pos = 0,
-			size;
+	unsigned long pos = 0, size;
 
 	char flags = 0;
 
@@ -202,17 +168,20 @@ static void elf_code_section(int sec) {
 
 	}
 
+	last_insn = curr->prev;
+
 	// TODO: we left a blank node at the end of the chain!
-	//curr->prev->next = 0;
-	//free(curr);
+	curr->prev->next = NULL;
+	free(curr);
 
 	// At this time, we consider the sections just as a sequence of instructions.
 	// Later, a second pass on this sequence will divide instructions in functions,
 	// but we must be sure to have symbols loaded, which we cannot be at this
 	// stage of processing
 	// FIXME: eliminare la ridondanza sulle chiamate add_section add_sec!
-	add_section(SECTION_CODE, sec, first);
-	add_sec(SECTION_CODE, sec, first, &code);
+	// add_section(SECTION_CODE, sec, first);
+	add_section(SECTION_CODE, sec, first, &PROGRAM(sections));
+	add_section(SECTION_CODE, sec, first, &code);
 
 	hsuccess();
 }
@@ -313,8 +282,8 @@ static void elf_symbol_section(int sec) {
 	// At this stage symbol section will contain a list of symbols.
 	// This section will be appended to the linked list of all section
 	// maintained by the program descriptor.
-	add_section(SECTION_SYMBOLS, sec, first);
-	add_sec(SECTION_SYMBOLS, sec, first, &symbols);
+	add_section(SECTION_SYMBOLS, sec, first, NULL);
+	add_section(SECTION_SYMBOLS, sec, first, &symbols);
 
 	hsuccess();
 }
@@ -359,8 +328,8 @@ static void elf_rel_section(int sec) {
 	}
 
 	// adds the section to the program
-	add_section(SECTION_RELOC, sec, first);
-	add_sec(SECTION_RELOC, sec, first, &relocs);
+	add_section(SECTION_RELOC, sec, first, NULL);
+	add_section(SECTION_RELOC, sec, first, &relocs);
 
 	hsuccess();
 }
@@ -403,8 +372,8 @@ static void elf_rela_section(int sec) {
 	}
 
 	// adds the section to the program
-	add_section(SECTION_RELOC, sec, first);
-	add_sec(SECTION_RELOC, sec, first, &relocs);
+	add_section(SECTION_RELOC, sec, first, NULL);
+	add_section(SECTION_RELOC, sec, first, &relocs);
 
 	hsuccess();
 }
@@ -427,7 +396,7 @@ static void elf_string_section(int sec) {
 	}
 
 	// adds the section to the program
-	add_section(SECTION_NAMES, sec, stringtab);	//TODO: is this needed?
+	add_section(SECTION_NAMES, sec, stringtab, NULL);	//TODO: is this needed?
 	strings = stringtab;
 
 	hsuccess();
@@ -493,6 +462,247 @@ static void split_function(symbol *sym, function *func) {
 }
 
 
+static reloc *find_reloc(section *sec, unsigned long offset) {
+	section *relsec;
+	reloc *rel;
+
+	// Find the relocation section relative to 'sec'
+	relsec = relocs;
+	while(relsec) {
+		if (!strncmp(".rela", sec_name(relsec->index), strlen(".rela"))
+				&& !strcmp(sec_name(relsec->index) + strlen(".rela"), sec_name(sec->index))) {
+		// if (!strncmp(".rela", relsec->name, strlen(".rela"))
+		//     && !strcmp(relsec->name + strlen(".rela"), sec->name)) {
+			break;
+		}
+
+		relsec = relsec->next;
+	}
+
+	if (!relsec) {
+		hinternal();
+	}
+
+	rel = relsec->payload;
+
+	// Start iterating over relocation entries until we find
+	// the one that refers to address 'offset'
+	while(rel) {
+		if (rel->offset == offset) {
+			break;
+		}
+
+		rel = rel->next;
+	}
+
+	return rel;
+}
+
+
+static void resolve_jump_table(function *func, insn_info *instr,
+	unsigned int secnum, unsigned long addr, unsigned long long size) {
+
+	insn_info *target;
+	section *sec;
+	reloc *rel;
+	function *foo;
+
+	unsigned int i;
+
+	sec = find_section(secnum);
+
+	if (!sec) {
+		hinternal();
+	}
+
+	rel = find_reloc(sec, addr);
+
+	if (!rel) {
+		// [SE] TODO: clone_rodata_relocation in handle-elf.c non riflette
+		// l'inserimento di nuove rilocazioni dentro la rispettiva struct section
+		// quindi al momento dell'instrumentazione (cioè a parsing già terminato)
+		// si incappa in questo branch
+		return;
+	}
+
+	instr->jumptable.size = size;
+	instr->jumptable.entry = malloc(sizeof(insn_info *) * size);
+
+	// Keep parsing relocation entries until we reach the
+	// boundary of the jump table
+	i = 0;
+	while(i < size && rel) {
+
+		if (IS_JUMPIND(instr)) {
+			target = find_insn(func, rel->addend, true);
+
+			set_jumptable_entry(instr, target, i);
+		}
+
+		else if (IS_CALLIND(instr)) {
+			foo = find_func_from_sym(rel->symbol);
+
+			if (rel->addend) {
+				// It doesn't make much sense to compute the address of a function
+				// from the address of another function and a displacement, but we
+				// handle that possibility anyway...
+				// [SE] TODO: Questo branch è abbastanza inutile
+				target = find_insn(NULL, foo->insn->orig_addr + rel->addend, true);
+
+				if (!target) {
+					hinternal();
+				}
+			} else {
+				target = foo->insn;
+			}
+
+			// hnotice(4, "Call instruction at <%#08llx> linked to address <%#08llx> ('%s' + <%#08llx>)\n",
+			// 	instr->orig_addr, instr->jumptable.insn[i]->orig_addr, foo->name, rel->addend);
+
+			set_jumptable_entry(instr, target, i);
+		}
+
+		else {
+			hinternal();
+		}
+
+		i = i + 1;
+		rel = rel->next;
+	}
+}
+
+// [SE] TODO: Funzione abbastanza rozzetta, da rivedere
+static void *infer_jump_table(function *func, insn_info *instr) {
+	insn_info *backinstr;
+	symbol *sym;
+
+	unsigned int secnum;
+	unsigned long start;
+	unsigned long long size;
+
+	unsigned int i;
+
+	backinstr = instr;
+	start = size = secnum = 0;
+	i = 0;
+
+
+	// Code for indirect jumps (very very unreliable!)
+	if (IS_JUMPIND(instr)) {
+		bool start_found;
+		bool size_found;
+
+		start_found = size_found = false;
+
+		// We keep searching for the start address and the size of the jump table
+		backinstr = instr;
+		while(backinstr && i < MAX_LOOKBEHIND && (!start_found || !size_found)) {
+
+			if (!start_found && IS_MEMRD(backinstr)) {
+				sym = backinstr->reference;
+
+				// We make the reasonable assumption that case statement addresses are in .rodata
+				if (sym && !strcmp(sym->name, ".rodata")) {
+					secnum = sym->secnum;
+					start = sym->relocation.addend;
+
+					start_found = true;
+				}
+			}
+			else if (!size_found && IS_CTRL(backinstr)) {
+
+				switch(PROGRAM(insn_set)) {
+				case X86_INSN:
+					// [SE] TODO: Bisognerebbe beccare non semplicemente una CMP, ma quella
+					// che ha come destinazione il registro utilizzato nella MOV precedente,
+					// cioè quello impiegato come valore di indice per la jump table
+					size = backinstr->i.x86.immed;
+					break;
+
+				default:
+					size = 0;
+				}
+
+				size_found = true;
+
+			}
+
+			backinstr = backinstr->prev;
+			i = i + 1;
+		}
+
+		// It doesn't make sense to have zero-sized jump tables, therefore
+		// we assume that this check is safe enough...
+		if (size > 0) {
+			hnotice(6, "JT starting at %s + <%#08llx> and sized %u\n", sec_name(sym->secnum), start, size);
+
+			// The immediate value of the previous CMP instruction is inclusive of
+			// the last case statement, hence it must be increased by one if we
+			// wish to use it as the size of the jump table
+			size = size + 1;
+			resolve_jump_table(func, instr, secnum, start, size);
+		}
+
+	}
+
+
+	// Code for indirect calls (slightly more reliable)
+	else if (IS_CALLIND(instr)) {
+		function *foo;
+
+		foo = NULL;
+		backinstr = instr->prev;
+		while(backinstr && i < MAX_LOOKBEHIND) {
+
+			if (IS_MEMRD(backinstr) || IS_MEMWR(backinstr)) {
+				sym = backinstr->reference;
+
+				if (sym) {
+					// Single function pointer
+					if (sym->type == SYMBOL_FUNCTION) {
+						foo = find_func_from_sym(sym);
+					}
+					// Array of function pointers
+					else if (sym->type == SYMBOL_VARIABLE) {
+						secnum = sym->secnum;
+						start = sym->position;
+						size = sym->size / sizeof(char *);
+					}
+					else{
+						continue;
+					}
+
+					break;
+				}
+			}
+
+			backinstr = backinstr->prev;
+			i = i + 1;
+		}
+
+		// Zero-sized call tables mean a single function pointer
+		if (foo && size == 0) {
+			hnotice(6, "Function pointer to %s\n", foo->name);
+
+			set_jumpto_reference(instr, foo->insn);
+
+		} else if (size) {
+			hnotice(6, "Array named %s starting at %s + <%#08llx> and sized %u\n",
+				sym->name, sec_name(sym->secnum), start, size);
+
+			resolve_jump_table(NULL, instr, secnum, start, size);
+		}
+
+	}
+
+
+	// Cannot handle any other kind of instruction
+	else {
+		hinternal();
+	}
+}
+
+
 /**
  * Links jumps instructions to destination ones.
  * Provided a valid function's descriptors, it will look up for all the jump instructions
@@ -510,17 +720,14 @@ void link_jump_instructions(function *func, function *code_version) {
 
 	hnotice(2, "Link jump and call instructions of function '%s':\n", func->name);
 
-	// For each instruction, look for jump ones
+	// For each instruction, look for jump/call ones
 	instr = func->insn;
 	while(instr != NULL) {
 
-		if(IS_JUMP(instr)) {
-			// TODO: ATTENZIONE!!! Non vale per le jump con rilocazione, perché cerca un target inesistente
-			// E' necessario individuare che l'istruzione sebbene sia una jump non deve essere trattata perché
-			// ci penserà il linker nella fase successiva
 
+		if(IS_JUMP(instr)) {
 			// If the jump instruction has a reference, this means that a relocation has to be applied;
-			// therefore looking for the target instruction is actually incorect since it will not be.
+			// therefore looking for the target instruction is actually incorrect since it can't be found.
 			if(instr->reference != NULL) {
 
 				// Simply skip the instruction; the linker will be in charge to correctly handle it
@@ -528,114 +735,151 @@ void link_jump_instructions(function *func, function *code_version) {
 				continue;
 			}
 
-			// Provided a jump instruction, look for the destination address
-			switch(PROGRAM(insn_set)) {
-			case X86_INSN:
-				jmp_addr = instr->orig_addr + instr->i.x86.insn_size + instr->i.x86.jump_dest;
-				break;
+			else if (IS_JUMPIND(instr)) {
+				// [SE] If the instruction is an indirect jump, try to resolve its
+				// associated jump table (currently only for switch-case statements)
+				// NOTE: This is a very naive and loose algorithm that may fail
+				// in several cases, and is not kitten-proof! Beware!
 
-			default:
-				jmp_addr = -1;
+				infer_jump_table(func, instr);
 			}
 
-			dest = func->insn;
-			while(dest) {
-				if(dest->orig_addr == jmp_addr)
-					break;
-
-				dest = dest->next;
-			}
-
-			if(!dest) {
-				hinternal();
-			}
-
-			// At this point 'dest' will point to the destination instruction relative to the jump 'instr'
-			instr->jumpto = dest;
-
-			hnotice(4, "Jump instruction at <%#08llx> linked to instruction at <%#08llx>\n", instr->orig_addr, dest->orig_addr);
-
-
-		// a CALL could be seen as a JUMP and could help in handling the embedded offset to local functions
-		} else if(IS_CALL(instr)) {
-			// must create the reference only if the 4-bytes offset is not null
-			// Provided a jump instruction, look for the destination address
-			switch(PROGRAM(insn_set)) {
+			else {
+				// Provided a jump instruction, look for the destination address
+				switch(PROGRAM(insn_set)) {
 				case X86_INSN:
-					jmp_addr = instr->i.x86.jump_dest;
+					jmp_addr = instr->orig_addr + instr->i.x86.insn_size + instr->i.x86.jump_dest;
 					break;
 
 				default:
-					jmp_addr = 0;
-			}
-
-			if(jmp_addr != 0) {
-				// Call to local function detected. The format is the same as a jump
-				// XXX: credo che fosse scorretto nel caso delle funzioni locali, infatti non trovava la funzione
-
-				//jmp_addr += insn->orig_addr + insn->size;
-				jmp_addr = instr->orig_addr + instr->i.x86.insn_size + instr->i.x86.jump_dest;
-
-				hnotice(6, "Call to a local function at <%#08llx> detected\n", jmp_addr);
-
-				// look for the relative function called
-				callee = code_version;
-				while(callee) {
-
-					if(callee->orig_addr == jmp_addr)
-						break;
-
-					callee = callee->next;
+					jmp_addr = -1;
 				}
 
-				// mhhh, something goes wrong i guess...
-				if(!callee) {
+				dest = func->insn;
+				while(dest) {
+					if(dest->orig_addr == jmp_addr)
+						break;
+
+					dest = dest->next;
+				}
+
+				if(!dest) {
 					hinternal();
 				}
 
-				hnotice(6, "Callee function '%s' at <%#08llx> found\n", callee->name, callee->orig_addr);
+				// At this point 'dest' will point to the destination instruction relative to the jump 'instr'
+				set_jumpto_reference(instr, dest);
+			}
 
-				// At this point 'func' will point to the destination function relative to the call;
-				// the only thing we have to do is to add the reference to the relative function's symbol
-				// so that, in the future emit step, the code will automatically retrieve the correct final
-				// address of the relocation. In such a way we threat local function calls as relocation enties.
-				sym = callee->symbol;
+		}
 
-				// The instruction object will be bound to the proper symbol
-				instruction_rela_node(sym, instr, RELOCATE_RELATIVE_32);
 
-				// CALL instruction embedded offset must be reinitialized to zero
+		else if(IS_CALL(instr)) {
+
+			if (IS_CALLIND(instr)) {
+				// [SE] Handle indirect calls (tricky, uses the same naive algorithm
+				// as for switch-case statements)
+				infer_jump_table(func, instr);
+			}
+
+			else {
+				// a CALL could be seen as a JUMP and could help in handling the embedded offset to local functions
+
 				switch(PROGRAM(insn_set)) {
 					case X86_INSN:
-						memset(instr->i.x86.insn + 1, 0, (instr->size - instr->opcode_size));
+						jmp_addr = instr->orig_addr + instr->size + instr->i.x86.jump_dest;
+						// jmp_addr = instr->i.x86.jump_dest;
 						break;
+
+					default:
+						jmp_addr = 0;
 				}
 
-				hnotice(3, "Call instruction at <%#08llx> linked to address <%#08llx>\n", instr->orig_addr, callee->orig_addr);
+				// if(jmp_addr != 0) {
+				if(jmp_addr != instr->orig_addr + instr->size) {
+					// If the CALL has a non-null embedded offset, it is a call to a local function and
+					// the format is the same as a jump. The offset is interpreted, the called function
+					// retrieved and the instruction is translated into a zero'd CALL with an associated
+					// relocation entry.
+
+					// XXX: credo che fosse scorretto nel caso delle funzioni locali, infatti non trovava la funzione
+					//jmp_addr += insn->orig_addr + insn->size;
+
+					// jmp_addr = instr->orig_addr + instr->i.x86.insn_size + instr->i.x86.jump_dest;
+
+					hnotice(6, "Call to a local function at <%#08llx> detected\n", jmp_addr);
+
+					// look for the relative function called
+					callee = code_version;
+					while(callee) {
+
+						if(callee->orig_addr == jmp_addr)
+							break;
+
+						callee = callee->next;
+					}
+
+					// mhhh, something goes wrong i guess...
+					if(!callee) {
+						hinternal();
+					}
+
+					hnotice(6, "Callee function '%s' at <%#08llx> found\n", callee->name, callee->orig_addr);
+
+					// At this point 'func' will point to the destination function relative to the call;
+					// the only thing we have to do is to add the reference to the relative function's symbol
+					// so that, in the future emit step, the code will automatically retrieve the correct final
+					// address of the relocation. In such a way we threat local function calls as relocation enties.
+					sym = callee->symbol;
+
+					// The instruction object will be bound to the proper symbol
+					instruction_rela_node(sym, instr, RELOCATE_RELATIVE_32);
+
+					// CALL instruction embedded offset must be reinitialized to zero
+					switch(PROGRAM(insn_set)) {
+						case X86_INSN:
+							memset(instr->i.x86.insn + 1, 0, (instr->size - instr->opcode_size));
+							break;
+					}
+
+				}
+
+				else {
+					// [SE] If the CALL instruction has no embedded offset, it is already associated with a relocation.
+					// We must check whether is it a CALL to a local function or not, and act accordingly.
+					jmp_addr = instr->reference->position;
+
+					// It means the function is defined elsewhere (i.e. in a different file object)
+					// meaning that the linker will be in charge to correctly handle it
+					if(instr->reference->size == 0) {
+						instr = instr->next;
+						continue;
+					}
+
+					callee = code_version;
+					while(callee) {
+
+						if(callee->orig_addr == jmp_addr)
+							break;
+
+						callee = callee->next;
+					}
+				}
+
+				if (callee) {
+					// CALL to local function detected, augment the intermediate representation
+					// with the appropriate linking between instructions.
+					set_jumpto_reference(instr, callee->insn);
+				}
+
 			}
+
 		}
+
 
 		instr = instr->next;
 	}
 
-}
-
-/**
- * Looks for the section with the index specified.
- *
- * @return Returns the pointer to the section found, if any, NULL otherwise.
- */
-static inline section * find_section(unsigned int idx) {
-	section *sec = 0;
-
-	sec = PROGRAM(sections);
-	while(sec) {
-		if(sec->index == idx)
-			break;
-		sec = sec->next;
-	}
-
-	return sec;
 }
 
 
@@ -673,7 +917,7 @@ static void resolve_symbols(void) {
 			func->symbol = sym;
 
 			hnotice(2, "Function '%s' (%d bytes long) :: <%#08llx>\n", sym->name, sym->size, func->orig_addr);
-			
+
 			curr = prev = head;
 			while(curr) {
 				if(func->orig_addr <= curr->orig_addr) {
@@ -681,7 +925,7 @@ static void resolve_symbols(void) {
 				//	prev->next = func;
 					break;
 				}
-				
+
 				prev = curr;
 				curr = curr->next;
 			}
@@ -930,7 +1174,7 @@ static void resolve_relocation(void) {
 					sym_2->relocation.ref_insn = instr;
 					instr->pointedby = sym_2;
 				}
-				
+
 				hnotice(2, "Added symbol reference to <%#08llx> + %d\n\n", rel->offset, rel->addend);
 			}
 
@@ -946,20 +1190,293 @@ static void resolve_relocation(void) {
 
 static void resolve_jumps(void) {
 	function *func;
-	
+
 	// links the jump instructions
 	func = functions;
 	while(func) {
 		link_jump_instructions(func, functions);
-		
+
 		func = func->next;
 	}
+}
+
+
+// [SE]
+static void resolve_blocks(void) {
+	function *func;
+	insn_info *instr;
+	block *current_blk, *new_blk, *temp_blk, *temp_new_blk;
+
+	hnotice(1, "Resolving blocks...\n");
+
+	// The first block comprises the entire program, then it will be
+	// progressively split until we obtain basic blocks
+	current_blk = block_create();
+	current_blk->begin = functions->insn;
+	current_blk->end = last_insn;
+
+	hnotice(2, "Program block #%u created from <%#08llx> to <%#08llx>\n",
+		current_blk->id, current_blk->begin->orig_addr, current_blk->end->orig_addr);
+
+	blocks = current_blk;
+
+	// For each instruction in each function, we begin iteratively
+	// splitting current blocks into smaller and smaller chunks
+	func = functions;
+	while(func) {
+
+		instr = func->insn;
+		while(instr) {
+
+			// We've moved to a block which was already created during
+			// a previous iteration
+			if (instr->orig_addr > current_blk->end->orig_addr) {
+				current_blk = current_blk->next;
+
+				// Every instruction of the program must be mapped to its own block
+				if (!current_blk) {
+					hinternal();
+				}
+			}
+
+
+			// Beginning of a function
+			if (!instr->prev) {
+				hnotice(2, "Function %s begin breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
+
+				current_blk = block_split(current_blk, instr, SPLIT_FIRST);
+				func->being_blk = current_blk;
+			}
+
+
+			// End of a function
+			// [SE] TODO: Must check for RET, too
+			if (!instr->next) {
+				func->end_blk = current_blk;
+
+				// Hackish way to make the splitting work as expected
+				// [SE] TODO: Find a better way
+				if (func->next) {
+					instr->next = func->next->insn;
+				}
+
+				hnotice(2, "Function %s end breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
+
+				current_blk = block_split(current_blk, instr, SPLIT_LAST);
+
+				// Restoring end of function... you haven't seen anything, have you? ;-)
+				// [SE] TODO: Find a better way
+				instr->next = NULL;
+			}
+
+
+			// Other special cases
+			if (IS_JUMPIND(instr)) {
+				unsigned long idx;
+				insn_info *target;
+
+				hnotice(2, "Indirect jump breakpoint at <%#08llx>\n", instr->orig_addr);
+
+				new_blk = block_split(current_blk, instr, SPLIT_LAST);
+
+				idx = 0;
+				while (idx < instr->jumptable.size) {
+					target = instr->jumptable.entry[idx];
+
+					hnotice(2, "Jump target breakpoint (jumptable) at <%#08llx>\n", target->orig_addr);
+
+					temp_blk = block_find(target);
+					temp_new_blk = block_split(temp_blk, target, SPLIT_FIRST);
+
+					// If the instruction *before* the target one is not a jump,
+					// then it is a labeled instruction and there's no flow control
+					// hijacking between the two resulting blocks
+					// For this reason, they must be explicitly connected
+					if (!IS_JUMP(target->prev)) {
+						block_link(temp_blk, temp_new_blk);
+					}
+
+					// The current block gets linked with the block whose first
+					// instruction is the target of the jump
+					block_link(current_blk, temp_new_blk);
+
+					idx = idx + 1;
+				}
+
+				current_blk = new_blk;
+			}
+
+
+			else if (IS_JUMP(instr)) {
+				hnotice(2, "Jump instruction %s breakpoint at <%#08llx> to target <%#08llx>\n",
+					(IS_CONDITIONAL(instr) ? "(conditional)" : "(absolute)"),
+					instr->orig_addr, instr->jumpto->orig_addr);
+
+				new_blk = block_split(current_blk, instr, SPLIT_LAST);
+
+				// The target of a jump creates a link between blocks, but we keep
+				// splitting blocks in an ordered manner: from first to last instruction
+				hnotice(2, "Jump target breakpoint at <%#08llx>\n", instr->jumpto->orig_addr);
+
+				temp_blk = block_find(instr->jumpto);
+				temp_new_blk = block_split(temp_blk, instr->jumpto, SPLIT_FIRST);
+
+				// If the instruction *before* the target one is not a jump,
+				// then it is a labeled instruction and there's no flow control
+				// hijacking between the two resulting blocks
+				// For this reason, they must be explicitly connected
+				if (!IS_JUMP(instr->jumpto->prev)) {
+					block_link(temp_blk, temp_new_blk);
+				}
+
+				// The current block gets linked with the block whose first
+				// instruction is the target of the jump
+				block_link(current_blk, temp_new_blk);
+
+				// Conditional jumps can branch into the new block, therefore
+				// in that case we need to connect the old block with the new
+				if (IS_CONDITIONAL(instr)) {
+					block_link(current_blk, new_blk);
+				}
+
+				current_blk = new_blk;
+			}
+
+
+			else if (IS_CALLIND(instr)) {
+				unsigned long idx;
+				insn_info *target;
+
+				hnotice(2, "Indirect call breakpoint at <%#08llx>\n", instr->orig_addr);
+
+				new_blk = block_split(current_blk, instr, SPLIT_LAST);
+
+				// Single function pointer
+				if (instr->jumpto) {
+					temp_blk = block_find(instr->jumpto);
+					temp_new_blk = block_split(temp_blk, instr->jumpto, SPLIT_FIRST);
+
+					// No need to explicitly connect the blocks resulting from the
+					// previous split, since the last instruction of a function
+					// is never connected to the first instruction of another function
+					// block_link(temp_blk, temp_new_blk);
+
+					block_link(current_blk, temp_new_blk);
+				}
+
+				// Array of function pointers
+				else {
+					idx = 0;
+					while (idx < instr->jumptable.size) {
+						target = instr->jumptable.entry[idx];
+
+						hnotice(2, "Call target breakpoint (calltable) at <%#08llx>\n", target->orig_addr);
+
+						temp_blk = block_find(target);
+						temp_new_blk = block_split(temp_blk, target, SPLIT_FIRST);
+
+						block_link(current_blk, temp_new_blk);
+
+						idx = idx + 1;
+					}
+
+				}
+
+				current_blk = new_blk;
+			}
+
+
+			else if (IS_CALL(instr)) {
+				hnotice(2, "Call instruction breakpoint at <%#08llx> to function %s\n",
+					instr->orig_addr, instr->reference->name);
+
+				new_blk = block_split(current_blk, instr, SPLIT_LAST);
+
+				// We skip function declarations that don't have an actual
+				// definition in our relocatable object
+				if (instr->jumpto) {
+
+					// Same as before, we split blocks at the target instruction and
+					// the last instruction of a function is never connected to
+					// the first instruction of another function
+					temp_blk = block_find(instr->jumpto);
+					temp_new_blk = block_split(temp_blk, instr->jumpto, SPLIT_FIRST);
+
+					block_link(current_blk, temp_new_blk);
+				}
+
+				// If there's no matching definition for the callee, we ignore it
+				// and connect the block resulting from the split at the CALL instruction
+				else {
+					block_link(current_blk, new_blk);
+				}
+			}
+
+
+			instr = instr->next;
+		}
+
+		func = func->next;
+	}
+
+	// We still need to link function ending blocks so that they return to all
+	// the possible caller blocks
+	func = functions;
+	while(func) {
+		ll_node *callee;
+
+		// For all callers of this function, its final block
+		// must be linked to the blocks that follow the callers
+		current_blk = func->being_blk;
+		new_blk = func->end_blk;
+
+		callee = current_blk->in.first;
+		while(callee) {
+			temp_blk = callee->elem;
+
+			// [SE] TODO: Check if next exists and is the correct block to link
+			block_link(new_blk, temp_blk->next);
+
+			callee = callee->next;
+		}
+
+		func = func->next;
+	}
+
+	// In for a penny, in for a pound! Let's compute block lengths!
+	current_blk = blocks;
+	while(current_blk) {
+		instr = current_blk->begin;
+
+		while(instr != current_blk->end) {
+			current_blk->length += 1;
+
+			instr = instr->next;
+		}
+
+		current_blk->length += 1;
+
+		hnotice(4, "Block #%u has length %u\n", current_blk->id, current_blk->length);
+
+		current_blk = current_blk->next;
+	}
+
+	// We spit out some boring textual representation of both the balanced tree
+	// and the final flow graph, but the idea is to move to a visual tool
+	// like Graphviz as fast as we can.
+	block_tree_dump("treedump.txt");
+	block_graph_dump(blocks, "graphdump.txt");
+
+	hsuccess();
 }
 
 
 void elf_create_map(void) {
 	unsigned int size;
 	unsigned int sec;
+
+	// [SE] Preset here because needed later for some IBR-specific functions
+	PROGRAM(code) = functions;
 
 	// Reserve space and load ELF in memory
 	fseek(ELF(pointer), 0L, SEEK_END);
@@ -1042,14 +1559,15 @@ void elf_create_map(void) {
 	// Ultimates the binary representation
 	resolve_symbols();
 	resolve_relocation();
+	resolve_jumps();
+	resolve_blocks(); 					// [SE] Creates the basic blocks overlay
 
-	// Updates the internal binary representation's pointers
+	// Updates the binary representation's pointers
 	PROGRAM(symbols) = symbols->payload;
-	PROGRAM(code) = PROGRAM(v_code)[0] = functions;
+	PROGRAM(v_code)[0] = functions;
 	PROGRAM(rawdata) = 0;
 	PROGRAM(versions)++;
-
-	resolve_jumps();
+	PROGRAM(blocks) = blocks; 	// [SE] TODO: Multi-versioning here?
 
 	hnotice(1, "ELF parsing terminated\n\n");
 	hsuccess();

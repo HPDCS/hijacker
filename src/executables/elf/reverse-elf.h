@@ -30,7 +30,6 @@
 
 #include <instruction.h>
 #include <trampoline.h>
-
 #include <x86/reverse-x86.h>
 
 /**

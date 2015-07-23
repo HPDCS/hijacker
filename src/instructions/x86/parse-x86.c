@@ -32,12 +32,12 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include <prints.h>
-#include <stdbool.h>
-#include <instructions/instruction.h>
+#include <instruction.h>
 
-#include "x86.h"
+#include <x86/x86.h>
 
 /* Prototipi delle funzioni */
 
@@ -3401,7 +3401,7 @@ void grp_5(struct disassembly_state *state) { /* opcode FF */
 			break;
 		case 0x02:
 		case 0x03:
-			state->instrument->flags = I_CALL;
+			state->instrument->flags = I_CALLIND | I_CALL;
 			break;
 		case 0x04:
 		case 0x05:
@@ -4332,6 +4332,10 @@ void format_addr_i (struct disassembly_state *state, enum addr_method addr, enum
 	}
 
 	// A questo punto immed_data contiene i dati immediati dell'istruzione
+  // [SE] Populating immed_* fields
+  state->instrument->immed_offset = state->immed_offset = state->pos;
+  state->instrument->immed_size = state->immed_size = immed_size;
+  state->instrument->immed = immed_data;
 
 	state->pos += immed_size; // Salta i dati immediati appena gestiti
 }

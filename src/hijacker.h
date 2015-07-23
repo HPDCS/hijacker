@@ -28,7 +28,8 @@
 #define _HIJACKER_H
 
 #include <stdbool.h>
-#include <rules.h>
+
+#include <rules/load-rules.h>
 #include <executables/executable.h>
 
 typedef struct _configuration {

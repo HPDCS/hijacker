@@ -25,12 +25,12 @@
 */
 
 #pragma once
-#ifndef EMIT_ELF_H_
-#define EMIT_ELF_H_
+#ifndef _EMIT_ELF_H
+#define _EMIT_ELF_H
 
-#include "elf-defs.h"
-#include "executable.h"
+#include <executable.h>
 
+#include <elf/elf-defs.h>
 
 #define SECNAME_SIZE 256
 
@@ -57,16 +57,16 @@ typedef struct _hijacked_elf {
 /// Macro to access ELF section field
 #define ehdr_info(hdr, field)\
 	(ELF(is64)\
-	? ((hdr)->header64.field)\
-	: ((hdr)->header32.field)\
-	  )
+		? ((hdr)->header64.field)\
+		: ((hdr)->header32.field)\
+	)
 
 /// Macro to access section header field
 #define header_info(hdr, field)\
-	 (ELF(is64)\
-	? ((hdr)->section64.field)\
-	: ((hdr)->section32.field)\
-		 )
+	(ELF(is64)\
+		? ((hdr)->section64.field)\
+		: ((hdr)->section32.field)\
+	)
 
 #define set_hdr_info(hdr, field, value)\
 		if(ELF(is64)){\
@@ -97,4 +97,4 @@ void elf_generate_file(char *path);
 long elf_write_reloc(section *sec, symbol *sym, unsigned long long addr, long addend);
 
 
-#endif /* EMIT_ELF_H_ */
+#endif /* _EMIT_ELF_H */

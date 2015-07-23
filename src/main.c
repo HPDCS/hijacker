@@ -32,9 +32,9 @@
 
 #include <hijacker.h>
 #include <options.h>
-#include <rules.h>
 #include <prints.h>
 #include <compile.h>
+#include <rules/load-rules.h>
 #include <rules/apply-rules.h>
 
 
@@ -89,10 +89,10 @@ static bool parse_cmd_line(int argc, char **argv) {
 	int c;
 	int option_index;
 
-    	if(argc < 3) {
+			if(argc < 3) {
 		display_usage(argv);
 		return false;
-    	}
+			}
 
 	while ((c = getopt_long(argc, argv, "c:p:vi:o:", long_options, &option_index)) != -1) {
 
@@ -141,12 +141,12 @@ static bool parse_cmd_line(int argc, char **argv) {
  * Links all the additional modules that can be found in the
  * current working directory.
  */
-static void link_modules(void) {	
+static void link_modules(void) {
 	hnotice(1, "Link additional modules in '%s' to the output instrumented file 'hijacked.o'\n", TEMP_PATH);
-	
+
 	// Step 1: link libhijacker
 	link("-r", "-L", LIBDIR, "__temp.o", "-o", "__temp_libhijacked.o", "-lhijacker");
-	
+
 	// Step 2: link other injected modules
 	if(file_exists("incremental.o")) {
 		link("-r", "-L", LIBDIR, "incremental.o", "__temp_libhijacked.o", "-o", config.output);

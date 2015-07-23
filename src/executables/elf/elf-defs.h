@@ -21,16 +21,16 @@
 * @file elf-defs.h
 * @brief ELF-related abstraction definitions
 * @author Alessandro Pellegrini
+* @author Davide Cingolani
 * @date September 22, 2008
 */
 
 #ifndef _ELF_DEFS_H
 #define _ELF_DEFS_H
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <elf.h>
-
-#include <stdbool.h>
 
 #define NO_REL	0
 #define IS_REL	1
@@ -88,86 +88,77 @@ typedef struct {
 #define ELF(field) (config.program.e.elf.field)
 
 /// Macro to get ELF section size by its index
-#define sec_size(sec)   ((int)( ELF(is64) ? ELF(sec_hdr)[(sec)].section64.sh_size : ELF(sec_hdr)[(sec)].section32.sh_size ))
+#define sec_size(sec) ((int)( ELF(is64) ? ELF(sec_hdr)[(sec)].section64.sh_size : ELF(sec_hdr)[(sec)].section32.sh_size ))
 
 /// Macro to get ELF section header address
 #define sec_header(sec) (&ELF(sec_hdr)[sec])
 
 /// Macro to get ELF section content
 #define sec_content(sec)\
-	     (ELF(is64)\
-		? (ELF(data) + sec_header(sec)->section64.sh_offset)\
-		: (ELF(data) + sec_header(sec)->section32.sh_offset)\
-             )
+		(ELF(is64)\
+			? (ELF(data) + sec_header(sec)->section64.sh_offset)\
+			: (ELF(data) + sec_header(sec)->section32.sh_offset)\
+		)
 
 /// [DC] Macro to get ELF section content
 #define sec_field(sec, field)\
-	     (ELF(is64)\
-		? (sec_header(sec)->section64.field)\
-		: (sec_header(sec)->section32.field)\
-             )
+		(ELF(is64)\
+			? (sec_header(sec)->section64.field)\
+			: (sec_header(sec)->section32.field)\
+		)
 
 /// Macro for getting section header string table's index
 #define shstrtab_idx() \
 		(ELF(is64)\
-		  ? (ELF(hdr)->header64.e_shstrndx) \
-		  : (ELF(hdr)->header32.e_shstrndx) \
-	     	)
+			? (ELF(hdr)->header64.e_shstrndx)\
+			: (ELF(hdr)->header32.e_shstrndx)\
+		)
 
 /// Macro for accessing section header string table
 #define shstrtab(pos) (char *)(sec_content(shstrtab_idx()) + (pos))
 
 /// Macro to get ELF section name by its index
 #define sec_name(sec)\
-             (ELF(is64)\
-        	? ( shstrtab(sec_header(sec)->section64.sh_name) ) \
-        	: ( shstrtab(sec_header(sec)->section32.sh_name) ) \
-	     )
+		(ELF(is64)\
+			? ( shstrtab(sec_header(sec)->section64.sh_name) )\
+			: ( shstrtab(sec_header(sec)->section32.sh_name) )\
+		)
 
 /// Macro to get ELF section type
 #define sec_type(sec)\
-	     (ELF(is64)\
-		? ( sec_header(sec)->section64.sh_type ) \
-		: ( sec_header(sec)->section32.sh_type ) \
-	     )
+		(ELF(is64)\
+			? ( sec_header(sec)->section64.sh_type )\
+			: ( sec_header(sec)->section32.sh_type )\
+		)
 
 
 /// Macro to get ELF section flags
 #define sec_flags(sec)\
-	     (ELF(is64)\
-		? ( sec_header(sec)->section64.sh_flags ) \
-		: ( sec_header(sec)->section32.sh_flags ) \
-	     )
-
-/// Macro to test ELF section flags
-/*#define sec_test_flag(sec, flag)\
-	     (ELF(is64)\
-		? ( (sec_header(sec)->section64.sh_flags && (flag)) != 0) \
-		: ( (sec_header(sec)->section32.sh_flags && (flag)) != 0) \
-	     )*/
+		(ELF(is64)\
+			? ( sec_header(sec)->section64.sh_flags )\
+			: ( sec_header(sec)->section32.sh_flags )\
+		)
 
 /// Macro to test ELF section flags
 #define sec_test_flag(sec, flag)\
-	     (ELF(is64)\
-		? ( (sec_header(sec)->section64.sh_flags & (flag)) != 0) \
-		: ( (sec_header(sec)->section32.sh_flags & (flag)) != 0) \
-	     )
+		(ELF(is64)\
+			? ( (sec_header(sec)->section64.sh_flags & (flag)) != 0)\
+			: ( (sec_header(sec)->section32.sh_flags & (flag)) != 0)\
+		)
 
 /// Macro for accessing Symbol Tables' Entries
-#define symbol_info(s, f)	(ELF(is64)\
-					? (s)->sym64.f\
-					: (s)->sym32.f\
-				)
+#define symbol_info(s, f)\
+		(ELF(is64)\
+			? (s)->sym64.f\
+			: (s)->sym32.f\
+		)
 
 /// Macro to access a relocation field (either REL or RELA)
-#define reloc_info(r, f)	(ELF(is64)	\
-					? (r)->rel64.f		\
-					: (r)->rel32.f		\
-				)
-
-extern void elf_create_map(void);
-extern int elf_instruction_set(void);
-extern bool is_elf(char *path);
+#define reloc_info(r, f)\
+		(ELF(is64)\
+			? (r)->rel64.f\
+			: (r)->rel32.f\
+		)
 
 #endif /* _ELF_DEFS_H */
 

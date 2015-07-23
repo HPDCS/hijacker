@@ -28,15 +28,14 @@
 #include <libgen.h>
 
 #include <executable.h>
-#include <elf/reverse-elf.h>
-#include <elf/handle-elf.h>
 #include <hijacker.h>
 #include <prints.h>
 #include <compile.h>
+#include <load-rules.h>
+#include <apply-rules.h>
 
-#include "insert_insn.h"
-#include "rules.h"
-#include "apply-rules.h"
+#include <elf/reverse-elf.h>
+#include <elf/handle-elf.h>
 
 /**
  * The Inject tag simply identifies a file that has to be compiled togeter
@@ -71,11 +70,11 @@ static void apply_rule_link (char *filename) {
 	if(!file_exists(filename)) {
 		herror(true, "The XML rules file has specified a file that does not exists!\n");
 	}
-	
+
 	// Just compile the given module's source.
 	// The resulting object file will be linked in the final stage.
 	compile(filename, "-c", "-o", "current.o");
-	
+
 	if(file_exists("incremental.o")) {
 		link("-r", "incremental.o", "current.o", "-o", "__incremental.o");
 		unlink("current.o");
@@ -94,7 +93,7 @@ static void apply_rule_link (char *filename) {
  *
  * @param filename Pointer to the file string name
  */
-static void apply_rule_inject (char *filename, insn_info *target, int where) {
+static void apply_rule_inject (char *filename, insn_info *target, insn_insert_mode where) {
 	FILE *fp;
 	int fsize;
 	unsigned char *fcontent;
@@ -218,17 +217,6 @@ static int apply_rule_instruction(Executable *exec, Instruction *tagInstruction,
 
 	(void)exec;
 
-	// Since the current function will be instrumented
-	// we must to create a new function descriptor by cloinig
-	// the current one.
-/*	if(func->symbol->version != PROGRAM(version)) {
-		// If the version of the symbol is zero, then
-		// the function is not yet an instrumented clone
-		// and we do clone it
-		sprintf(name, "%s-%s", func->name, exec->suffix);
-		func = clone_function_descriptor(func, name);
-	}*/
-
 	insn = func->insn;
 	count = 0;
 
@@ -325,7 +313,7 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
 
 			// Iterates all over the Instruction sub-tags
 			for(tag = 0; tag < tagFunction->nInstructions; tag++) {
-				// Retrive the next instruction tag and process it
+				// Retrieve the next instruction tag and process it
 				hnotice(2, "Instruction tag met, applying the rule\n");
 				tagInstruction = tagFunction->instructions[tag];
 				hnotice(3, "Looking for the instruction with flags %x\n", tagInstruction->flags);
@@ -378,7 +366,7 @@ void apply_rules(void) {
 		// Reset the counter of the overall instrumented instructions
 		instrumented = 0;
 
-		// Get the new vesion executable's rules
+		// Get the new version executable's rules
 		exec = config.rules[version];
 
 		// Clone the intermediate binary representation
@@ -388,8 +376,8 @@ void apply_rules(void) {
 
 		// Iterates all over the XML inject tag in the Executable
 		for (tag = 0; tag < exec->nInjects; tag++) {
-			// Retrive the next inject tag and process it
-			hnotice(2, "Instruction tag met, applying the rule\n");
+			// Retrieve the next inject tag and process it
+			hnotice(2, "Inject tag met, applying the rule\n");
 			module = (char *)exec->injectFiles[tag];
 			hnotice(3, "Looking for the instruction with flags '%s'\n", module);
 			apply_rule_link(module);
@@ -397,7 +385,7 @@ void apply_rules(void) {
 
 		// Iterates all over the instructions in the Executable XML tag
 		for (tag = 0; tag < exec->nInstructions; tag++) {
-			// Retrive the next instruction tag and process it
+			// Retrieve the next instruction tag and process it
 			hnotice(2, "Instruction tag met, applying the rule\n");
 			tagInstruction = exec->instructions[tag];
 			hnotice(3, "Looking for the instruction with flags %x\n", tagInstruction->flags);
@@ -415,6 +403,13 @@ void apply_rules(void) {
 			tagFunction = exec->functions[tag];
 			hnotice(3, "Looking for the function '%s'\n", tagFunction->name);
 			instrumented += apply_rule_function(exec, tagFunction);
+		}
+
+		if (version && instrumented) {
+			// [SE] If some actual instrumentation has been carried out, first update
+			// instruction addresses and then recompute jump displacements
+			update_instruction_addresses();
+			update_jump_displacements();
 		}
 
 		hnotice(1, "Instrumentation of executable version %d terminated: %d instructions have been instrumented\n",
