@@ -3960,10 +3960,10 @@ void select_operand_size(struct disassembly_state *state, enum operand_type op) 
 			break;
 		case OP_Q: /* quad word */
 		case OP_PI:
-		case OP_SD:
 			size = 8;
 			break;
 		case OP_SS: /* double word */
+		case OP_SD:
 			size = 4;
 			break;
 		case OP_V: /* word o double word o quad word*/	// [FV] Rivedere, pero', istruzioni come la SLDT
