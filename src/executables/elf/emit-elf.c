@@ -26,6 +26,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #include <hijacker.h>
@@ -460,7 +461,7 @@ long elf_write_reloc(section *sec, symbol *sym, unsigned long long addr, long ad
 	hdr = (Section_Hdr *) sec->header;
 	rela = (Elf_Rela *) malloc(size);
 
-	bzero(rela, sizeof(Elf_Rela));
+	bzero(rela, size);
 
 	// no 'reloc_info' macro was used since it needed to add
 	// specific information to each of the different field
