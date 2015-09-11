@@ -61,6 +61,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	}
 	bzero(entry, sizeof(insn_entry));
 
+
 	// fill the structure
 	entry->size = x86->span;
 	entry->offset = (signed) x86->disp;
@@ -97,6 +98,18 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 
 		// create and add the new instruction to the rest of code
 		insert_instructions_at(instr, mov, sizeof(mov), INSERT_AFTER, &instr);
+	}
+
+	// Warning! The at this stage the displacement value could be zero
+	// since it can be the result of a relocation; therefore the structure
+	// would save an incorrect value. It is necessary to look for a relocation
+	// symbol, if any, and duplicate the entry relative to the exact
+	// point where the offset will be placed in the structure
+	if(target->reference != NULL) {
+		hnotice(4, "A RELA node has been found to this instruction; we have to duplicate the RELA to the entry's offset\n");
+		
+		sym = target->reference;
+		instruction_rela_node(sym, instr->prev->prev->prev, RELOCATE_ABSOLUTE_32);
 	}
 
 	// Adds the pointer to the function that the trampoline module has to call at runtime

@@ -64,6 +64,7 @@ symbol * find_symbol (unsigned char *name) {
 	return NULL;
 }
 
+
 void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type) {
 	symbol *ref;		// a new relocation entry is a duplicate of the referenced symbol;
 	long addend;

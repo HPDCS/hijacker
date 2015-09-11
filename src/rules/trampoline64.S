@@ -150,7 +150,6 @@ trampoline:
 
 
 	.Fine:
-
 	movsd	(%rsp),%xmm3
 	add	$16,%rsp
 	movsd	(%rsp),%xmm2
