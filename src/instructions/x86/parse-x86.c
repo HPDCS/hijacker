@@ -5182,22 +5182,22 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 
 	switch(state.disp_size) {
 		case 8:
-			state.instrument->disp = (unsigned long long) *(uint64_t *)(state.text + state.pos);
+			state.instrument->disp = (long long) *(int64_t *)(state.text + state.pos);
 			state.disp_offset = state.pos;
 			state.pos += state.disp_size;
 			break;
 		case 4:
-			state.instrument->disp = (unsigned long long) *(uint32_t *)(state.text + state.pos);
+			state.instrument->disp = (long long) *(int32_t *)(state.text + state.pos);
 			state.disp_offset = state.pos;
 			state.pos += state.disp_size;
 			break;
 		case 2:
-			state.instrument->disp = (unsigned long long) *(uint16_t *)(state.text + state.pos);
+			state.instrument->disp = (long long) *(int16_t *)(state.text + state.pos);
 			state.disp_offset = state.pos;
 			state.pos += state.disp_size;
 			break;
 		case 1:
-			state.instrument->disp = (unsigned long long) *(uint8_t *)(state.text + state.pos);
+			state.instrument->disp = (long long) *(int8_t *)(state.text + state.pos);
 			state.disp_offset = state.pos;
 			state.pos += state.disp_size;
 			break;
