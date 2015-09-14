@@ -110,6 +110,10 @@ trampoline:
 
 	.ScritturaNormale:
 	xor	%rdi, %rdi			# %rdi conterrà l'indirizzo iniziale della scrittura
+	
+	testb $8, %al			# Controlla se lo spiazzamento è RIP-Relative, nel caso salta a .NoBase
+	jnz .NoBase
+
 	testb	$4, %al 		# Controlla se c'è un registro indice
 	jz	.NoIndex
 	movsbq	6(%rdx), %rcx				# Carica in %rcx il valore dell'indice
