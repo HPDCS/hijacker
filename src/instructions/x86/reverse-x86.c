@@ -65,10 +65,23 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	// fill the structure
 	entry->size = x86->span;
 	entry->offset = (signed) x86->disp;
-	entry->flags = x86->flags;
+	//entry->flags = x86->flags;
 	entry->base = x86->breg;
 	entry->idx = x86->ireg;
 	entry->scala = x86->scale;
+
+	// computes the flags field
+	if((x86->flags & I_STRING) == 1)
+		entry->flags |= MOVS;
+
+	if(x86->has_base_register)
+		entry->flags |= BASE;
+
+	if(x86->has_index_register)
+		entry->flags |= IDX;
+
+	if(x86->uses_rip)
+		entry->flags |= RIP;
 
 	//hdump(0, "entry:", entry, 24);
 	//printf("disp=%llx, disp_size=%d\n", x86->disp, x86->disp_size);
