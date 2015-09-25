@@ -33,11 +33,13 @@
 #define MOVS		0x01
 #define BASE		0x02
 #define	IDX		0x04
+#define RIP		0x08		/// L'istruzione è RIP-Relative
 
 /* Test sui flag */
 #define is_movs(f) 		((f) & MOVS)
 #define has_base(f)		((f) & BASE)
 #define has_idx(f)		((f) & IDX)
+#define is_rip_rel(f)	((f) & RIP)
 
 
 typedef struct {
@@ -50,5 +52,4 @@ typedef struct {
 	long long pointer;		// The pointer to the function that has to be called
 } insn_entry;
 
-#endif
-
+#endif // _MONITOR64_H

@@ -61,28 +61,25 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	}
 	bzero(entry, sizeof(insn_entry));
 
-	// [SE] Added to correctly pass addressing mode flags to the trampoline routine
-	// Note that as of the date of this commit, handling of MOVS and STOS instruction
-	// is commented out of the trampoline routine, so I don't treat the respective
-	// flags in the code below.
-	flags = 0;
-
-	if (x86->has_base_register) {
-		flags |= BASE;
-	}
-	if (x86->has_index_register) {
-		flags |= IDX;
-	}
-	// [/SE]
-
 	// fill the structure
 	entry->size = x86->span;
 	entry->offset = (signed) x86->disp;
-	// entry->flags = x86->flags;
-	entry->flags = flags;
 	entry->base = x86->breg;
 	entry->idx = x86->ireg;
 	entry->scala = x86->scale;
+
+	// computes the flags field
+	if((x86->flags & I_STRING) == 1)
+		entry->flags |= MOVS;
+
+	if(x86->has_base_register)
+		entry->flags |= BASE;
+
+	if(x86->has_index_register)
+		entry->flags |= IDX;
+
+	if(x86->uses_rip)
+		entry->flags |= RIP;
 
 	//hdump(0, "entry:", entry, 24);
 	//printf("disp=%llx, disp_size=%d\n", x86->disp, x86->disp_size);
@@ -136,6 +133,18 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 
 		// create and add the new instruction to the rest of code
 		insert_instructions_at(instr, mov, sizeof(mov), INSERT_AFTER, &instr);
+	}
+
+	// Warning! The at this stage the displacement value could be zero
+	// since it can be the result of a relocation; therefore the structure
+	// would save an incorrect value. It is necessary to look for a relocation
+	// symbol, if any, and duplicate the entry relative to the exact
+	// point where the offset will be placed in the structure
+	if(target->reference != NULL) {
+		hnotice(4, "A RELA node has been found to this instruction; we have to duplicate the RELA to the entry's offset\n");
+
+		sym = target->reference;
+		instruction_rela_node(sym, instr->prev->prev->prev, RELOCATE_ABSOLUTE_32);
 	}
 
 	// Adds the pointer to the function that the trampoline module has to call at runtime

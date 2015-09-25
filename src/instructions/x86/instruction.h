@@ -61,7 +61,7 @@ typedef struct insn_info_x86 {
 	unsigned long scale;		// La scala
 	unsigned long disp_offset;	// Lo spiazzamento del displacement dall'inizio del testo, o 0x00
 	int disp_size;			// Dimensione in byte del displacement, o 0x00
-	unsigned long long disp;	// Il valore dello spiazzamento
+	long long disp;	// Il valore dello spiazzamento
 	unsigned long immed_offset;	// [SE] Lo spiazzamento dei dati immediati dall'inizio del testo, o 0x00
 	int immed_size;		// [SE] La dimensione dei dati immediati, o 0x00
 	unsigned long long immed;	// [SE] Il valore dei dati immediati
