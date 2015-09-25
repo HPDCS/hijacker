@@ -53,7 +53,7 @@ void hexdump (void *addr, int len) {
 	printf ("   ----------------  ------------------------------------------------  ------------------\n" );
 
 	// Process every byte in the data.
-	if (len % 16 != 0)
+	if (len % 16 != 0 && len > 16)
 		count = ((len / 16) + 1) * 16;
 	else
 		count = len;

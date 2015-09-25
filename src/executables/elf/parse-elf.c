@@ -936,18 +936,18 @@ static void resolve_symbols(void) {
 			break;
 
 		case SYMBOL_VARIABLE:
+			hnotice(2, "Variable '%s' (%d bytes long) :: %lld (%s)\n",
+				sym->name, sym->size, sym->position, sym->secnum == SHN_COMMON ? "COM" : sec_name(sym->secnum));
+
 			if (sym->secnum != SHN_COMMON) {
 				// [SE] The symbol's initial value is copied into a private buffer,
 				// then later flushed to the new ELF file during the emit step
 				sym->initial = malloc(sym->size);
 				memcpy(sym->initial, sec_content(sym->secnum) + sym->position, sym->size);
 				// [/SE]
+
+				hdump(3, sym->name, sym->initial, sym->size);
 			}
-
-			hnotice(2, "Variable '%s' (%d bytes long) :: %lld (%s)\n",
-				sym->name, sym->size, sym->position, sym->secnum == SHN_COMMON ? "COM" : sec_name(sym->secnum));
-
-			hdump(3, sym->name, sym->initial, sym->size);
 			break;
 
 		case SYMBOL_UNDEF:
