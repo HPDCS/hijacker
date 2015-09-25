@@ -26,9 +26,9 @@
 
 #include <hijacker.h>
 #include <prints.h>
-#include <elf/emit-elf.h>
+#include <executable.h>
 
-#include "executable.h"
+#include <elf/emit-elf.h>
 
 void output_object_file(char *pathname) {
 	hprint("Generating the new object file...\n");

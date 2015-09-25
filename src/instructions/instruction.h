@@ -101,37 +101,4 @@
 #define UNRECOG_INSN	0
 #define X86_INSN	7
 
-
-typedef struct instruction {
-	unsigned long		flags;
-	unsigned long long	orig_addr;
-	unsigned long long	new_addr;
-	unsigned int		size;
-	unsigned int		opcode_size;	// [DC] To keep trace of the opcode size
-	union {
-		insn_info_x86		x86;
-	} i;
-	//void *reference;			// May represent a reference to either a relocation symbol or an instruction (jump)
-
-	struct instruction *jumpto;
-
-	// [SE] The instruction that 'virtually' represents the current one
-	// as the target of a jump instruction.
-	struct instruction *virtual;
-
-	// [SE] Added jump table field
-	struct {
-		unsigned long long size;
-		struct instruction **entry;
-	} jumptable;
-
-	// [SE] Which instructions can reach the current one?
-	linked_list targetof;
-
-	struct _symbol *reference;
-	struct _symbol *pointedby;
-	struct instruction *prev;	// Instructions are organized in a chain
-	struct instruction *next;
-} insn_info;
-
-#endif /* _INSTRUCTIONS_H */
+#endif /* _INSTRUCTION_H */

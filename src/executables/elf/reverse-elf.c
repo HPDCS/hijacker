@@ -29,8 +29,8 @@
 #include <instruction.h>
 #include <trampoline.h>
 
-#include "reverse-elf.h"
-#include "handle-elf.h"
+#include <elf/reverse-elf.h>
+#include <elf/handle-elf.h>
 
 
 static void push_insn_entry (insn_info *target, insn_entry *entry) {
@@ -94,7 +94,7 @@ void trampoline_prepare (insn_info *target, unsigned char *func, int where) {
 	// The idea is to generalize the calling method, the aforementioned
 	// symbol will be properly relocated to whichever function the user has
 	// specified in the rules files in the AddCall tag's 'function' field
-	
+
 	// Now, we have either the function symbol to be called and the stack filled up;
 	// the only thing that remains to do is to adds a relocation entry from the last
 	// long-word of the pushed entry towards the new function symbol.
@@ -102,7 +102,7 @@ void trampoline_prepare (insn_info *target, unsigned char *func, int where) {
 	// in order to make the correct relocation we have to look for its predecessor (twice)
 	// which (should) be the last MOV that should pushes the calling address on the stack
 	hnotice(4, "Push the function pointer to '%s' in the trampoline structure\n", func);
-	
+
 	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
 	instruction_rela_node(sym, target->prev->prev, RELOCATE_ABSOLUTE_64
 

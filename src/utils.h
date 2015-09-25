@@ -44,14 +44,14 @@ void hexdump (void *addr, int len);
 
 
 typedef struct ll_node {
-  struct ll_node *next;
-  struct ll_node *prev;
-  void *elem;
+	struct ll_node *next;
+	struct ll_node *prev;
+	void *elem;
 } ll_node;
 
 typedef struct {
-  ll_node *first;
-  ll_node *last;
+	ll_node *first;
+	ll_node *last;
 } linked_list;
 
 

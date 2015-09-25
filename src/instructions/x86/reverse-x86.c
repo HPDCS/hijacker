@@ -32,11 +32,10 @@
 #include <executable.h>
 #include <instruction.h>
 #include <trampoline.h>
-#include <insert_insn.h>
-#include <elf/handle-elf.h>
 
-#include "x86.h"
-#include "reverse-x86.h"
+#include <elf/handle-elf.h>
+#include <x86/x86.h>
+#include <x86/reverse-x86.h>
 
 
 void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {

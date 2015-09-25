@@ -38,15 +38,16 @@
 
 #include <hijacker.h>
 #include <prints.h>
+#include <executable.h>
 #include <instruction.h>
 #include <utils.h>
 
-#include "elf-defs.h"
-#include "handle-elf.h"
+#include <elf/elf-defs.h>
+#include <elf/handle-elf.h>
 #include <x86/x86.h>
 
 
-#define MAX_LOOKBEHIND   10 // [SE] Used while reverse-parsing instruction to resolve jump tables
+#define MAX_LOOKBEHIND		10 // [SE] Used while reverse-parsing instruction to resolve jump tables
 
 static section *relocs = 0;		/// List of all relocations sections parsed
 static section *symbols = 0;		/// List of all symbols parsed
@@ -55,44 +56,6 @@ static function *functions = 0;		/// List of resolved functions
 static char *strings = 0;		/// Array of strings
 static insn_info *last_insn = 0; /// [SE] Last occurring instruction in the code
 static block *blocks = 0;		/// [SE] List of recognized basic blocks
-
-// FIXME: redundancy with 'add_section'
-/**
- * Create and link a new section descriptor.
- * Create a new section descriptor and add it into the list pointed to by the
- * 'first' argument passed.
- *
- * @param type An integer constant which represents the type of the section
- *
- * @param secndx Integer representing the index number of the section in the ELF file
- *
- * @param first Pointer to a list of sections to which append the new one
- */
-static void add_sec(int type, int secndx, void *payload, section **first) {
-	section *s;
-
-	// Create and populate the new node
-	section *new = (section *)malloc(sizeof(section));
-	if(!new){
-		herror(true, "Out of memory!\n");
-	}
-	bzero(new, sizeof(section));
-
-	new->type = type;
-	new->index = secndx;
-	new->header = sec_header(secndx);
-	new->payload = payload;
-
-	if(*first == NULL)
-		*first = new;
-	else {
-		s = *first;
-		while(s->next != NULL) {
-			s = s->next;
-		}
-		s->next = new;
-	}
-}
 
 // FIXME: is this really used?
 static unsigned char *strtab(unsigned int byte) {
@@ -129,7 +92,7 @@ static void elf_raw_section(int sec) {
 	hnotice(2, "Nothing to do here...\n");
 
 	// We do not need to perform any particular task here...
-	add_section(SECTION_RAW, sec, sec_content(sec));
+	add_section(SECTION_RAW, sec, sec_content(sec), NULL);
 
 	hdump(3, sec_name(sec), sec_content(sec), sec_size(sec));
 
@@ -143,11 +106,9 @@ static void elf_raw_section(int sec) {
 
 
 static void elf_code_section(int sec) {
-	insn_info 	*first,
-	*curr;
+	insn_info *first, *curr;
 
-	unsigned long 	pos = 0,
-			size;
+	unsigned long pos = 0, size;
 
 	char flags = 0;
 
@@ -218,8 +179,9 @@ static void elf_code_section(int sec) {
 	// but we must be sure to have symbols loaded, which we cannot be at this
 	// stage of processing
 	// FIXME: eliminare la ridondanza sulle chiamate add_section add_sec!
-	add_section(SECTION_CODE, sec, first);
-	add_sec(SECTION_CODE, sec, first, &code);
+	// add_section(SECTION_CODE, sec, first);
+	add_section(SECTION_CODE, sec, first, &PROGRAM(sections));
+	add_section(SECTION_CODE, sec, first, &code);
 
 	hsuccess();
 }
@@ -320,8 +282,8 @@ static void elf_symbol_section(int sec) {
 	// At this stage symbol section will contain a list of symbols.
 	// This section will be appended to the linked list of all section
 	// maintained by the program descriptor.
-	add_section(SECTION_SYMBOLS, sec, first);
-	add_sec(SECTION_SYMBOLS, sec, first, &symbols);
+	add_section(SECTION_SYMBOLS, sec, first, NULL);
+	add_section(SECTION_SYMBOLS, sec, first, &symbols);
 
 	hsuccess();
 }
@@ -366,8 +328,8 @@ static void elf_rel_section(int sec) {
 	}
 
 	// adds the section to the program
-	add_section(SECTION_RELOC, sec, first);
-	add_sec(SECTION_RELOC, sec, first, &relocs);
+	add_section(SECTION_RELOC, sec, first, NULL);
+	add_section(SECTION_RELOC, sec, first, &relocs);
 
 	hsuccess();
 }
@@ -410,8 +372,8 @@ static void elf_rela_section(int sec) {
 	}
 
 	// adds the section to the program
-	add_section(SECTION_RELOC, sec, first);
-	add_sec(SECTION_RELOC, sec, first, &relocs);
+	add_section(SECTION_RELOC, sec, first, NULL);
+	add_section(SECTION_RELOC, sec, first, &relocs);
 
 	hsuccess();
 }
@@ -434,7 +396,7 @@ static void elf_string_section(int sec) {
 	}
 
 	// adds the section to the program
-	add_section(SECTION_NAMES, sec, stringtab);	//TODO: is this needed?
+	add_section(SECTION_NAMES, sec, stringtab, NULL);	//TODO: is this needed?
 	strings = stringtab;
 
 	hsuccess();
@@ -500,79 +462,6 @@ static void split_function(symbol *sym, function *func) {
 }
 
 
-/**
- * Looks for the section with the index specified.
- *
- * @return Returns the pointer to the section found, if any, NULL otherwise.
- */
-inline section * find_section(unsigned int idx) {
-	section *sec = 0;
-
-	sec = PROGRAM(sections);
-	while(sec) {
-		if(sec->index == idx)
-			break;
-		sec = sec->next;
-	}
-
-	return sec;
-}
-
-
-// [SE]
-static insn_info *find_insn(function *func, unsigned long long addr, bool orig) {
-	insn_info *instr;
-
-	if (!func) {
-		func = PROGRAM(code);
-	}
-
-	while (func) {
-
-		if (func->next) {
-			if (func->next->insn->orig_addr <= addr) {
-				func = func->next;
-				continue;
-			}
-			else if (func->next->insn->new_addr <= addr) {
-				func = func->next;
-				continue;
-			}
-		}
-
-		instr = func->insn;
-		while(instr) {
-			if (instr->orig_addr == addr && orig) {
-				return instr;
-			}
-			else if (instr->new_addr == addr && !orig) {
-				return instr;
-			}
-
-			instr = instr->next;
-		}
-
-		func = func->next;
-	}
-
-	return NULL;
-}
-
-static function *find_func_from_sym(symbol *sym) {
-	function *func;
-
-	func = functions;
-	while(func) {
-		if (!strcmp(func->name, sym->name)) {
-			break;
-		}
-
-		func = func->next;
-	}
-
-	return func;
-}
-
 static reloc *find_reloc(section *sec, unsigned long offset) {
 	section *relsec;
 	reloc *rel;
@@ -581,7 +470,7 @@ static reloc *find_reloc(section *sec, unsigned long offset) {
 	relsec = relocs;
 	while(relsec) {
 		if (!strncmp(".rela", sec_name(relsec->index), strlen(".rela"))
-		    && !strcmp(sec_name(relsec->index) + strlen(".rela"), sec_name(sec->index))) {
+				&& !strcmp(sec_name(relsec->index) + strlen(".rela"), sec_name(sec->index))) {
 		// if (!strncmp(".rela", relsec->name, strlen(".rela"))
 		//     && !strcmp(relsec->name + strlen(".rela"), sec->name)) {
 			break;
@@ -608,6 +497,7 @@ static reloc *find_reloc(section *sec, unsigned long offset) {
 
 	return rel;
 }
+
 
 static void resolve_jump_table(function *func, insn_info *instr,
 	unsigned int secnum, unsigned long addr, unsigned long long size) {
@@ -650,7 +540,7 @@ static void resolve_jump_table(function *func, insn_info *instr,
 		}
 
 		else if (IS_CALLIND(instr)) {
-			foo = find_func_from_sym(rel->symbol);
+			foo = rel->symbol->func;
 
 			if (rel->addend) {
 				// It doesn't make much sense to compute the address of a function
@@ -770,7 +660,7 @@ static void *infer_jump_table(function *func, insn_info *instr) {
 				if (sym) {
 					// Single function pointer
 					if (sym->type == SYMBOL_FUNCTION) {
-						foo = find_func_from_sym(sym);
+						foo = sym->func;
 					}
 					// Array of function pointers
 					else if (sym->type == SYMBOL_VARIABLE) {
@@ -778,7 +668,7 @@ static void *infer_jump_table(function *func, insn_info *instr) {
 						start = sym->position;
 						size = sym->size / sizeof(char *);
 					}
-					else{
+					else {
 						continue;
 					}
 
@@ -1025,6 +915,7 @@ static void resolve_symbols(void) {
 
 			split_function(sym, func);
 			func->symbol = sym;
+			sym->func = func;
 
 			hnotice(2, "Function '%s' (%d bytes long) :: <%#08llx>\n", sym->name, sym->size, func->orig_addr);
 
@@ -1360,7 +1251,7 @@ static void resolve_blocks(void) {
 			if (!instr->prev) {
 				hnotice(2, "Function %s begin breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
 
-				current_blk = block_split(current_blk, instr, BLOCK_SPLIT_FIRST);
+				current_blk = block_split(current_blk, instr, SPLIT_FIRST);
 				func->begin_blk = current_blk;
 			}
 
@@ -1378,7 +1269,7 @@ static void resolve_blocks(void) {
 
 				hnotice(2, "Function %s end breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
 
-				current_blk = block_split(current_blk, instr, BLOCK_SPLIT_LAST);
+				current_blk = block_split(current_blk, instr, SPLIT_LAST);
 
 				// Restoring end of function... you haven't seen anything, have you? ;-)
 				// [SE] TODO: Find a better way
@@ -1393,7 +1284,7 @@ static void resolve_blocks(void) {
 
 				hnotice(2, "Indirect jump breakpoint at <%#08llx>\n", instr->orig_addr);
 
-				new_blk = block_split(current_blk, instr, BLOCK_SPLIT_LAST);
+				new_blk = block_split(current_blk, instr, SPLIT_LAST);
 
 				idx = 0;
 				while (idx < instr->jumptable.size) {
@@ -1402,7 +1293,7 @@ static void resolve_blocks(void) {
 					hnotice(2, "Jump target breakpoint (jumptable) at <%#08llx>\n", target->orig_addr);
 
 					temp_blk = block_find(target);
-					temp_new_blk = block_split(temp_blk, target, BLOCK_SPLIT_FIRST);
+					temp_new_blk = block_split(temp_blk, target, SPLIT_FIRST);
 
 					// If the instruction *before* the target one is not a jump,
 					// then it is a labeled instruction and there's no flow control
@@ -1428,14 +1319,14 @@ static void resolve_blocks(void) {
 					(IS_CONDITIONAL(instr) ? "(conditional)" : "(absolute)"),
 					instr->orig_addr, instr->jumpto->orig_addr);
 
-				new_blk = block_split(current_blk, instr, BLOCK_SPLIT_LAST);
+				new_blk = block_split(current_blk, instr, SPLIT_LAST);
 
 				// The target of a jump creates a link between blocks, but we keep
 				// splitting blocks in an ordered manner: from first to last instruction
 				hnotice(2, "Jump target breakpoint at <%#08llx>\n", instr->jumpto->orig_addr);
 
 				temp_blk = block_find(instr->jumpto);
-				temp_new_blk = block_split(temp_blk, instr->jumpto, BLOCK_SPLIT_FIRST);
+				temp_new_blk = block_split(temp_blk, instr->jumpto, SPLIT_FIRST);
 
 				// If the instruction *before* the target one is not a jump,
 				// then it is a labeled instruction and there's no flow control
@@ -1465,12 +1356,12 @@ static void resolve_blocks(void) {
 
 				hnotice(2, "Indirect call breakpoint at <%#08llx>\n", instr->orig_addr);
 
-				new_blk = block_split(current_blk, instr, BLOCK_SPLIT_LAST);
+				new_blk = block_split(current_blk, instr, SPLIT_LAST);
 
 				// Single function pointer
 				if (instr->jumpto) {
 					temp_blk = block_find(instr->jumpto);
-					temp_new_blk = block_split(temp_blk, instr->jumpto, BLOCK_SPLIT_FIRST);
+					temp_new_blk = block_split(temp_blk, instr->jumpto, SPLIT_FIRST);
 
 					// No need to explicitly connect the blocks resulting from the
 					// previous split, since the last instruction of a function
@@ -1489,7 +1380,7 @@ static void resolve_blocks(void) {
 						hnotice(2, "Call target breakpoint (calltable) at <%#08llx>\n", target->orig_addr);
 
 						temp_blk = block_find(target);
-						temp_new_blk = block_split(temp_blk, target, BLOCK_SPLIT_FIRST);
+						temp_new_blk = block_split(temp_blk, target, SPLIT_FIRST);
 
 						block_link(current_blk, temp_new_blk);
 
@@ -1506,7 +1397,7 @@ static void resolve_blocks(void) {
 				hnotice(2, "Call instruction breakpoint at <%#08llx> to function %s\n",
 					instr->orig_addr, instr->reference->name);
 
-				new_blk = block_split(current_blk, instr, BLOCK_SPLIT_LAST);
+				new_blk = block_split(current_blk, instr, SPLIT_LAST);
 
 				// We skip function declarations that don't have an actual
 				// definition in our relocatable object
@@ -1516,7 +1407,7 @@ static void resolve_blocks(void) {
 					// the last instruction of a function is never connected to
 					// the first instruction of another function
 					temp_blk = block_find(instr->jumpto);
-					temp_new_blk = block_split(temp_blk, instr->jumpto, BLOCK_SPLIT_FIRST);
+					temp_new_blk = block_split(temp_blk, instr->jumpto, SPLIT_FIRST);
 
 					block_link(current_blk, temp_new_blk);
 				}
@@ -1618,8 +1509,6 @@ void elf_create_map(void) {
 
 	hnotice(1, "Found %u sections...\n", ELF(secnum));
 
-	PROGRAM(code) = functions;
-
 	// Scan ELF Sections and convert/parse them (if any to be)
 	for(sec = 0; sec < ELF(secnum); sec++) {
 
@@ -1675,9 +1564,10 @@ void elf_create_map(void) {
 	resolve_symbols();
 	resolve_relocation();
 	resolve_jumps();
-	resolve_blocks(); 					// [SE] Creates the basic blocks overlay
+	resolve_blocks();
 
-	// Updates the internal binary representation's pointers
+	// Updates the binary representation's pointers
+	PROGRAM(code) = functions;
 	PROGRAM(symbols) = symbols->payload;
 	PROGRAM(v_code)[0] = functions;
 	PROGRAM(rawdata) = 0;

@@ -26,9 +26,12 @@
 
 #include <stdio.h>
 
-#include <executable.h>
 #include <hijacker.h>
 #include <prints.h>
+#include <executable.h>
+#include <instruction.h>
+
+#include <elf/parse-elf.h>
 
 
 
@@ -94,52 +97,6 @@ static void create_map(void) {
 
 }
 
-
-
-/****************************************/
-
-
-void add_section(int type, int secndx, void *payload) {
-	section *s;
-
-	// Create and populate the new node
-	section *new = (section *)malloc(sizeof(section));
-	new->type = type;
-	new->index = secndx;
-	new->header = sec_header(secndx);
-	new->payload = payload;
-	new->next = NULL;
-
-	if(PROGRAM(sections) == NULL)
-		PROGRAM(sections) = new;
-	else {
-		s = PROGRAM(sections);
-		while(s->next != NULL) {
-			s = s->next;
-		}
-		s->next = new;
-	}
-}
-
-
-/*section *get_section_type(int type) {
-	section *sec, **first;
-
-	first = (section **)malloc(sizeof(void *) * 4);
-
-	first = curr = 0;
-	sec = PROGRAM(sections);
-	while(sec){
-		if(sec->type == type){
-			if(!first) first = curr = sec;
-			else curr->next = sec;
-			curr =
-		}
-		sec = sec->next;
-	}
-
-	return first;
-}*/
 
 
 void load_program(char *path) {
