@@ -240,6 +240,15 @@ static int apply_rule_instruction(Executable *exec, Instruction *tagInstruction,
 		if (insn->flags & tagInstruction->flags) {
 			// If this is the case, the rules applies.
 			hnotice(3, "Instruction matching the rule specification is found:\n");
+
+			// Check whether the instruction match skip flags
+			if (insn->flags & tagInstruction->skipFlags) {
+				hnotice(4, "Instruction matches skipFlags, ignored\n");
+
+				insn = insn->next;
+				continue;
+			}
+
 			hnotice(4, "Instrumenting '%s' at %#08llx...\n", insn->i.x86.mnemonic, insn->new_addr);
 
 			// Increment the counter of instrumented instructions
