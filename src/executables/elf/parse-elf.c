@@ -159,6 +159,8 @@ static void elf_code_section(int sec) {
 			case X86_INSN:
 				x86_disassemble_instruction(sec_content(sec), &pos, &curr->i.x86, flags);
 				hnotice(6, "%#08lx: %s (%d)\n", curr->i.x86.initial, curr->i.x86.mnemonic, curr->i.x86.opcode_size);
+				hdump(1, "Disassembly", curr->i.x86.insn, 15);
+				hprint("%s, %s works on stack\n", curr->i.x86.mnemonic, curr->i.x86.flags & I_STACK ? "" : "not");
 
 				// Make flags arch-independent
 				curr->flags = curr->i.x86.flags;
