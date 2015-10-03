@@ -30,8 +30,7 @@
 #define _IBR_H
 
 #include <utils.h>
-
-#include <x86/instruction.h>
+#include <instruction.h>
 
 typedef struct _instruction insn_info;
 typedef struct _block block;
@@ -87,19 +86,63 @@ struct _instruction {
 
 /* Blocks */
 
-typedef enum {SPLIT_FIRST, SPLIT_LAST} block_split_mode;
+typedef enum {
+  SPLIT_FIRST,
+  SPLIT_LAST
+} block_split_mode;
+
+typedef enum {
+  BLOCK_GENERIC,
+  BLOCK_LOOP_HEADER,
+  BLOCK_LOOP_FOOTER,
+  BLOCK_BRANCH_HEADER,
+  BLOCK_BRANCH_THEN,
+  BLOCK_BRANCH_ELSE
+} block_type;
+
+typedef enum {
+  EDGE_GOTO,
+  EDGE_THEN,
+  EDGE_ELSE,
+  EDGE_FORCED,
+  EDGE_IND,
+  EDGE_CALL,
+  EDGE_RET,
+  EDGE_INIT
+} block_edge_type;
+
+typedef enum {
+  EDGE_NEXT,
+  EDGE_BACK
+} block_edge_dir;
+
+typedef struct {
+  block_edge_type type;
+  block_edge_dir dir;
+  block *from;
+  block *to;
+} block_edge;
+
+struct {
+  linked_list sources;
+} block_graph;
 
 struct _block {
-	unsigned int id;
+	unsigned int id;          // Unique identifier for the block
 	unsigned long length;     // Number of instructions that make up the block
+  insn_info *begin;         // First instruction of the block
+  insn_info *end;           // Last instruction of the block
+  struct _block *next;      // Ordered list of blocks
 
-	insn_info *begin;         // First instruction of the block
-	insn_info *end;           // Last instruction of the block
-	struct _block *next;      // Ordered list of blocks
+  // Presets-related fields
+  void *vptracker;
 
 	// Flowgraph-related fields
+  block_type type;          // The type of a block wrt control flow structures
 	linked_list out;          // Double-linked list of next blocks
 	linked_list in;           // Double-linked list of previous blocks
+  bool visited;             // True if the block was already met in the current visit
+  bool active;              // True if the block is in the current path (only for DFS!)
 
 	// Tree-related fields
 	int balance;              // The balance factor of the AVL tree rooted at this block
@@ -117,7 +160,8 @@ typedef enum {
 	SYMBOL_FUNCTION,
 	SYMBOL_UNDEF,
 	SYMBOL_SECTION,
-	SYMBOL_FILE
+	SYMBOL_FILE,
+  SYMBOL_TLS
 } symbol_type;
 
 typedef enum {
@@ -235,15 +279,18 @@ extern function *clone_function_descriptor(function *original, char *name);
 
 extern section *find_section(unsigned int idx);
 // extern reloc *find_reloc(section *sec, unsigned long offset);
-extern void add_section(section_type type, int secndx, void *payload, section **first);
+extern section *add_section(section_type type, int secndx, void *payload, section **first);
 
 /* block.c */
 
 extern block *block_create(void);
 extern block *block_split(block *node, insn_info *breakpoint, block_split_mode mode);
 extern block *block_find(insn_info *instr);
-extern void block_link(block *from, block *to);
-extern void block_tree_dump(char *filename);
+extern void block_link(block *from, block *to, block_edge_type type);
+// extern void block_tree_dump(char *filename);
 extern void block_graph_dump(block *start, char *filename);
+extern block *block_graph_create(function *functions, insn_info *last_insn);
+extern void block_graph_visit(block_edge *edge, graph_visit *visit);
+
 
 #endif /* _IBR_H */

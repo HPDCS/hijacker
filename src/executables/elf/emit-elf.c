@@ -293,6 +293,11 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 			shndx = SHN_ABS;
 			break;
 
+		// [SE]
+		case SYMBOL_TLS:
+			sym->type = STT_TLS;
+			break;
+
 		case SYMBOL_UNDEF:
 		default:
 			// since they are undefined, it is not possible to infer local or global binding

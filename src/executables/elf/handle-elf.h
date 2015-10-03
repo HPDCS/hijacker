@@ -35,6 +35,10 @@
 #define RELOCATE_ABSOLUTE_32	2
 #define RELOCATE_ABSOLUTE_64	3
 
+// [SE] Incomplete list of TLS-based relocations...
+#define RELOCATE_TLS_RELATIVE_32 4
+// [/SE]
+
 void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type);
 
 void create_rela_node(symbol *sym, long long offset, long addend, unsigned char *secname);

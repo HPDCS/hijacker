@@ -104,6 +104,10 @@ void hexdump (void *addr, int len) {
 	printf ("  |%s|\n", buff);
 }
 
+inline void ll_init(linked_list *list) {
+	list->first = list->last = NULL;
+}
+
 void ll_move(linked_list *from, linked_list *to) {
 	to->first = from->first;
 	from->first = NULL;

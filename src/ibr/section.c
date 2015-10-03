@@ -41,7 +41,7 @@
  * symbol table included in the executable file.
  * @param first Pointer to a list of sections to which append the new one.
  */
-void add_section(section_type type, int secndx, void *payload, section **first) {
+section *add_section(section_type type, int secndx, void *payload, section **first) {
 	section *s;
 
 	// [SE] TODO: Verificare se risolve del tutto la ridondanza fra le due funzioni
@@ -72,6 +72,8 @@ void add_section(section_type type, int secndx, void *payload, section **first) 
 		}
 		s->next = new;
 	}
+
+	return new;
 }
 
 

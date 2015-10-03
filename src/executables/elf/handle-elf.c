@@ -51,7 +51,9 @@ void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type) {
   switch(type) {
     case RELOCATE_RELATIVE_32:
     case RELOCATE_RELATIVE_64:
-      addend = (long)insn->opcode_size - (long)insn->size;  // consider that the addend is backward and -(a - b) == (b - a)
+    case RELOCATE_TLS_RELATIVE_32: // [SE]
+      addend = (long)insn->opcode_size - (long)insn->size;
+      // consider that the addend is backward and -(a - b) == (b - a)
       break;
 
     case RELOCATE_ABSOLUTE_32:
@@ -75,6 +77,10 @@ void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type) {
 
     case RELOCATE_ABSOLUTE_64:
       type = R_X86_64_64;
+      break;
+
+    case RELOCATE_TLS_RELATIVE_32:
+      type = R_X86_64_TPOFF32;
       break;
 
     default:
