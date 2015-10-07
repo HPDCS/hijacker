@@ -92,6 +92,23 @@ insn_info *find_insn(function *func, unsigned long long addr, insn_address_type 
 	return NULL;
 }
 
+insn_info *find_last_insn(function *functions) {
+	function *func;
+	insn_info *instr;
+
+	func = functions;
+	while(func->next) {
+		func = func->next;
+	}
+
+	instr = func->insn;
+	while(instr->next) {
+		instr = instr->next;
+	}
+
+	return instr;
+}
+
 
 /**
  * Creates a new instruction node starting from an array of bytes which represents
@@ -249,7 +266,9 @@ int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size
 		count++;
 	}
 
-	*last = instr;
+	if (last) {
+		*last = instr;
+	}
 
 	hnotice(4, "Inserted %d instruction %s the target <%#08llx>\n",
 		count, mode == INSERT_BEFORE ? "before" : "after", target->new_addr);

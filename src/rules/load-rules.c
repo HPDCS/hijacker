@@ -179,6 +179,63 @@ static xmlChar *parseInject(/*xmlDocPtr doc, xmlNsPtr ns, */xmlNodePtr cur) {
 
 
 
+static Param *parseParam(/*xmlDocPtr doc, xmlNsPtr ns, */xmlNodePtr cur) {
+	Param *ret = NULL;
+
+	// Allocate the struct
+	ret = (Param *) malloc(sizeof(Param));
+	if (ret == NULL) {
+		herror(true, "Out of memory\n");
+	}
+	memset(ret, 0, sizeof(Param));
+
+	// Get the attributes
+	if (cur != NULL) {
+		ret->name = xmlGetProp(cur, (const xmlChar *)"name");
+		ret->value = xmlGetProp(cur, (const xmlChar *)"value");
+	}
+
+	return ret;
+}
+
+
+
+static Preset *parsePreset(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr cur) {
+	Preset *ret = NULL;
+	Param *curParam;
+
+	// Allocate the struct
+	ret = (Preset *) malloc(sizeof(Preset));
+	if (ret == NULL) {
+		herror(true, "Out of memory\n");
+	}
+	memset(ret, 0, sizeof(Preset));
+
+	// Get the attributes
+	if (cur != NULL) {
+		ret->name = xmlGetProp(cur, (const xmlChar *)"name");
+		ret->function = xmlGetProp(cur, (const xmlChar *)"function");
+		ret->convention = xmlGetProp(cur, (const xmlChar *)"convention");
+	}
+
+	cur = cur->xmlChildrenNode;
+	while (cur != NULL) {
+
+		if (xmlStrcmp(cur->name, (const xmlChar *)"Param") == 0 && cur->ns == ns) {
+			curParam = parseParam(cur);
+			if (curParam != NULL) {
+				ret->param[ret->nParam++] = curParam;
+			}
+		}
+
+		cur = cur->next;
+	}
+
+	return ret;
+}
+
+
+
 static unsigned int parseInstructionFlags(xmlChar *str) {
 	char *source;
 	char *curSource;
@@ -343,6 +400,7 @@ static int parseExecutable(char *filename, Executable ***rules) {
 	xmlNodePtr execNode;
 
 	xmlChar *curInject;
+	Preset *curPreset;
 	Instruction *curInstruction;
 	Function *curFunction;
 	Executable *exec;
@@ -432,6 +490,14 @@ static int parseExecutable(char *filename, Executable ***rules) {
 				curInject = parseInject(/*doc, ns, */cur);
 				if (curInject != NULL && exec->nInjects < MAX_CHILDREN) {
 					exec->injectFiles[exec->nInjects++] = curInject;
+				}
+			}
+
+			// Preset Node
+			if (xmlStrcmp(cur->name, (const xmlChar *)"Preset") == 0 && cur->ns == ns) {
+				curPreset = parsePreset(/*doc, */ns, cur);
+				if (curPreset != NULL && exec->nPresets < MAX_CHILDREN) {
+					exec->presets[exec->nPresets++] = curPreset;
 				}
 			}
 

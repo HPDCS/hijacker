@@ -71,6 +71,22 @@ typedef struct Assembly {
 } Assembly;
 
 
+typedef struct Param {
+	xmlChar *name;
+	xmlChar *value;
+} Param;
+
+
+typedef struct Preset {
+	xmlChar	*name;
+	xmlChar	*function;
+	xmlChar	*convention;
+
+	int 		nParam;
+	Param	*param[MAX_CHILDREN];
+} Preset;
+
+
 typedef struct Instruction {
 	unsigned int	flags;
 	Call		*call;
@@ -97,6 +113,8 @@ typedef struct Executable {
 	xmlChar		*suffix;
 	int		nInjects;
 	xmlChar		*injectFiles[MAX_CHILDREN];
+	int 	nPresets;
+	Preset 		*presets[MAX_CHILDREN];
 	int		nInstructions;
 	Instruction	*instructions[MAX_CHILDREN];
 	int		nFunctions;

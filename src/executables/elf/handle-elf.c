@@ -42,7 +42,7 @@
  * @param sym Symbol descriptor of the symbol that will be referenced to
  * @param insn The pointer to the descritpor of the instruction who need to be relocated
  */
-void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type) {
+symbol *instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type) {
   symbol *ref;    // a new relocation entry is a duplicate of the referenced symbol;
   long addend;
 
@@ -99,6 +99,8 @@ void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type) {
 
   hnotice(3, "New RELA node has been created from symbol '%s' (%d) %+ld to the instruction at address <%#08llx>\n",
     sym->name, sym->index, ref->relocation.addend, insn->new_addr);
+
+  return ref;
 }
 
 
@@ -266,9 +268,6 @@ int switch_executable_version (int version) {
 		PROGRAM(v_code)[version] = code;
 		clone_rodata_relocation(PROGRAM(symbols), code, version, (char *)config.rules[version]->suffix);
 
-		// The overall number of handled versions has to be increased
-		PROGRAM(versions)++;
-
 		// Relinking jump instructions. Once cloned, instructions are no more
 		// linked together; this task belongs to the parsing stage, nevertheless
 		// we have to re-execute it in order to realign the representation's semantics
@@ -281,7 +280,17 @@ int switch_executable_version (int version) {
 			func = func->next;
 		}
 
+		// [SE]
+		PROGRAM(blocks)[version] = block_graph_create(code);
+
+		block_tree_dump("treedump.txt", "a+");
+		block_graph_dump(code, "graphdump.txt", "a+");
+		// [/SE]
+
 		hnotice(3, "Version %d of the executable's binary representation created\n", version);
+
+		// The overall number of handled versions has to be increased
+		PROGRAM(versions)++;
 	}
 
 	// Update the executable versions array

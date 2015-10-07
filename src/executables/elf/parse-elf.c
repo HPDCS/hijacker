@@ -54,7 +54,6 @@ static section *symbols = 0;		/// List of all symbols parsed
 static section *code = 0;		/// List of whole code sections parsed
 static function *functions = 0;		/// List of resolved functions
 static char *strings = 0;		/// Array of strings
-static insn_info *last_insn = 0; /// [SE] Last occurring instruction in the code
 static block *blocks = 0;		/// [SE] List of recognized basic blocks
 
 // FIXME: is this really used?
@@ -167,8 +166,6 @@ static void elf_code_section(int sec) {
 		curr = curr->next;
 
 	}
-
-	last_insn = curr->prev;
 
 	// TODO: we left a blank node at the end of the chain!
 	curr->prev->next = NULL;
@@ -1212,7 +1209,12 @@ static void resolve_jumps(void) {
 static void resolve_blocks(void) {
 	hnotice(1, "Resolving blocks...\n");
 
-	blocks = block_graph_create(functions, last_insn);
+	blocks = block_graph_create(functions);
+
+	// We spit out some boring textual representation of both the balanced tree
+	// and the final flow graph
+	block_tree_dump("treedump.txt", "w+");
+	block_graph_dump(functions, "graphdump.txt", "w+");
 
 	hsuccess();
 }
@@ -1312,7 +1314,7 @@ void elf_create_map(void) {
 	PROGRAM(v_code)[0] = functions;
 	PROGRAM(rawdata) = 0;
 	PROGRAM(versions)++;
-	PROGRAM(blocks) = blocks; 	// [SE] TODO: Multi-versioning here?
+	PROGRAM(blocks)[0] = blocks;
 
 	hnotice(1, "ELF parsing terminated\n\n");
 	hsuccess();

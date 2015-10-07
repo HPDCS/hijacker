@@ -54,7 +54,7 @@ typedef struct _executable {
 	section		*sections;
 	function	*code;		// [DC] Added this field to handle the parsed functions
 	void 	*rawdata;		// [DC] Added this filed to handle preallocated raw data
-	block *blocks;		// [SE] Basic block overlay
+	block *blocks[MAX_VERSIONS];		// [SE] Basic block overlay
 } executable_info;
 
 

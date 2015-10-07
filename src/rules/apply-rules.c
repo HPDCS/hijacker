@@ -154,6 +154,41 @@ static void apply_rule_inject (char *filename, insn_info *target, insn_insert_mo
 }
 
 
+static size_t apply_rule_preset(Executable *exec, Preset *tagPreset, preset *pr) {
+	int tag;
+	size_t count;
+
+	Param *tagParam;
+	param **params, *par;
+
+	if (pr->initialized[PROGRAM(version)] == false) {
+		pr->init_func();
+		pr->initialized[PROGRAM(version)] = true;
+	}
+
+	hnotice(3, "Running preset '%s' with params:", tagPreset->name);
+
+	params = malloc(sizeof(param *) * tagPreset->nParam);
+
+	for(tag = 0; tag < tagPreset->nParam; ++tag) {;
+		tagParam = tagPreset->param[tag];
+
+		par = malloc(sizeof(param));
+		par->name = tagParam->name;
+		par->value = tagParam->value;
+
+		printf(" %s = %s", par->name, par->value);
+
+		params[tag] = par;
+	}
+
+	printf("\n");
+
+	count = pr->apply_func(tagPreset->function, params, tagPreset->nParam);
+
+	return count;
+}
+
 /**
  * Creates and adds to the text section a new CALL instruction to the
  * referenced symbol name.
@@ -344,6 +379,7 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
  */
 void apply_rules(void) {
 	function *func;
+	preset *preset;
 
 	int tag;
 	int version;
@@ -351,6 +387,7 @@ void apply_rules(void) {
 
 	char *module;
 	Executable *exec;
+	Preset *tagPreset;
 	Instruction *tagInstruction;
 	Function *tagFunction;
 
@@ -381,6 +418,21 @@ void apply_rules(void) {
 			module = (char *)exec->injectFiles[tag];
 			hnotice(3, "Looking for the instruction with flags '%s'\n", module);
 			apply_rule_link(module);
+		}
+
+		// Iterates all over the XML Preset tag in the Executable
+		for (tag = 0; tag < exec->nPresets; tag++) {
+			// Retrieve the next instruction tag and process it
+			hnotice(2, "Preset tag met, applying the rule\n");
+			tagPreset = exec->presets[tag];
+			hnotice(3, "Looking for the preset with name %s\n", tagPreset->name);
+			preset = preset_find(tagPreset->name);
+
+			if (preset == NULL) {
+				herror(true, "Unable to find preset with name %s\n", tagPreset->name);
+			} else {
+				instrumented += apply_rule_preset(exec, tagPreset, preset);
+			}
 		}
 
 		// Iterates all over the instructions in the Executable XML tag

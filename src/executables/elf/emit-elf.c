@@ -56,7 +56,7 @@ static section *rela_rodata;
 static section *rela_data;
 static section *data;
 static section *bss;
-
+static section *tbss;
 
 /**
  * Check if the section has enough available space.
@@ -296,6 +296,11 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 		// [SE]
 		case SYMBOL_TLS:
 			sym->type = STT_TLS;
+
+			// Hackish again...
+			if (sym->sec->name && !strcmp(sym->sec->name, ".tbss")) {
+				shndx = tbss->index;
+			}
 			break;
 
 		case SYMBOL_UNDEF:
@@ -529,6 +534,7 @@ static section* elf_create_section(int type, int size, int flags) {
 	bzero(sec, sizeof(section));
 
 	sec->header = hdr;
+	idx = 0;
 
 	if(ELF(is64)) {
 		hdr64 = &(hdr->section64);
@@ -670,9 +676,9 @@ static void elf_build_eheader(void) {
 	hnotice(3, "Initializing ELF header...\n");
 
 	// Initialize the new elf's header descriptor
-	ehsize = ehdr_size();
-	hijacked.ehdr = (Elf_Hdr *) malloc(ehsize);
-	bzero(hijacked.ehdr, ehsize);
+	// ehsize = ehdr_size();
+	// hijacked.ehdr = (Elf_Hdr *) malloc(ehsize);
+	// bzero(hijacked.ehdr, ehsize);
 
 	ehdr = hijacked.ehdr;
 	eident = ehdr_info(ehdr, e_ident);
@@ -725,7 +731,7 @@ static void elf_build(void) {
 	hnotice(3, "Allocating sections memory\n");
 
 	// build the descriptor for the output elf
-	hijacked.ehdr = malloc(ehdr_size());
+	hijacked.ehdr = calloc(ehdr_size(), 1);
 
 	// the very first section must be the null one
 	elf_create_section(SHT_NULL, 0, 0);
@@ -772,6 +778,12 @@ static void elf_build(void) {
 
 	bss = elf_create_section(SHT_NOBITS, 0, SHF_ALLOC|SHF_WRITE);
 	elf_name_section(bss, ".bss");
+
+	// [SE] Hackish...
+	if (find_symbol(".tbss")) {
+		tbss = elf_create_section(SHT_NOBITS, 0, SHF_ALLOC|SHF_WRITE|SHF_TLS);
+		elf_name_section(tbss, ".tbss");
+	}
 
 	sym = find_symbol((unsigned char *)".rodata");
 
@@ -1031,7 +1043,6 @@ static void elf_fill_sections(void) {
 	// update symbol references and indexes
 	elf_update_symbol_list(sym);
 
-	// ==== 1 ====
 	// Fill text and reloc sections with the code in stored
 	// in the function list with the relative relocation entries
 	hnotice(2, "Fill text and relocations...\n");
@@ -1058,7 +1069,6 @@ static void elf_fill_sections(void) {
 		}
 	}
 
-	// ==== 2 ====
 	// Fill symtab section, strtab names and data sections with the
 	// information provided with the registered symbols
 	hnotice(2, "Fill symtab, stratb and data...\n");
@@ -1076,8 +1086,8 @@ static void elf_fill_sections(void) {
 		sym = sym->next;
 	}
 
-	// Fill rodata/bss sections
-	hnotice(2, "Fill rodata/bss data sections...\n");
+	// Fill rodata/bss/tbss sections
+	hnotice(2, "Fill rodata/bss/tbss data sections...\n");
 	sec = PROGRAM(sections);
 	offset = 0;
 	while(sec) {
@@ -1097,7 +1107,7 @@ static void elf_fill_sections(void) {
 			}
 
 			// This is to handle the case that hijacker will adds indirectly data to pre-existent sections
-			// i.e. in case of swith cases for different versions
+			// i.e. in case of switch cases for different versions
 			bzero(content, size);
 			memcpy(content, sec->payload, sec_size(sec->index));
 			elf_write_data(rodata, content, size);
@@ -1110,6 +1120,15 @@ static void elf_fill_sections(void) {
 
 			hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n", sym->name, sym->secnum, sym->size);
 			elf_write_data(bss, sec->payload, sym->size);
+
+		} else if(sec->name && !strcmp(sec->name, ".tbss")) {
+			sym = find_symbol((unsigned char *) sec->name);
+			if(sym == NULL){
+				hinternal();
+			}
+
+			hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n", sym->name, sym->secnum, sym->size);
+			elf_write_data(tbss, sec->payload, sym->size);
 		}
 
 		sec = sec->next;

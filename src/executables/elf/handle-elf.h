@@ -39,7 +39,7 @@
 #define RELOCATE_TLS_RELATIVE_32 4
 // [/SE]
 
-void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type);
+symbol *instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type);
 
 void create_rela_node(symbol *sym, long long offset, long addend, unsigned char *secname);
 

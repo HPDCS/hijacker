@@ -29,6 +29,8 @@
 #ifndef _IBR_H
 #define _IBR_H
 
+#include <stddef.h>
+
 #include <utils.h>
 #include <instruction.h>
 
@@ -106,8 +108,7 @@ typedef enum {
   EDGE_ELSE,
   EDGE_FORCED,
   EDGE_IND,
-  EDGE_CALL,
-  EDGE_RET,
+  EDGE_CALLRET,
   EDGE_INIT
 } block_edge_type;
 
@@ -123,7 +124,7 @@ typedef struct {
   block *to;
 } block_edge;
 
-struct {
+typedef struct {
   linked_list sources;
 } block_graph;
 
@@ -136,6 +137,13 @@ struct _block {
 
   // Presets-related fields
   void *vptracker;
+
+  // Callgraph-related fields
+  function *callto;         // The function being called by this block
+  struct {
+    unsigned long long size;
+    function **entry;
+  } calltable;              // A list of potential functions that can be called by this block
 
 	// Flowgraph-related fields
   block_type type;          // The type of a block wrt control flow structures
@@ -156,6 +164,7 @@ struct _block {
 /* Symbols */
 
 typedef enum {
+  SYMBOL_NULL,
 	SYMBOL_VARIABLE,
 	SYMBOL_FUNCTION,
 	SYMBOL_UNDEF,
@@ -176,6 +185,7 @@ struct _symbol {
 	unsigned char *name;      /// Pointer to the buffer holding the symbol's name
 	unsigned int  size;   /// Size of the symbol, could be zero (e.g. for SYMBOL_UNDEF)
 	unsigned int  secnum;     /// Index of the section the symbol belongs to
+  section *sec;             // [SE] Section the symbol belongs to
 	unsigned int  index;      /// Symbol's index within the symbol table
 	unsigned long long  position;   /// Offset positioning within the symbol section
 	void *initial; /// [SE] Symbol's initialization value
@@ -211,6 +221,10 @@ struct _reloc {
 struct _function {
 	block *begin_blk;   // [SE]
 	block *end_blk;     // [SE]
+
+  block *source;          // Starting block of the cfg
+  linked_list calledfrom; // List of basic blocks that call this function
+
 	int     passes;
 	unsigned char   *name;
 	unsigned long long  orig_addr;
@@ -224,6 +238,7 @@ struct _function {
 /* Sections and relocation entries */
 
 typedef enum {
+  SECTION_NULL,
 	SECTION_CODE,
 	SECTION_SYMBOLS,
 	SECTION_NAMES,
@@ -246,6 +261,7 @@ struct _section {
 /* instruction.c */
 
 extern insn_info *find_insn(function *func, unsigned long long addr, insn_address_type type);
+extern insn_info *find_last_insn(function *functions);
 extern int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size,
 	insn_insert_mode mode, insn_info **last);
 extern int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size,
@@ -287,9 +303,9 @@ extern block *block_create(void);
 extern block *block_split(block *node, insn_info *breakpoint, block_split_mode mode);
 extern block *block_find(insn_info *instr);
 extern void block_link(block *from, block *to, block_edge_type type);
-// extern void block_tree_dump(char *filename);
-extern void block_graph_dump(block *start, char *filename);
-extern block *block_graph_create(function *functions, insn_info *last_insn);
+extern void block_tree_dump(char *filename, char *mode);
+extern void block_graph_dump(function *func, char *filename, char *mode);
+extern block *block_graph_create(function *functions);
 extern void block_graph_visit(block_edge *edge, graph_visit *visit);
 
 

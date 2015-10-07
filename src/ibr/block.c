@@ -27,7 +27,7 @@
 #include <prints.h>
 #include <ibr.h>
 
-static block *root = NULL;
+static block *root[MAX_VERSIONS];
 
 block *block_create() {
 	block *blk;
@@ -41,8 +41,8 @@ block *block_create() {
 	// or having to pass a variable to all visible functions
 	// of this module
 	// TODO: Devise a better mechanism which is unit-test friendly
-	if (!root) {
-		root = blk;
+	if (!root[PROGRAM(version)]) {
+		root[PROGRAM(version)] = blk;
 	}
 
 	return blk;
@@ -68,7 +68,7 @@ static void block_tree_parent_update(block *replaced, block *replacement) {
 	replacement->parent = replaced->parent;
 
 	if (!replaced->parent) {
-		root = replacement;
+		root[PROGRAM(version)] = replacement;
 	}
 	else if (replaced->parent->left == replaced) {
 		replaced->parent->left = replacement;
@@ -182,7 +182,7 @@ block *block_find(insn_info *instr) {
 		return NULL;
 	}
 
-	blk = root;
+	blk = root[PROGRAM(version)];
 
 	while(blk) {
 		if (blk->begin->orig_addr > instr->orig_addr) {
@@ -271,6 +271,10 @@ void block_link(block *from, block *to, block_edge_type type) {
 	linked_list *out, *in;
 	block_edge *edge;
 
+	if (from == NULL || to == NULL) {
+		hinternal();
+	}
+
 	if (from == to) {
 		hnotice(3, "Skipping block #%u auto-linking\n", from->id, to->id);
 		return;
@@ -293,17 +297,21 @@ void block_link(block *from, block *to, block_edge_type type) {
 	hnotice(3, "Linking block #%u with block #%u\n", from->id, to->id);
 }
 
-static void block_tree_dump(char *filename) {
+void block_tree_dump(char *filename, char *mode) {
 	FILE *f;
 	block *blk;
 	linked_list *queue, *queue_temp;
 
-	if (!root) {
+	if (!root[PROGRAM(version)]) {
 		return;
 	}
 
+	if (!mode) {
+		hinternal();
+	}
+
 	if (filename) {
-		f = fopen(filename, "w+");
+		f = fopen(filename, mode);
 	} else {
 		f = stdout;
 	}
@@ -311,7 +319,7 @@ static void block_tree_dump(char *filename) {
 	queue = calloc(sizeof(linked_list), 1);
 	queue_temp = calloc(sizeof(linked_list), 1);
 
-	ll_push(queue, root);
+	ll_push(queue, root[PROGRAM(version)]);
 
 	while(true) {
 
@@ -340,6 +348,8 @@ static void block_tree_dump(char *filename) {
 		ll_move(queue_temp, queue);
 	}
 
+	fprintf(f, "\n");
+
 	free(queue);
 	free(queue_temp);
 
@@ -348,55 +358,84 @@ static void block_tree_dump(char *filename) {
 	}
 }
 
-void block_graph_dump(block *start, char *filename) {
+static bool block_graph_dump_pre(void *elem, void *data) {
+	block_edge *edge;
+	block *blk;
 	FILE *f;
-	block *current_blk, *temp_blk;
+
 	ll_node *to_node, *from_node;
 
-	if (!start) {
+	edge = elem;
+	blk = edge->to;
+	f = data;
+
+	to_node = blk->out.first;
+	from_node = blk->in.first;
+
+	fprintf(f, "Block #%u", edge->to->id);
+
+	if (to_node) {
+		fprintf(f, " links to");
+
+		while(to_node) {
+			edge = to_node->elem;
+			fprintf(f, " #%u%s", edge->to->id, edge->dir == EDGE_NEXT ? "" : "(B)");
+
+			to_node = to_node->next;
+		}
+
+	}
+
+	if (from_node && ((block_edge *)from_node->elem)->type != EDGE_INIT) {
+		fprintf(f, " reached from");
+
+		while(from_node) {
+			edge = from_node->elem;
+
+			if (edge->from) {
+				fprintf(f, " #%u%s", edge->from->id, edge->dir == EDGE_NEXT ? "" : "(B)");
+			}
+
+			from_node = from_node->next;
+		}
+
+	}
+
+	fprintf(f, "\n");
+
+	return true;
+}
+
+void block_graph_dump(function *functions, char *filename, char *mode) {
+	function *func;
+	FILE *f;
+
+	if (!functions) {
 		return;
 	}
 
+	if (!mode) {
+		hinternal();
+	}
+
 	if (filename) {
-		f = fopen(filename, "w+");
+		f = fopen(filename, mode);
 	} else {
 		f = stdout;
 	}
 
-	current_blk = start;
-	while(current_blk) {
-		to_node = current_blk->out.first;
-		from_node = current_blk->in.first;
+	for (func = functions; func != NULL; func = func->next) {
+		fprintf(f, "\nFunction %s:\n", func->name);
 
-		fprintf(f, "Block #%u", current_blk->id);
+		graph_visit dump_visit = {
+			.payload   = f,
+			.policy    = VISIT_DEPTH,
+			.dir       = VISIT_FORWARD,
+			.pre_func  = block_graph_dump_pre,
+			.post_func = NULL
+		};
 
-		if (to_node) {
-			fprintf(f, " links to");
-
-			while(to_node) {
-				temp_blk = ((block_edge *) to_node->elem)->to;
-				fprintf(f, " #%u", temp_blk->id);
-
-				to_node = to_node->next;
-			}
-
-		}
-
-		if (from_node) {
-			fprintf(f, " reached from");
-
-			while(from_node) {
-				temp_blk = ((block_edge *) from_node->elem)->to;
-				fprintf(f, " #%u", temp_blk->id);
-
-				from_node = from_node->next;
-			}
-
-		}
-
-		fprintf(f, "\n");
-
-		current_blk = current_blk->next;
+		block_graph_visit(func->source->in.first->elem, &dump_visit);
 	}
 
 	if (filename) {
@@ -410,13 +449,15 @@ static void block_graph_visit_next(block_edge *edge, graph_visit *visit) {
 
 	if (visit->dir == VISIT_FORWARD) {
 		blk = edge->to;
-		tosched = blk->in.first;
+		tosched = blk->out.first;
 	} else {
 		blk = edge->from;
-		tosched = blk->out.first;
+		tosched = blk->in.first;
 	}
 
 	if (visit->pre_func != NULL) {
+		hnotice(3, "Pre-visiting block #%u\n", blk->id);
+
 		if (visit->pre_func(edge, visit->payload) == false) {
 			return;
 		}
@@ -445,6 +486,8 @@ static void block_graph_visit_next(block_edge *edge, graph_visit *visit) {
 	}
 
 	if (visit->post_func != NULL) {
+		hnotice(3, "Post-visiting block #%u\n", blk->id);
+
 		visit->post_func(edge, visit->payload);
 	}
 }
@@ -493,6 +536,8 @@ static bool block_graph_complete_pre(void *elem, void *data) {
 	// opposite ends of the current edge are respectively the loop
 	// header and loop footer
 	if (edge->to->visited == true && edge->to->active == true) {
+		hnotice(3, "Block #%u tagged as loop header\n", edge->to->id);
+
 		edge->dir = EDGE_BACK;
 		edge->to->type = BLOCK_LOOP_HEADER;
 		edge->from->type = BLOCK_LOOP_FOOTER;
@@ -517,8 +562,8 @@ static bool block_graph_complete_post(void *elem, void *data) {
 	return true;
 }
 
-block *block_graph_create(function *functions, insn_info *last_insn) {
-	function *func;
+block *block_graph_create(function *functions) {
+	function *func, *callee;
 	insn_info *instr;
 	block *blocks, *current_blk, *new_blk, *temp_blk, *temp_new_blk;
 
@@ -526,7 +571,7 @@ block *block_graph_create(function *functions, insn_info *last_insn) {
 	// progressively split until we obtain basic blocks
 	current_blk = block_create();
 	current_blk->begin = functions->insn;
-	current_blk->end = last_insn;
+	current_blk->end = find_last_insn(functions);
 
 	hnotice(2, "Program block #%u created from <%#08llx> to <%#08llx>\n",
 		current_blk->id, current_blk->begin->orig_addr, current_blk->end->orig_addr);
@@ -663,40 +708,39 @@ block *block_graph_create(function *functions, insn_info *last_insn) {
 
 				hnotice(2, "Indirect call breakpoint at <%#08llx>\n", instr->orig_addr);
 
-				new_blk = block_split(current_blk, instr, SPLIT_LAST);
+				// new_blk = block_split(current_blk, instr, SPLIT_LAST);
+
+				// block_link(current_blk, new_blk, EDGE_CALLRET);
 
 				// Single function pointer
 				if (instr->jumpto) {
-					temp_blk = block_find(instr->jumpto);
-					temp_new_blk = block_split(temp_blk, instr->jumpto, SPLIT_FIRST);
+					callee = find_func(instr->jumpto);
 
-					// No need to explicitly connect the blocks resulting from the
-					// previous split, since the last instruction of a function
-					// is never connected to the first instruction of another function
-					// block_link(temp_blk, temp_new_blk);
-
-					block_link(current_blk, temp_new_blk, EDGE_CALL);
+					current_blk->callto = callee;
+					ll_push(&callee->calledfrom, current_blk);
 				}
 
 				// Array of function pointers
 				else {
+					current_blk->calltable.size = instr->jumptable.size;
+					current_blk->calltable.entry = malloc(sizeof(function *) * instr->jumptable.size);
+
 					idx = 0;
 					while (idx < instr->jumptable.size) {
 						target = instr->jumptable.entry[idx];
+						callee = find_func(target);
 
 						hnotice(2, "Call target breakpoint (calltable) at <%#08llx>\n", target->orig_addr);
 
-						temp_blk = block_find(target);
-						temp_new_blk = block_split(temp_blk, target, SPLIT_FIRST);
-
-						block_link(current_blk, temp_new_blk, EDGE_CALL);
+						current_blk->calltable.entry[idx] = callee;
+						ll_push(&callee->calledfrom, current_blk);
 
 						idx = idx + 1;
 					}
 
 				}
 
-				current_blk = new_blk;
+				// current_blk = new_blk;
 			}
 
 
@@ -704,118 +748,70 @@ block *block_graph_create(function *functions, insn_info *last_insn) {
 				hnotice(2, "Call instruction breakpoint at <%#08llx> to function %s\n",
 					instr->orig_addr, instr->reference->name);
 
-				new_blk = block_split(current_blk, instr, SPLIT_LAST);
+				// new_blk = block_split(current_blk, instr, SPLIT_LAST);
+
+				// block_link(current_blk, new_blk, EDGE_CALLRET);
 
 				// We skip function declarations that don't have an actual
 				// definition in our relocatable object
 				if (instr->jumpto) {
+					callee = find_func(instr->jumpto);
 
-					// Same as before, we split blocks at the target instruction and
-					// the last instruction of a function is never connected to
-					// the first instruction of another function
-					temp_blk = block_find(instr->jumpto);
-					temp_new_blk = block_split(temp_blk, instr->jumpto, SPLIT_FIRST);
-
-					block_link(current_blk, temp_new_blk, EDGE_CALL);
-				}
-
-				// If there's no matching definition for the callee, we ignore it
-				// and connect the block resulting from the split at the CALL instruction
-				else {
-					block_link(current_blk, new_blk, EDGE_FORCED);
+					if (callee) {
+						current_blk->callto = callee;
+						ll_push(&callee->calledfrom, current_blk);
+					}
 				}
 			}
 
-
 			instr = instr->next;
 		}
 
-		func = func->next;
-	}
-
-	// We still need to link function ending blocks so that they return to all
-	// the possible caller blocks
-	func = functions;
-	while(func) {
-		ll_node *callee;
-
-		// For all callers of this function, its final block
-		// must be linked to the blocks that follow the callers
+		// Now let's compute block lengths, as well as the source block
 		current_blk = func->begin_blk;
-		new_blk = func->end_blk;
 
-		callee = current_blk->in.first;
-		while(callee) {
-			temp_blk = ((block_edge *)callee->elem)->to;
+		while (current_blk) {
 
-			// [SE] TODO: Check if next exists and is the correct block to link
-			block_link(new_blk, temp_blk->next, EDGE_RET);
+			if (ll_empty(&current_blk->in)) {
+				block_edge *edge;
 
-			callee = callee->next;
+				edge = malloc(sizeof(block_edge));
+				edge->type = EDGE_INIT;
+				edge->dir = EDGE_NEXT;
+				edge->from = NULL;
+				edge->to = current_blk;
+
+				ll_push(&(current_blk->in), edge);
+
+				func->source = current_blk;
+			}
+
+			instr = current_blk->begin;
+
+			while (instr != current_blk->end->next) {
+				current_blk->length += 1;
+
+				instr = instr->next;
+			}
+
+			hnotice(4, "Block #%u has length %u\n", current_blk->id, current_blk->length);
+
+			current_blk = current_blk->next;
 		}
+
+		// Let's complete the graph by inferring program loops
+		graph_visit loop_visit = {
+			.payload   = NULL,
+			.policy    = VISIT_DEPTH,
+			.dir       = VISIT_FORWARD,
+			.pre_func  = block_graph_complete_pre,
+			.post_func = block_graph_complete_post
+		};
+
+		block_graph_visit(func->source->in.first->elem, &loop_visit);
 
 		func = func->next;
 	}
-
-	// Now let's compute block lengths, as well as all source blocks
-	ll_init(&block_graph.sources);
-	current_blk = blocks;
-
-	while (current_blk) {
-		if (ll_empty(&(current_blk->in))) {
-			block_edge *edge;
-
-			edge = malloc(sizeof(block_edge));
-			edge->type = EDGE_INIT;
-			edge->dir = EDGE_NEXT;
-			edge->from = NULL;
-			edge->to = current_blk;
-
-			ll_push(&(current_blk->in), edge);
-			ll_push(&(block_graph.sources), current_blk);
-		}
-
-		instr = current_blk->begin;
-
-		while (instr != current_blk->end) {
-			current_blk->length += 1;
-
-			instr = instr->next;
-		}
-
-		current_blk->length += 1;
-
-		hnotice(4, "Block #%u has length %u\n", current_blk->id, current_blk->length);
-
-		current_blk = current_blk->next;
-	}
-
-	// Let's complete the graph by inferring program loops
-	ll_node *source;
-
-	graph_visit loop_visit = {
-		.payload   = NULL,
-		.policy    = VISIT_DEPTH,
-		.dir       = VISIT_FORWARD,
-		.pre_func  = block_graph_complete_pre,
-		.post_func = block_graph_complete_post
-	};
-
-	source = block_graph.sources.first;
-
-	while (source) {
-		current_blk = source->elem;
-
-		block_graph_visit(current_blk->in.first->elem, &loop_visit);
-
-		source = source->next;
-	}
-
-	// We spit out some boring textual representation of both the balanced tree
-	// and the final flow graph, but the idea is to move to a visual tool
-	// like Graphviz as fast as we can.
-	block_tree_dump("treedump.txt");
-	block_graph_dump(blocks, "graphdump.txt");
 
 	return blocks;
 }
