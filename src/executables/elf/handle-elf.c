@@ -51,7 +51,6 @@ symbol *instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type)
   switch(type) {
     case RELOCATE_RELATIVE_32:
     case RELOCATE_RELATIVE_64:
-    case RELOCATE_TLS_RELATIVE_32: // [SE]
       addend = (long)insn->opcode_size - (long)insn->size;
       // consider that the addend is backward and -(a - b) == (b - a)
       break;

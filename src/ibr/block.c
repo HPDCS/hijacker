@@ -716,8 +716,11 @@ block *block_graph_create(function *functions) {
 				if (instr->jumpto) {
 					callee = find_func(instr->jumpto);
 
-					current_blk->callto = callee;
-					ll_push(&callee->calledfrom, current_blk);
+					if (callee) {
+						current_blk->callto = callee;
+						ll_push(&callee->calledfrom, current_blk);
+						ll_push(&func->callto, callee);
+					}
 				}
 
 				// Array of function pointers
@@ -728,12 +731,16 @@ block *block_graph_create(function *functions) {
 					idx = 0;
 					while (idx < instr->jumptable.size) {
 						target = instr->jumptable.entry[idx];
-						callee = find_func(target);
 
 						hnotice(2, "Call target breakpoint (calltable) at <%#08llx>\n", target->orig_addr);
 
-						current_blk->calltable.entry[idx] = callee;
-						ll_push(&callee->calledfrom, current_blk);
+						callee = find_func(target);
+
+						if (callee) {
+							current_blk->calltable.entry[idx] = callee;
+							ll_push(&callee->calledfrom, current_blk);
+							ll_push(&func->callto, callee);
+						}
 
 						idx = idx + 1;
 					}
@@ -760,6 +767,7 @@ block *block_graph_create(function *functions) {
 					if (callee) {
 						current_blk->callto = callee;
 						ll_push(&callee->calledfrom, current_blk);
+						ll_push(&func->callto, callee);
 					}
 				}
 			}

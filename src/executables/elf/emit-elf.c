@@ -780,10 +780,14 @@ static void elf_build(void) {
 	elf_name_section(bss, ".bss");
 
 	// [SE] Hackish...
-	if (find_symbol(".tbss")) {
+	sym = find_symbol(".tbss");
+
+	if (sym) {
 		tbss = elf_create_section(SHT_NOBITS, 0, SHF_ALLOC|SHF_WRITE|SHF_TLS);
 		elf_name_section(tbss, ".tbss");
+		tbss->type = SECTION_TLS;
 	}
+	// [/SE]
 
 	sym = find_symbol((unsigned char *)".rodata");
 
@@ -1223,6 +1227,10 @@ void elf_generate_file(char *path) {
 
 		if(sec->type == SECTION_SYMBOLS) {
 			set_hdr_info(sec->header, sh_addralign, 8);
+		}
+
+		if(sec->type == SECTION_TLS) {
+			set_hdr_info(sec->header, sh_addralign, 16);
 		}
 
 		offset = elf_write_section(file, sec);

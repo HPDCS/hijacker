@@ -36,8 +36,7 @@
 #include <vptracker/vptracker.h>
 
 #define BUFFER_ENTRY_SIZE (1<<4)
-#define BUFFER_MAX_SIZE       (1<<5)
-#define VPAGE_SIZE        (1<<4) // TODO: In realtà andrebbe letto dal kernel
+#define BUFFER_MAX_SIZE   (1<<5)
 #define BUFFER_NAME_LEN   (1<<5)
 
 
@@ -52,19 +51,23 @@ typedef struct vpage {
   symbol *sym;
   unsigned long disp;
 
-  unsigned long counter;
+  unsigned long long counter;
   struct vpage *next;
 } vpage;
 
 
 
-static symbol *tls_buffer;
+static symbol *tbss_sym, *tls_buffer;
 
 
 
 inline static void vpt_tls_init() {
   section *sec, *tbss;
-  unsigned int count;
+  void *tbss_payload;
+  unsigned int tbss_size;
+  char *tbss_name;
+
+  unsigned int count, disp;
 
   char *buffer_name;
 
@@ -74,6 +77,9 @@ inline static void vpt_tls_init() {
 
   sec = PROGRAM(sections);
   tbss = NULL;
+  tbss_name = ".tbss";
+  tbss_size = BUFFER_ENTRY_SIZE * BUFFER_MAX_SIZE;
+  tbss_payload = calloc(tbss_size, 1);
   count = 0;
 
   while (sec) {
@@ -91,11 +97,13 @@ inline static void vpt_tls_init() {
 
   if (tbss == NULL) {
     // If the section hasn't been found, it's time to create it
-    tbss = add_section(SECTION_RAW, count, NULL, NULL);
-    tbss->name = ".tbss";
+
+    tbss = add_section(SECTION_TLS, count, tbss_payload, NULL);
+    disp = 0;
 
     // The respective symbol section must be created, too
-    create_symbol_node(".tbss", SYMBOL_SECTION, SYMBOL_LOCAL, 0);
+    tbss_sym = create_symbol_node(tbss_name, SYMBOL_SECTION, SYMBOL_LOCAL, 0);
+    tbss_sym->size = tbss_size;
 
     // Now the ELF header...
     hdr = calloc(sizeof(Section_Hdr), 1);
@@ -108,7 +116,7 @@ inline static void vpt_tls_init() {
       hdr64->sh_flags = SHF_WRITE | SHF_ALLOC | SHF_TLS;
       hdr64->sh_link = SHN_UNDEF;
       hdr64->sh_addralign = BUFFER_ENTRY_SIZE;
-      hdr64->sh_size = BUFFER_ENTRY_SIZE * BUFFER_MAX_SIZE;
+      hdr64->sh_size = tbss_size;
     } else {
       hdr32 = &(hdr->section32);
 
@@ -117,34 +125,43 @@ inline static void vpt_tls_init() {
       hdr32->sh_flags = SHF_WRITE | SHF_ALLOC | SHF_TLS;
       hdr32->sh_link = SHN_UNDEF;
       hdr32->sh_addralign = BUFFER_ENTRY_SIZE;
-      hdr32->sh_size = BUFFER_ENTRY_SIZE * BUFFER_MAX_SIZE;
+      hdr32->sh_size = tbss_size;
     }
 
   } else {
     // Otherwise, let's hook to the existing section
-    tbss->name = ".tbss";
     hdr = tbss->header;
+
+    tbss_sym = find_symbol(".tbss");
+    tbss_sym->sec = tbss;
+    tbss_sym->size += BUFFER_ENTRY_SIZE * BUFFER_MAX_SIZE;
 
     if (ELF(is64)) {
       hdr64 = &(hdr->section64);
+      disp = hdr64->sh_size;
 
       hdr64->sh_size += BUFFER_ENTRY_SIZE * BUFFER_MAX_SIZE;
     } else {
       hdr32 = &(hdr->section32);
+      disp = hdr32->sh_size;
 
       hdr32->sh_size += BUFFER_ENTRY_SIZE * BUFFER_MAX_SIZE;
     }
   }
+
+  tbss->name = tbss_name;
+  tbss_sym->sec = tbss;
 
   // A different buffer symbol is created for each version
   buffer_name = malloc(BUFFER_NAME_LEN);
   strcpy(buffer_name, "__vptracker_buffer_");
   sprintf(buffer_name + strlen("__vptracker_buffer_"), "%d", PROGRAM(version));
 
-  tls_buffer = create_symbol_node(buffer_name, SYMBOL_TLS, SYMBOL_GLOBAL,
+  tls_buffer = create_symbol_node(buffer_name, SYMBOL_TLS, SYMBOL_LOCAL,
     BUFFER_ENTRY_SIZE * BUFFER_MAX_SIZE);
 
   tls_buffer->sec = tbss;
+  tls_buffer->position = disp;
 }
 
 static bool vpt_collect_loop_headers(void *elem, void *data) {
@@ -356,10 +373,12 @@ void vpt_init(void) {
   vpt_compute_score();
 }
 
-static vpage *vpt_find_vpage(vpage *target, vpage *list) {
+static vpage *vpt_find_vpage(vpage *target, vpage *list, size_t sizeexp) {
   vpage *entry;
 
   section *target_sec, *entry_sec;
+
+  size_t vpagesize = 1 << sizeexp;
 
   entry = list;
 
@@ -374,7 +393,7 @@ static vpage *vpt_find_vpage(vpage *target, vpage *list) {
       entry_sec = find_section(entry->sym->secnum);
 
       if (target_sec == entry_sec) {
-        if ( abs(entry->sym->position - target->sym->position) < VPAGE_SIZE ) {
+        if ( abs(entry->sym->position - target->sym->position) < vpagesize ) {
           return entry;
         }
       }
@@ -382,7 +401,7 @@ static vpage *vpt_find_vpage(vpage *target, vpage *list) {
 
     else {
       if (target->base == entry->base) {
-        if ( abs(target->disp - entry->disp) < VPAGE_SIZE ) {
+        if ( abs(target->disp - entry->disp) < vpagesize ) {
           return entry;
         }
       }
@@ -395,10 +414,10 @@ static vpage *vpt_find_vpage(vpage *target, vpage *list) {
 }
 
 static void vpt_resolve_address(vpage *entry, unsigned int offset, insn_info *pivot) {
-  insn_info *current;
+  insn_info *current, *first;
   symbol *sym;
 
-  current = NULL;
+  current = first = NULL;
 
   // Protect old register values
   // ---------------------------
@@ -409,7 +428,11 @@ static void vpt_resolve_address(vpage *entry, unsigned int offset, insn_info *pi
       0x56
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &first);
+
+    if (pivot == block_find(pivot)->begin && !pivot->virtual) {
+      set_virtual_reference(pivot, first);
+    }
   }
 
   // Resolve memory address
@@ -417,26 +440,55 @@ static void vpt_resolve_address(vpage *entry, unsigned int offset, insn_info *pi
   // LEA disp(base, idx, scale), %rsi
 
   {
-    unsigned char sib = entry->scale + entry->index << 3 + entry->base << 6;
+    unsigned char modrm = 0x0;
+    unsigned char sib = entry->base | (entry->index << 3) | (entry->scale << 6);
+
+    if (entry->index == 0x0 && entry->scale == 0x0) {
+      modrm = 0xb0 + entry->base;
+      sib += 0x20;
+    }
 
     if (entry->sym == NULL) {
       // No relocation, therefore it's likely to be a heap access
 
       if (entry->disp == 0x0) {
-        unsigned char instr[4] = {
-          0x48, 0x8d, 0x34, sib
-        };
 
-        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+        if (modrm == 0x0) {
+          unsigned char instr[4] = {
+            0x48, 0x8d, 0x34, sib
+          };
+
+          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+        } else {
+          unsigned char instr[3] = {
+            0x48, 0x8d, modrm
+          };
+
+          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+        }
+
       }
+
       else {
-        unsigned char instr[8] = {
-          0x48, 0x8d, 0xb4, sib, 0x00, 0x00, 0x00, 0x00
-        };
 
-        *(uint32_t *)(instr + 4) = entry->disp;
+        if (modrm == 0x0) {
+          unsigned char instr[8] = {
+            0x48, 0x8d, 0xb4, sib, 0x00, 0x00, 0x00, 0x00
+          };
 
-        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+          *(uint32_t *)(instr + 4) = entry->disp;
+
+          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+        } else {
+          unsigned char instr[7] = {
+            0x48, 0x8d, modrm, 0x00, 0x00, 0x00, 0x00
+          };
+
+          *(uint32_t *)(instr + 3) = entry->disp;
+
+          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+        }
+
       }
 
     } else {
@@ -447,18 +499,28 @@ static void vpt_resolve_address(vpage *entry, unsigned int offset, insn_info *pi
         };
 
         insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+
+        instruction_rela_node(entry->sym, current, RELOCATE_RELATIVE_32);
       }
+
       else {
-        unsigned char instr[8] = {
-          0x48, 0x8d, 0xb4, sib, 0x00, 0x00, 0x00, 0x00
-        };
 
-        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+        if (modrm == 0x0) {
+          unsigned char instr[8] = {
+            0x48, 0x8d, 0xb4, sib, 0x00, 0x00, 0x00, 0x00
+          };
+
+          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+        } else {
+          unsigned char instr[8] = {
+            0x48, 0x8d, modrm, sib, 0x00, 0x00, 0x00, 0x00
+          };
+
+          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+        }
+
+        instruction_rela_node(entry->sym, current, RELOCATE_ABSOLUTE_64);
       }
-
-      // We have a relocation, therefore we must reflect that with a new
-      // relocation entry
-      instruction_rela_node(entry->sym, current, RELOCATE_ABSOLUTE_32);
 
     }
   }
@@ -466,10 +528,19 @@ static void vpt_resolve_address(vpage *entry, unsigned int offset, insn_info *pi
   // Compute vpage address from memory address
   // -----------------------------------------
   // SHR %rsi, $12
+  // SHL %rsi, $12
 
   {
     unsigned char instr[4] = {
       0x48, 0xc1, 0xee, 0x0c
+    };
+
+    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+  }
+
+  {
+    unsigned char instr[4] = {
+      0x48, 0xc1, 0xe6, 0x0c
     };
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
@@ -512,14 +583,16 @@ static void vpt_store_counter(vpage *entry, unsigned int offset, insn_info *pivo
 
   // Store vpage counter in TLS buffer
   // ---------------------------------
-  // MOV entry->counter, %fs:disp+offset*BUFFER_ENTRY_SIZE+BUFFER_ENTRY_SIZE/2(%rdi)
+  // MOVQ entry->counter, %fs:disp+offset*BUFFER_ENTRY_SIZE+BUFFER_ENTRY_SIZE/2(%rdi)
 
   {
-    unsigned char instr[11] = {
-      0x48, 0xc7, 0x87, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    unsigned char instr[13] = {
+      0x64, 0x48, 0xc7, 0x04, 0x25,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00
     };
 
-    *(uint32_t *)(instr + 7) = entry->counter;
+    *(uint32_t *)(instr + 9) = entry->counter;
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
@@ -530,7 +603,7 @@ static void vpt_store_counter(vpage *entry, unsigned int offset, insn_info *pivo
 
 }
 
-static void vpt_call_routine(unsigned int total, symbol *func, insn_info *pivot) {
+static void vpt_call_routine(unsigned int total, symbol *callfunc, insn_info *pivot) {
   insn_info *current;
   symbol *sym;
 
@@ -538,25 +611,13 @@ static void vpt_call_routine(unsigned int total, symbol *func, insn_info *pivot)
 
   // Protect old register values
   // ---------------------------
-  // PUSH %rsi
-  // PUSH %rdi
-  // PUSH %r8
-
-  {
-    unsigned char instr[4] = {
-      0x56,
-      0x57,
-      0x41, 0x50
-    };
-
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
-  }
-
-  // Save caller-save registers
-  // --------------------------
+  // PUSHF
   // PUSH %rax
   // PUSH %rcx
   // PUSH %rdx
+  // PUSH %rsi
+  // PUSH %rdi
+  // PUSH %r8
   // PUSH %r9
   // PUSH %r10
   // PUSH %r11
@@ -578,10 +639,14 @@ static void vpt_call_routine(unsigned int total, symbol *func, insn_info *pivot)
   // MOVSD %xmm7,(%rsp)
 
   {
-    unsigned char instr[81] = {
+    unsigned char instr[86] = {
+      0x9c,
       0x50,
       0x51,
       0x52,
+      0x56,
+      0x57,
+      0x41, 0x50,
       0x41, 0x51,
       0x41, 0x52,
       0x41, 0x53,
@@ -603,7 +668,33 @@ static void vpt_call_routine(unsigned int total, symbol *func, insn_info *pivot)
       0xf2, 0x0f, 0x11, 0x3c, 0x24
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+    insert_instructions_at(pivot->prev, instr, sizeof(instr), INSERT_AFTER, &current);
+  }
+
+  // Load TLS storage
+  // ----------------
+  // MOV %fs:0x0, %rdi
+
+  {
+    unsigned char instr[9] = {
+      0x64, 0x48, 0x8b, 0x3c, 0x25, 0x00, 0x00, 0x00, 0x00
+    };
+
+    insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
+  }
+
+  // Displace to TLS buffer
+  // ----------------------
+  // LEA disp(%rdi), %rdi
+
+  {
+    unsigned char instr[7] = {
+      0x48, 0x8d, 0xbf, 0x00, 0x00, 0x00, 0x00
+    };
+
+    insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
+
+    instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
   }
 
   // Store total number of tracked vpages
@@ -615,51 +706,49 @@ static void vpt_call_routine(unsigned int total, symbol *func, insn_info *pivot)
       0x48, 0xc7, 0xc6, 0x00, 0x00, 0x00, 0x00
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
-  }
+    *(uint32_t *)(instr + 3) = total;
 
-  // Load TLS buffer
-  // ---------------
-  // MOV %fs:disp, %rdi
-
-  {
-    unsigned char instr[9] = {
-      0x64, 0x48, 0x8b, 0x3c, 0x25, 0x00, 0x00, 0x00, 0x00
-    };
-
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
-
-    instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
+    insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
   }
 
   // Store user-defined routine address
   // ----------------------------------
-  // MOV routine, %r8
+  // MOV routine, %rax
 
-  {
-    unsigned char instr[10] = {
-      0x49, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    };
+  // {
+  //   unsigned char instr[10] = {
+  //     0x48, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+  //   };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+  //   insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
 
-    instruction_rela_node(func, current, RELOCATE_ABSOLUTE_64);
-  }
+  //   instruction_rela_node(func, current, RELOCATE_ABSOLUTE_64);
+  // }
 
   // Call user-defined routine
   // -------------------------
-  // CALL *(%r8)
+  // CALL *(%rax)
+
+  // {
+  //   unsigned char instr[2] = {
+  //     0xff, 0x10
+  //   };
+
+  //   insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
+  // }
 
   {
-    unsigned char instr[3] = {
-      0x41, 0xff, 0x10
+    unsigned char instr[5] = {
+      0xe8, 0x00, 0x00, 0x00, 0x00
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+    insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
+
+    instruction_rela_node(callfunc, current, RELOCATE_RELATIVE_32);
   }
 
-  // Restore caller-save registers
-  // -----------------------------
+  // Restore old register values
+  // ---------------------------
   // MOVSD (%rsp), %xmm7
   // ADD $16,%rsp
   // MOVSD (%rsp), %xmm6
@@ -679,12 +768,16 @@ static void vpt_call_routine(unsigned int total, symbol *func, insn_info *pivot)
   // POP %r11
   // POP %r10
   // POP %r9
+  // POP %r8
+  // POP %rdi
+  // POP %rsi
   // POP %rdx
   // POP %rcx
   // POP %rax
+  // POPF
 
   {
-    unsigned char instr[81] = {
+    unsigned char instr[86] = {
       0xf2, 0x0f, 0x10, 0x3c, 0x24,
       0x48, 0x83, 0xc4, 0x10,
       0xf2, 0x0f, 0x10, 0x34, 0x24,
@@ -704,68 +797,56 @@ static void vpt_call_routine(unsigned int total, symbol *func, insn_info *pivot)
       0x41, 0x5b,
       0x41, 0x5a,
       0x41, 0x59,
-      0x5a,
-      0x59,
-      0x58
-    };
-
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
-  }
-
-  // Restore old register values
-  // ---------------------------
-  // POP %r8
-  // POP %rdi
-  // POP %rsi
-
-  {
-    unsigned char instr[4] = {
       0x41, 0x58,
       0x5f,
-      0x5e
+      0x5e,
+      0x5a,
+      0x59,
+      0x58,
+      0x9d
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+    insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, NULL);
   }
 }
 
-static void vpt_instrument_access(insn_info *instr, unsigned int index, vpage **first, vpage **prev) {
+static void vpt_instrument_access(insn_info *pivot, size_t sizeexp,
+  unsigned int *index, unsigned int *count, vpage **first, vpage **prev) {
   vpage *entry, *found;
-  unsigned int offset;
 
   hnotice(3, "Instrumenting instruction '%s' at <%#08llx>\n",
-    instr->i.x86.mnemonic, instr->orig_addr);
+    pivot->i.x86.mnemonic, pivot->orig_addr);
+
+  ++*count;
 
   entry = calloc(sizeof(vpage), 1);
 
-  if (instr->i.x86.uses_rip) {
+  if (pivot->i.x86.uses_rip == true) {
     entry->rip = true;
   } else {
-    entry->base = instr->i.x86.breg;
-    entry->index = instr->i.x86.ireg;
-    entry->scale = instr->i.x86.scale;
-    entry->disp = instr->i.x86.disp;
+    entry->base = pivot->i.x86.breg;
+    entry->index = pivot->i.x86.ireg;
+    entry->scale = pivot->i.x86.scale;
+    entry->disp = pivot->i.x86.disp;
   }
 
-  if (instr->reference != NULL) {
-    entry->sym = instr->reference;
+  if (pivot->reference != NULL) {
+    entry->sym = pivot->reference;
   }
 
-  entry->counter = 1;
-
-  // if (instr->x86.disp == 0x0 && instr->reference != NULL) {
+  // if (pivot->x86.disp == 0x0 && pivot->reference != NULL) {
   //   // We have a relocation, therefore we store the symbol offset
   //   // from the symbol's section as the displacement
-  //   symbol *sym = instr->reference;
+  //   symbol *sym = pivot->reference;
 
   //   entry->disp.section = sym->secnum;
   //   entry->disp.offset = sym->position;
   // } else {
   //   // No relocation in place, just store the raw displacement
-  //   entry->disp.offset = instr->x86.disp;
+  //   entry->disp.offset = pivot->x86.disp;
   // }
 
-  found = vpt_find_vpage(entry, *first);
+  found = vpt_find_vpage(entry, *first, sizeexp);
 
   if (found) {
     hnotice(3, "Virtual page already found, incrementing counter...\n");
@@ -774,128 +855,163 @@ static void vpt_instrument_access(insn_info *instr, unsigned int index, vpage **
     free(entry);
     entry = NULL;
 
-    ++found->counter;
+    found->counter += 1;
   } else {
     hnotice(3, "New virtual page found!\n");
     // We captured a new page, let's store it into the application's address
     // space and insert the instrumented code
+    entry->counter = 1;
 
-    if (index < BUFFER_MAX_SIZE) {
+    if (*index < BUFFER_MAX_SIZE) {
       // If more pages are accessed than the expected number BUFFER_MAX_SIZE,
       // they will be skipped
-      offset = index * BUFFER_ENTRY_SIZE;
 
       // The virtual page address is resolved in the application's logic
       // by means of appropriate instrumentation code
-      vpt_resolve_address(entry, offset, instr);
+      vpt_resolve_address(entry, *index, pivot);
     }
+
+    ++*index;
 
     if (*prev != NULL) {
       (*prev)->next = entry;
-      *prev = entry;
     } else {
       *first = entry;
     }
+
+    *prev = entry;
   }
 }
 
 size_t vpt_track(char *name, param **params, size_t numparams) {
   float threshold;
-  symbol *func, *sym;
+  size_t sizeexp;
+  symbol *callfunc, *sym;
 
+  function *func;
   block *block;
   block_vpt_data *vptdata;
-  insn_info *instr;
+  insn_info *pivot;
 
   vpage *first, *entry, *prev;
   unsigned int count, index, total;
 
-  if (numparams > 1) {
+  if (numparams > 2) {
     hinternal();
   }
 
-  // We expect the only param to be the threshold value, which is a float
+  // We expect the only params to be the threshold value and the exponent for
+  // the virtual page size
   threshold = atof(params[0]->value);
+  sizeexp = atoi(params[1]->value);
 
   // A weak symbol is created that represents the user-defined function
-  func = create_symbol_node(name, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
+  callfunc = create_symbol_node(name, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
 
   // We now iterate on all basic blocks to instrument the appropriate accesses
-  block = PROGRAM(blocks)[PROGRAM(version)];
-  first = entry = prev = NULL;
+  func = PROGRAM(v_code)[PROGRAM(version)];
   count = 0;
 
-  while (block) {
-    vptdata = block->vptracker;
-    index = 0;
+  while (func) {
+    block = func->begin_blk;
 
-    if (vptdata->score > threshold) {
-      hnotice(3, "Instrumenting block #%u with score %f\n", block->id, vptdata->score);
+    if (ll_empty(&func->callto)) {
+      // Protect the stack
+      // -----------------
+      // SUB $0x80, %rsp
 
-      // The block will be instrumented because its assigned score is
-      // greater than the acceptance threshold
-      instr = block->begin;
+      unsigned char instr[7] = {
+        0x48, 0x81, 0xec, 0x80, 0x00, 0x00, 0x00
+      };
 
-      while (instr != block->end->next) {
-        if (instr->flags & I_MEMRD) {
-          vpt_instrument_access(instr, index, &first, &prev);
-          ++index; ++count;
-        }
-
-        instr = instr->next;
-      }
-
-      // Let's make sure that we didn't forget other instructions
-      // such as LEA which work with memory references through
-      // relocation entries
-      sym = PROGRAM(symbols);
-
-      while (sym) {
-        instr = sym->relocation.ref_insn;
-
-        // We only look at those relocations that fall into the current
-        // block. Note that this step is more expensive than needed and can
-        // be probably optimized by improving the symbols lookup mechanism
-        if (block_find(instr) == block) {
-
-          // I_MEMRD instructions have already been instrumented...
-          // ... I_MEMWR instructions need not be taken into account
-          // since they always hit the cache!
-          if (instr->flags & I_MEMRD == false && instr->flags & I_MEMWR == false) {
-            vpt_instrument_access(instr, index, &first, &prev);
-            ++index; ++count;
-          }
-
-        }
-
-        sym = sym->next;
-      }
-
-      instr = block->end;
-      entry = first;
-      total = index;
-      index = 0;
-
-      while (entry) {
-        // The final access counter for that page is stored into the application's
-        // address space by means of appropriate instrumentation code
-        vpt_store_counter(entry, index, instr);
-
-        entry = entry->next;
-        free(entry);
-
-        ++index;
-      }
-
-      if (total > 0) {
-        // The final user-defined routine is called accepting the base address
-        // of the application-level buffer and the total number of different pages
-        // detected in this basic block
-        vpt_call_routine(total, func, instr);
-      }
+      insert_instructions_at(block->end->prev, instr, sizeof(instr), INSERT_AFTER, NULL);
     }
 
-    block = block->next;
+    while (block != func->end_blk->next) {
+      vptdata = block->vptracker;
+      first = entry = prev = NULL;
+      index = 0;
+
+      if (vptdata->score > threshold) {
+        hnotice(3, "Instrumenting block #%u with score %f\n", block->id, vptdata->score);
+
+        // The block will be instrumented because its assigned score is
+        // greater than the acceptance threshold
+        pivot = block->begin;
+
+        while (pivot != block->end->next) {
+          if (pivot->flags & I_MEMRD) {
+            vpt_instrument_access(pivot, sizeexp, &index, &count, &first, &prev);
+          }
+
+          pivot = pivot->next;
+        }
+
+        // Let's make sure that we didn't forget other instructions
+        // such as LEA which work with memory references through
+        // relocation entries
+        sym = PROGRAM(symbols);
+
+        while (sym) {
+          pivot = sym->relocation.ref_insn;
+
+          // We only look at those relocations that fall into the current
+          // block. Note that this step is more expensive than needed and can
+          // be probably optimized by improving the symbols lookup mechanism
+          if (block_find(pivot) == block) {
+
+            // I_MEMRD instructions have already been instrumented...
+            // ... I_MEMWR instructions need not be taken into account
+            // since they always hit the cache!
+            if (pivot->flags & I_MEMRD == false && pivot->flags & I_MEMWR == false) {
+              vpt_instrument_access(pivot, sizeexp, &index, &count, &first, &prev);
+            }
+
+          }
+
+          sym = sym->next;
+        }
+
+        pivot = block->end;
+        entry = first;
+        total = index;
+        index = 0;
+
+        while (entry) {
+          // The final access counter for that page is stored into the application's
+          // address space by means of appropriate instrumentation code
+          vpt_store_counter(entry, index, pivot);
+
+          entry = entry->next;
+          free(entry);
+
+          ++index;
+        }
+
+        if (total > 0) {
+          // The final user-defined routine is called accepting the base address
+          // of the application-level buffer and the total number of different pages
+          // detected in this basic block
+          vpt_call_routine(total, callfunc, pivot);
+        }
+      }
+
+      block = block->next;
+    }
+
+    if (ll_empty(&func->callto)) {
+      // Protect the stack
+      // -----------------
+      // ADD $0x80, %rsp
+
+      unsigned char instr[7] = {
+        0x48, 0x81, 0xc4, 0x80, 0x00, 0x00, 0x00
+      };
+
+      insert_instructions_at(func->end_blk->begin, instr, sizeof(instr), INSERT_BEFORE, NULL);
+    }
+
+    func = func->next;
   }
 
   return count;

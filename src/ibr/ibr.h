@@ -219,11 +219,12 @@ struct _reloc {
 /* Functions */
 
 struct _function {
-	block *begin_blk;   // [SE]
-	block *end_blk;     // [SE]
+	block *begin_blk;        // [SE]
+	block *end_blk;          // [SE]
 
-  block *source;          // Starting block of the cfg
-  linked_list calledfrom; // List of basic blocks that call this function
+  block *source;           // Starting block of the cfg
+  linked_list calledfrom;  // List of basic blocks that call this function
+  linked_list callto;      // List of functions that are called by this function
 
 	int     passes;
 	unsigned char   *name;
@@ -243,6 +244,7 @@ typedef enum {
 	SECTION_SYMBOLS,
 	SECTION_NAMES,
 	SECTION_RELOC,
+  SECTION_TLS,
 	SECTION_RAW
 } section_type;
 
