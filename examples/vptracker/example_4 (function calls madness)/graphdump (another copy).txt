@@ -1,0 +1,21 @@
+Block #1 links to #3 #2 reached from #7
+Block #2 links to #4 reached from #1
+Block #3 links to #4 reached from #1
+Block #4 links to #8 reached from #3 #2
+Block #5 links to #15 #20 reached from #14 #19
+Block #6 links to #7 reached from #17
+Block #7 links to #1 reached from #6
+Block #8 links to #10 #9 reached from #4
+Block #9 links to #11 reached from #8
+Block #10 links to #11 reached from #8
+Block #11 links to #12 reached from #10 #9
+Block #12 links to #19 reached from #11
+Block #13 links to #14
+Block #14 links to #5 reached from #13
+Block #15 links to #16 reached from #5
+Block #16 links to #18 reached from #15
+Block #17 links to #6 reached from #18
+Block #19 links to #5 reached from #12
+Block #20 links to #18 reached from #5
+Block #18 links to #17 #21 reached from #20 #16
+Block #21 reached from #18

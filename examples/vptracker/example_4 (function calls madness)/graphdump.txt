@@ -1,0 +1,72 @@
+
+Function greater:
+Block #1 links to #2
+Block #2 links to #4 #3 reached from #1
+Block #4 links to #5 reached from #2
+Block #5 reached from #4 #3
+Block #3 links to #5 reached from #2
+
+Function bar:
+Block #6 links to #7
+Block #7 links to #8 reached from #6
+Block #8 reached from #7
+
+Function foo2:
+Block #9 links to #10
+Block #10 links to #11 reached from #9
+Block #11 links to #12 reached from #10
+Block #12 links to #14 #13 reached from #11
+Block #14 links to #15 reached from #12
+Block #15 links to #16 reached from #14 #13
+Block #16 links to #17 reached from #15
+Block #17 reached from #16
+Block #13 links to #15 reached from #12
+
+Function foo:
+Block #18 links to #19
+Block #19 links to #20 reached from #18
+Block #20 links to #21 reached from #19
+Block #21 links to #22 reached from #20
+Block #22 links to #24 reached from #21
+Block #24 links to #23 #27 reached from #26(B) #22
+Block #23 links to #25 reached from #24
+Block #25 links to #26 reached from #23
+Block #26 links to #24(B) reached from #25
+Block #27 links to #28 reached from #24
+Block #28 reached from #27
+
+Function greater_monitor:
+Block #29 links to #30
+Block #30 links to #32 #31 reached from #29
+Block #32 links to #33 reached from #30
+Block #33 reached from #32 #31
+Block #31 links to #33 reached from #30
+
+Function bar_monitor:
+Block #34 links to #35
+Block #35 links to #36 reached from #34
+Block #36 reached from #35
+
+Function foo2_monitor:
+Block #37 links to #38
+Block #38 links to #39 reached from #37
+Block #39 links to #40 reached from #38
+Block #40 links to #42 #41 reached from #39
+Block #42 links to #43 reached from #40
+Block #43 links to #44 reached from #42 #41
+Block #44 links to #45 reached from #43
+Block #45 reached from #44
+Block #41 links to #43 reached from #40
+
+Function foo_monitor:
+Block #46 links to #47
+Block #47 links to #48 reached from #46
+Block #48 links to #49 reached from #47
+Block #49 links to #50 reached from #48
+Block #50 links to #52 reached from #49
+Block #52 links to #51 #55 reached from #54(B) #50
+Block #51 links to #53 reached from #52
+Block #53 links to #54 reached from #51
+Block #54 links to #52(B) reached from #53
+Block #55 links to #56 reached from #52
+Block #56 reached from #55

@@ -1,0 +1,8 @@
+Block #1 links to #3 #2 reached from #3 #5 #7
+Block #2 links to #4 reached from #1
+Block #3 links to #1 reached from #1
+Block #5 links to #1 reached from #4
+Block #6 links to #4 reached from #4
+Block #4 links to #5 #6 #8 reached from #6 #2
+Block #7 links to #1
+Block #8 reached from #4
