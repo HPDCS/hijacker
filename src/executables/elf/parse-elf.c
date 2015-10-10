@@ -804,7 +804,7 @@ void link_jump_instructions(function *func, function *code_version) {
 
 					// jmp_addr = instr->orig_addr + instr->i.x86.insn_size + instr->i.x86.jump_dest;
 
-					hnotice(6, "Call to a local function at <%#08llx> detected\n", jmp_addr);
+					hnotice(3, "Call to a local function at <%#08llx> detected\n", jmp_addr);
 
 					// look for the relative function called
 					callee = code_version;
@@ -821,7 +821,7 @@ void link_jump_instructions(function *func, function *code_version) {
 						hinternal();
 					}
 
-					hnotice(6, "Callee function '%s' at <%#08llx> found\n", callee->name, callee->orig_addr);
+					hnotice(3, "Callee function '%s' at <%#08llx> found\n", callee->name, callee->orig_addr);
 
 					// At this point 'func' will point to the destination function relative to the call;
 					// the only thing we have to do is to add the reference to the relative function's symbol
@@ -866,6 +866,8 @@ void link_jump_instructions(function *func, function *code_version) {
 				if (callee) {
 					// CALL to local function detected, augment the intermediate representation
 					// with the appropriate linking between instructions.
+					hnotice(3, "Callee function '%s' at <%#08llx> found\n", callee->name, callee->orig_addr);
+
 					set_jumpto_reference(instr, callee->insn);
 				}
 

@@ -426,7 +426,7 @@ inline void set_jumpto_reference(insn_info *jump, insn_info *target) {
 
 	ll_push(&target->targetof, jump);
 
-	hnotice(4, "%s instruction at <%#08llx> (<%#08llx>) linked to instruction <%#08llx> at address <%#08llx> (<%#08llx>)\n",
+	hnotice(3, "%s instruction at <%#08llx> (<%#08llx>) linked to instruction <%#08llx> at address <%#08llx> (<%#08llx>)\n",
 		IS_JUMP(jump) ? "Jump" : "Call",
 		jump->orig_addr, jump->new_addr, target, target->orig_addr, target->new_addr);
 }
@@ -448,7 +448,7 @@ inline void set_jumptable_entry(insn_info *jump, insn_info *entry, unsigned int 
 
 	jump->jumptable.entry[idx] = entry;
 
-	hnotice(4, "%s instruction at <%#08llx> (<%#08llx>) linked to instruction <%#08llx> at address <%#08llx> (<%#08llx>) in entry %u\n",
+	hnotice(3, "%s instruction at <%#08llx> (<%#08llx>) linked to instruction <%#08llx> at address <%#08llx> (<%#08llx>) in entry %u\n",
 		IS_JUMP(jump) ? "Jump" : "Call",
 		jump->orig_addr, jump->new_addr, entry, entry->orig_addr, entry->new_addr, idx);
 }
@@ -481,7 +481,7 @@ void set_virtual_reference(insn_info *target, insn_info *virtual) {
 			// if (jump->jumpto == target) {
 				jump->jumpto = virtual;
 
-				hnotice(4, "%s instruction at <%#08llx> (<%#08llx>) linked to virtual instruction at address <%#08llx> (<%#08llx>)\n",
+				hnotice(3, "%s instruction at <%#08llx> (<%#08llx>) linked to virtual instruction at address <%#08llx> (<%#08llx>)\n",
 					IS_JUMP(jump) ? "Jump" : "Call",
 					jump->orig_addr, jump->new_addr, virtual->orig_addr, virtual->new_addr);
 			// }

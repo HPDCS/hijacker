@@ -27,6 +27,8 @@
 #include <prints.h>
 #include <ibr.h>
 
+#include <elf/handle-elf.h>
+
 static block *root[MAX_VERSIONS];
 
 block *block_create() {
@@ -143,17 +145,17 @@ static void block_tree_rebalance(block *orig, block *new) {
 
 	while (parent) {
 		block_tree_balance_update(parent);
-		hnotice(3, "Checking whether block #%u needs re-balancing (balance %d)\n", parent->id, parent->balance);
+		hnotice(5, "Checking whether block #%u needs re-balancing (balance %d)\n", parent->id, parent->balance);
 
 		if (parent->balance >= 2) {
 			// LEFT RIGHT case
 			if (first->balance <= -1) {
 				second = first->right;
-				hnotice(4, "Re-balancing block #%u, LEFT RIGHT case\n", parent->id);
+				hnotice(5, "Re-balancing block #%u, LEFT RIGHT case\n", parent->id);
 				block_tree_rotate_left(&first, &second);
 			}
 			// LEFT LEFT case
-			hnotice(4, "Re-balancing block #%u, LEFT LEFT case\n", parent->id);
+			hnotice(5, "Re-balancing block #%u, LEFT LEFT case\n", parent->id);
 			block_tree_rotate_right(&parent, &first);
 		}
 
@@ -161,11 +163,11 @@ static void block_tree_rebalance(block *orig, block *new) {
 			// RIGHT LEFT case
 			if (first->balance >= 1) {
 				second = first->left;
-				hnotice(4, "Re-balancing block #%u, RIGHT LEFT case\n", parent->id);
+				hnotice(5, "Re-balancing block #%u, RIGHT LEFT case\n", parent->id);
 				block_tree_rotate_right(&first, &second);
 			}
 			// RIGHT RIGHT case
-			hnotice(4, "Re-balancing block #%u, RIGHT RIGHT case\n", parent->id);
+			hnotice(5, "Re-balancing block #%u, RIGHT RIGHT case\n", parent->id);
 			block_tree_rotate_left(&parent, &first);
 		}
 
@@ -234,24 +236,18 @@ block *block_split(block *blk, insn_info *breakpoint, block_split_mode mode) {
 	ll_move(&(blk->out), &(new_blk->out));
 
 	ll_node *outgoing, *incoming;
-	block *outgoing_blk, *incoming_blk;
+	block_edge *outgoing_edge, *incoming_edge;
 
-	outgoing = new_blk->out.first;
-	while(outgoing) {
-		outgoing_blk = ((block_edge *)outgoing->elem)->to;
+	for (outgoing = new_blk->out.first; outgoing; outgoing = outgoing->next) {
+		outgoing_edge = outgoing->elem;
 
-		incoming = outgoing_blk->in.first;
-		while (incoming) {
-			incoming_blk = ((block_edge *)incoming->elem)->to;
+		for (incoming = outgoing_edge->to->in.first; incoming; incoming = incoming->next) {
+			incoming_edge = incoming->elem;
 
-			if (incoming_blk == blk) {
-				((block_edge *)incoming->elem)->to = new_blk;
+			if (incoming_edge->from == blk) {
+				incoming_edge->from = new_blk;
 			}
-
-			incoming = incoming->next;
 		}
-
-		outgoing = outgoing->next;
 	}
 
 	hnotice(3, "Block splitting result: #%u from <%#08llx> to <%#08llx>, "
@@ -261,8 +257,6 @@ block *block_split(block *blk, insn_info *breakpoint, block_split_mode mode) {
 
 	// We maintain a balanced tree of blocks for fast lookup
 	block_tree_rebalance(blk, new_blk);
-
-	// block_tree_dump(NULL);
 
 	return new_blk;
 }
@@ -276,7 +270,7 @@ void block_link(block *from, block *to, block_edge_type type) {
 	}
 
 	if (from == to) {
-		hnotice(3, "Skipping block #%u auto-linking\n", from->id, to->id);
+		hnotice(4, "Skipping block #%u auto-linking\n", from->id, to->id);
 		return;
 	}
 
@@ -294,7 +288,7 @@ void block_link(block *from, block *to, block_edge_type type) {
 	// Connect destination to source
 	ll_push(in, edge);
 
-	hnotice(3, "Linking block #%u with block #%u\n", from->id, to->id);
+	hnotice(4, "Linking block #%u with block #%u\n", from->id, to->id);
 }
 
 void block_tree_dump(char *filename, char *mode) {
@@ -368,6 +362,10 @@ static bool block_graph_dump_pre(void *elem, void *data) {
 	edge = elem;
 	blk = edge->to;
 	f = data;
+
+	if (blk->visited == true) {
+		return false;
+	}
 
 	to_node = blk->out.first;
 	from_node = blk->in.first;
@@ -456,7 +454,7 @@ static void block_graph_visit_next(block_edge *edge, graph_visit *visit) {
 	}
 
 	if (visit->pre_func != NULL) {
-		hnotice(3, "Pre-visiting block #%u\n", blk->id);
+		hnotice(6, "Pre-visiting block #%u\n", blk->id);
 
 		if (visit->pre_func(edge, visit->payload) == false) {
 			return;
@@ -486,7 +484,7 @@ static void block_graph_visit_next(block_edge *edge, graph_visit *visit) {
 	}
 
 	if (visit->post_func != NULL) {
-		hnotice(3, "Post-visiting block #%u\n", blk->id);
+		hnotice(6, "Post-visiting block #%u\n", blk->id);
 
 		visit->post_func(edge, visit->payload);
 	}
@@ -580,11 +578,24 @@ block *block_graph_create(function *functions) {
 
 	// For each instruction in each function, we begin iteratively
 	// splitting current blocks into smaller and smaller chunks
-	func = functions;
-	while(func) {
+	for (func = functions; func; func = func->next) {
 
-		instr = func->insn;
-		while(instr) {
+		// Beginning of a function
+		hnotice(2, "Function '%s' begin breakpoint at <%#08llx>\n", func->name, func->insn->orig_addr);
+
+		current_blk = block_split(current_blk, func->insn, SPLIT_FIRST);
+		func->begin_blk = current_blk;
+
+		for (instr = func->insn->next; instr->next; instr = instr->next) {
+
+			// Beginning of function body
+			if (instr->prev && !instr->prev->prev) {
+				hnotice(2, "Function %s body breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
+
+				current_blk = block_split(current_blk, instr, SPLIT_LAST);
+
+				block_link(func->begin_blk, current_blk, EDGE_FORCED);
+			}
 
 			// We've moved to a block which was already created during
 			// a previous iteration
@@ -597,36 +608,20 @@ block *block_graph_create(function *functions) {
 				}
 			}
 
+			// Function exit point
+			if (instr->next && IS_RET(instr->next)) {
+				hnotice(2, "Function %s return breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
 
-			// Beginning of a function
-			if (!instr->prev) {
-				hnotice(2, "Function %s begin breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
+				new_blk = block_split(current_blk, instr, SPLIT_FIRST);
 
-				current_blk = block_split(current_blk, instr, SPLIT_FIRST);
-				func->begin_blk = current_blk;
+				block_link(current_blk, new_blk, EDGE_FORCED);
+
+				// if (instr->next && IS_RET(instr->next)) {
+				// 	instr = instr->next;
+				// }
+
+				current_blk = new_blk;
 			}
-
-
-			// End of a function
-			// [SE] TODO: Must check for RET, too
-			if (!instr->next) {
-				func->end_blk = current_blk;
-
-				// Hackish way to make the splitting work as expected
-				// [SE] TODO: Find a better way
-				if (func->next) {
-					instr->next = func->next->insn;
-				}
-
-				hnotice(2, "Function %s end breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
-
-				current_blk = block_split(current_blk, instr, SPLIT_LAST);
-
-				// Restoring end of function... you haven't seen anything, have you? ;-)
-				// [SE] TODO: Find a better way
-				instr->next = NULL;
-			}
-
 
 			// Other special cases
 			if (IS_JUMPIND(instr)) {
@@ -664,7 +659,6 @@ block *block_graph_create(function *functions) {
 				current_blk = new_blk;
 			}
 
-
 			else if (IS_JUMP(instr)) {
 				hnotice(2, "Jump instruction %s breakpoint at <%#08llx> to target <%#08llx>\n",
 					(IS_CONDITIONAL(instr) ? "(conditional)" : "(absolute)"),
@@ -701,25 +695,31 @@ block *block_graph_create(function *functions) {
 				current_blk = new_blk;
 			}
 
-
 			else if (IS_CALLIND(instr)) {
 				unsigned long idx;
 				insn_info *target;
 
 				hnotice(2, "Indirect call breakpoint at <%#08llx>\n", instr->orig_addr);
 
-				// new_blk = block_split(current_blk, instr, SPLIT_LAST);
+				new_blk = block_split(current_blk, instr, SPLIT_LAST);
 
-				// block_link(current_blk, new_blk, EDGE_CALLRET);
+				block_link(current_blk, new_blk, EDGE_CALLRET);
 
 				// Single function pointer
 				if (instr->jumpto) {
-					callee = find_func(instr->jumpto);
+					callee = find_func(functions, instr->jumpto, NEW_ADDR);
 
 					if (callee) {
+						hnotice(3, "Discovered call from block #%u to function '%s'\n",
+							current_blk->id, callee->name);
 						current_blk->callto = callee;
+
+						// TODO: Da evitare di inserire se era già presente
 						ll_push(&callee->calledfrom, current_blk);
 						ll_push(&func->callto, callee);
+
+						// TODO: Va fatto da un'altra parte
+						instruction_rela_node(callee->symbol, instr, RELOCATE_RELATIVE_32);
 					}
 				}
 
@@ -734,12 +734,19 @@ block *block_graph_create(function *functions) {
 
 						hnotice(2, "Call target breakpoint (calltable) at <%#08llx>\n", target->orig_addr);
 
-						callee = find_func(target);
+						callee = find_func(functions, target, NEW_ADDR);
 
 						if (callee) {
+							hnotice(3, "Discovered call from block #%u to function '%s'\n",
+								current_blk->id, callee->name);
 							current_blk->calltable.entry[idx] = callee;
+
+							// TODO: Da evitare di inserire se era già presente
 							ll_push(&callee->calledfrom, current_blk);
 							ll_push(&func->callto, callee);
+
+							// TODO: Va fatto da un'altra parte
+							instruction_rela_node(callee->symbol, instr, RELOCATE_RELATIVE_32);
 						}
 
 						idx = idx + 1;
@@ -747,38 +754,59 @@ block *block_graph_create(function *functions) {
 
 				}
 
-				// current_blk = new_blk;
+				current_blk = new_blk;
 			}
-
 
 			else if (IS_CALL(instr)) {
 				hnotice(2, "Call instruction breakpoint at <%#08llx> to function %s\n",
 					instr->orig_addr, instr->reference->name);
 
-				// new_blk = block_split(current_blk, instr, SPLIT_LAST);
+				new_blk = block_split(current_blk, instr, SPLIT_LAST);
 
-				// block_link(current_blk, new_blk, EDGE_CALLRET);
+				block_link(current_blk, new_blk, EDGE_CALLRET);
 
 				// We skip function declarations that don't have an actual
 				// definition in our relocatable object
 				if (instr->jumpto) {
-					callee = find_func(instr->jumpto);
+					callee = find_func(functions, instr->jumpto, NEW_ADDR);
 
 					if (callee) {
+						hnotice(3, "Discovered call from block #%u to function '%s'\n",
+							current_blk->id, callee->name);
 						current_blk->callto = callee;
+
+						// TODO: Da evitare di inserire se era già presente
 						ll_push(&callee->calledfrom, current_blk);
 						ll_push(&func->callto, callee);
+
+						// TODO: Va fatto da un'altra parte
+						instruction_rela_node(callee->symbol, instr, RELOCATE_RELATIVE_32);
 					}
 				}
+
+				current_blk = new_blk;
 			}
 
-			instr = instr->next;
 		}
 
-		// Now let's compute block lengths, as well as the source block
-		current_blk = func->begin_blk;
+		// End of function
+		hnotice(2, "Function %s end breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
+		func->end_blk = current_blk;
 
-		while (current_blk) {
+		// Hackish way to make the splitting work as expected
+		// [SE] TODO: Find a better way
+		if (func->next) {
+			instr->next = func->next->insn;
+		}
+
+		current_blk = block_split(current_blk, instr, SPLIT_LAST);
+
+		// Restoring end of function... you haven't seen anything, have you? ;-)
+		// [SE] TODO: Find a better way
+		instr->next = NULL;
+
+		// Now let's compute block lengths, as well as the source block
+		for (current_blk = func->begin_blk; current_blk != func->end_blk->next; current_blk = current_blk->next) {
 
 			if (ll_empty(&current_blk->in)) {
 				block_edge *edge;
@@ -803,8 +831,6 @@ block *block_graph_create(function *functions) {
 			}
 
 			hnotice(4, "Block #%u has length %u\n", current_blk->id, current_blk->length);
-
-			current_blk = current_blk->next;
 		}
 
 		// Let's complete the graph by inferring program loops
@@ -817,8 +843,6 @@ block *block_graph_create(function *functions) {
 		};
 
 		block_graph_visit(func->source->in.first->elem, &loop_visit);
-
-		func = func->next;
 	}
 
 	return blocks;

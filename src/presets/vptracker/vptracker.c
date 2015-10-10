@@ -36,7 +36,7 @@
 #include <vptracker/vptracker.h>
 
 #define BUFFER_ENTRY_SIZE (1<<4)
-#define BUFFER_MAX_SIZE   (1<<5)
+#define BUFFER_MAX_SIZE   (1<<6)
 #define BUFFER_NAME_LEN   (1<<5)
 
 
@@ -47,17 +47,22 @@ typedef struct vpage {
   unsigned char base;
   unsigned char index;
   unsigned char scale;
-
-  symbol *sym;
   unsigned long disp;
 
+  symbol *sym;
+  block *blk;
+  insn_info *pivot;
   unsigned long long counter;
+
   struct vpage *next;
 } vpage;
 
 
 
 static symbol *tbss_sym, *tls_buffer;
+
+static float threshold;
+static size_t vpagesize;
 
 
 
@@ -79,7 +84,7 @@ inline static void vpt_tls_init() {
   tbss = NULL;
   tbss_name = ".tbss";
   tbss_size = BUFFER_ENTRY_SIZE * BUFFER_MAX_SIZE;
-  tbss_payload = calloc(tbss_size, 1);
+  tbss_payload = calloc(4, 1);
   count = 0;
 
   while (sec) {
@@ -207,14 +212,14 @@ inline static void vpt_compute_cycles() {
   block *blk, *header;
   block_vpt_data *vptdata;
   function *func;
-  ll_node *caller;
+  ll_node *caller, *called;
 
   // First step: collect loop headers
+  hnotice(3, "Collecting loop headers...\n");
+
   ll_init(&headers);
 
-  func = PROGRAM(code);
-
-  while (func) {
+  for (func = PROGRAM(code); func; func = func->next) {
     graph_visit visit = {
       .payload   = &headers,
       .policy    = VISIT_DEPTH,
@@ -224,11 +229,11 @@ inline static void vpt_compute_cycles() {
     };
 
     block_graph_visit(func->source->in.first->elem, &visit);
-
-    func = func->next;
   }
 
-  // Second step: discover loops body
+  // Second step: discover loop bodies
+  hnotice(3, "Discovering loop bodies...\n");
+
   while (!ll_empty(&headers)) {
     header = ll_pop(&headers);
 
@@ -245,9 +250,9 @@ inline static void vpt_compute_cycles() {
   }
 
   // Third step: compute the number of cycles a block participates to
-  blk = PROGRAM(blocks)[PROGRAM(version)];
+  hnotice(3, "Computing cycles feature...\n");
 
-  while (blk) {
+  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
     vptdata = blk->vptracker;
 
     // A loop header participates in its own loop
@@ -261,37 +266,59 @@ inline static void vpt_compute_cycles() {
       header = ((block_vpt_data *)header->vptracker)->lheader;
     }
 
-    blk = blk->next;
+    hnotice(6, "Block #%u participates to %u cycles...\n", blk->id, vptdata->cycles);
   }
 
   // Fourth step: ride CALL instructions to see if some blocks actually
   // participate to a higher number of cycles across function calls
+  hnotice(3, "Extending cycle feature to block across different functions...\n");
+
   unsigned int hottest;
+  linked_list queue = { NULL, NULL };
 
-  func = PROGRAM(code);
+  for (func = PROGRAM(code); func; func = func->next) {
+    if (func->calledfrom.first == NULL) {
+      ll_push(&queue, func);
+    }
+  }
 
-  while (func) {
+  while(!ll_empty(&queue)) {
+    func = ll_pop(&queue);
     hottest = 0;
 
-    caller = func->calledfrom.first;
-    while(caller) {
+    if (func->visited == true) {
+      continue;
+    } else {
+      func->visited = true;
+    }
+
+    for (caller = func->calledfrom.first; caller; caller = caller->next) {
       blk = caller->elem;
       vptdata = blk->vptracker;
+
+      hnotice(3, "Caller block #%u for function '%s' participates to %u cycles\n",
+        blk->id, func->name, vptdata->cycles);
 
       if (hottest < vptdata->cycles) {
         hottest = vptdata->cycles;
       }
     }
 
-    blk = func->begin_blk;
-    while (blk != func->end_blk->next) {
+    hnotice(3, "Cycle feature will be extended by %u in func '%s'\n", hottest, func->name);
+
+    for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
       vptdata = blk->vptracker;
 
       vptdata->cycles += hottest;
-      blk = blk->next;
     }
 
-    func = func->next;
+    for (called = func->callto.first; called; called = called->next) {
+      ll_push(&queue, called->elem);
+    }
+  }
+
+  for (func = PROGRAM(code); func; func = func->next) {
+    func->visited = false;
   }
 }
 
@@ -342,7 +369,10 @@ inline static void vpt_compute_score() {
   while (blk) {
     vptdata = blk->vptracker;
 
-    if (vptdata->score != highest) {
+    if (highest == 0) {
+      vptdata->score = 1.0;
+    }
+    else {
       vptdata->score /= highest;
     }
 
@@ -355,12 +385,10 @@ void vpt_init(void) {
 
   // Blocks are augmented with extra information for the duration of this
   // preset
-  blk = PROGRAM(blocks)[PROGRAM(version)];
+  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+    hnotice(6, "Allocating memory for vptracker at block #%u\n", blk->id);
 
-  while(blk) {
     blk->vptracker = calloc(sizeof(block_vpt_data), 1);
-
-    blk = blk->next;
   }
 
   // The application's IBR is augmented with TLS-enabling sections and symbols
@@ -373,47 +401,98 @@ void vpt_init(void) {
   vpt_compute_score();
 }
 
-static vpage *vpt_find_vpage(vpage *target, vpage *list, size_t sizeexp) {
-  vpage *entry;
+static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
+  vpage *target, *current, *prev, *found;
+  section *target_sec, *current_sec;
 
-  section *target_sec, *entry_sec;
+  // A new virtual page is created to allow comparison with other
+  // previously met virtual pages
+  target = calloc(sizeof(vpage), 1);
 
-  size_t vpagesize = 1 << sizeexp;
+  if (pivot->i.x86.uses_rip == true) {
+    target->rip = true;
+  } else {
+    target->base = pivot->i.x86.breg;
+    target->index = pivot->i.x86.ireg;
+    target->scale = pivot->i.x86.scale;
+    target->disp = pivot->i.x86.disp;
+  }
 
-  entry = list;
+  target->blk = blk;
+  target->pivot = pivot;
+
+  if (pivot->reference != NULL) {
+    target->sym = pivot->reference;
+  }
 
   if (target->sym) {
     target_sec = find_section(target->sym->secnum);
   }
 
-  while (entry) {
+  // We now scan the entire list of captured virtual pages to see if there's
+  // a duplicate, in which case the new virtual page gets discarded
+  current = *list;
+  found = prev = NULL;
 
-    // TODO: Verificare che i criteri sin qui espressi siano adeguati
-    if (target->sym && entry->sym) {
-      entry_sec = find_section(entry->sym->secnum);
+  while (current) {
 
-      if (target_sec == entry_sec) {
-        if ( abs(entry->sym->position - target->sym->position) < vpagesize ) {
-          return entry;
+    if (current->blk == blk) {
+
+      // TODO: Verificare che i criteri sin qui espressi siano adeguati
+      if (target->sym && current->sym) {
+        current_sec = find_section(current->sym->secnum);
+
+        if (target_sec == current_sec) {
+          if ( abs(current->sym->position - target->sym->position) < vpagesize ) {
+            found = current;
+            break;
+          }
         }
       }
-    }
 
-    else {
-      if (target->base == entry->base) {
-        if ( abs(target->disp - entry->disp) < vpagesize ) {
-          return entry;
+      else {
+        if (target->base == current->base) {
+          if ( abs(target->disp - current->disp) < vpagesize ) {
+            found = current;
+            break;
+          }
         }
       }
+
     }
 
-    entry = entry->next;
+    prev = current;
+    current = current->next;
   }
 
-  return NULL;
+  if (found) {
+
+    // If the page has been already instrumented, skip this access and only
+    // increment the counter...
+    hnotice(3, "Virtual page already found, incrementing counter...\n");
+
+    found->counter += 1;
+
+    free(target);
+
+  } else {
+
+    // We captured a new page, gotcha! It will be later stored into the
+    // application's address space
+    hnotice(3, "New virtual page found!\n");
+
+    target->counter = 1;
+
+    if (*list == NULL) {
+      *list = target;
+    } else {
+      prev->next = target;
+    }
+
+  }
 }
 
-static void vpt_resolve_address(vpage *entry, unsigned int offset, insn_info *pivot) {
+static void vpt_instrument_access(vpage *entry, unsigned int index, insn_info *pivot) {
   insn_info *current, *first;
   symbol *sym;
 
@@ -430,6 +509,8 @@ static void vpt_resolve_address(vpage *entry, unsigned int offset, insn_info *pi
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &first);
 
+    // If the instrumented instruction is the target of a jump, let's update
+    // the virtual reference
     if (pivot == block_find(pivot)->begin && !pivot->virtual) {
       set_virtual_reference(pivot, first);
     }
@@ -548,7 +629,7 @@ static void vpt_resolve_address(vpage *entry, unsigned int offset, insn_info *pi
 
   // Store vpage address in TLS buffer
   // ---------------------------------
-  // MOV %rsi, %fs:disp+offset*BUFFER_ENTRY_SIZE
+  // MOV %rsi, %fs:disp+index*BUFFER_ENTRY_SIZE
 
   {
     unsigned char instr[9] = {
@@ -559,7 +640,54 @@ static void vpt_resolve_address(vpage *entry, unsigned int offset, insn_info *pi
 
     sym = instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
     sym->relocation.offset = sym->relocation.addend;
-    sym->relocation.addend = offset * BUFFER_ENTRY_SIZE;
+    sym->relocation.addend = index * BUFFER_ENTRY_SIZE;
+  }
+
+  // Store vpage counter in TLS buffer
+  // ---------------------------------
+  // MOVQ entry->counter, %fs:disp+index*BUFFER_ENTRY_SIZE+BUFFER_ENTRY_SIZE/2
+
+  // {
+  //   unsigned char instr[13] = {
+  //     0x64, 0x48, 0xc7, 0x04, 0x25,
+  //     0x00, 0x00, 0x00, 0x00,
+  //     0x00, 0x00, 0x00, 0x00
+  //   };
+
+  //   *(uint32_t *)(instr + 9) = entry->counter;
+
+  //   insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+
+  //   sym = instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
+  //   sym->relocation.offset = sym->relocation.addend;
+  //   sym->relocation.addend = index * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
+  // }
+
+  // Increment vpage counter in TLS buffer
+  // -------------------------------------
+  // MOVQ entry->counter, %rsi
+  // ADD %rsi, %fs:disp+index*BUFFER_ENTRY_SIZE+BUFFER_ENTRY_SIZE/2
+
+  {
+    unsigned char instr[7] = {
+      0x48, 0xc7, 0xc6, 0x00, 0x00, 0x00, 0x00
+    };
+
+    *(uint32_t *)(instr + 3) = entry->counter;
+
+    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+  }
+
+  {
+    unsigned char instr[9] = {
+      0x64, 0x48, 0x01, 0x34, 0x25, 0x00, 0x00, 0x00, 0x00
+    };
+
+    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+
+    sym = instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
+    sym->relocation.offset = sym->relocation.addend;
+    sym->relocation.addend = index * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
   }
 
   // Restore old register values
@@ -573,34 +701,6 @@ static void vpt_resolve_address(vpage *entry, unsigned int offset, insn_info *pi
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
   }
-}
-
-static void vpt_store_counter(vpage *entry, unsigned int offset, insn_info *pivot) {
-  insn_info *current;
-  symbol *sym;
-
-  current = NULL;
-
-  // Store vpage counter in TLS buffer
-  // ---------------------------------
-  // MOVQ entry->counter, %fs:disp+offset*BUFFER_ENTRY_SIZE+BUFFER_ENTRY_SIZE/2(%rdi)
-
-  {
-    unsigned char instr[13] = {
-      0x64, 0x48, 0xc7, 0x04, 0x25,
-      0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00
-    };
-
-    *(uint32_t *)(instr + 9) = entry->counter;
-
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
-
-    sym = instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
-    sym->relocation.offset = sym->relocation.addend;
-    sym->relocation.addend = offset * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
-  }
-
 }
 
 static void vpt_call_routine(unsigned int total, symbol *callfunc, insn_info *pivot) {
@@ -639,33 +739,34 @@ static void vpt_call_routine(unsigned int total, symbol *callfunc, insn_info *pi
   // MOVSD %xmm7,(%rsp)
 
   {
-    unsigned char instr[86] = {
-      0x9c,
+    unsigned char instr[3] = {
+    // unsigned char instr[86] = {
+      // 0x9c,
       0x50,
-      0x51,
-      0x52,
+      // 0x51,
+      // 0x52,
       0x56,
       0x57,
-      0x41, 0x50,
-      0x41, 0x51,
-      0x41, 0x52,
-      0x41, 0x53,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x04, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x0c, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x14, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x1c, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x24, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x2c, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x34, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x3c, 0x24
+      // 0x41, 0x50,
+      // 0x41, 0x51,
+      // 0x41, 0x52,
+      // 0x41, 0x53,
+      // 0x48, 0x83, 0xec, 0x10,
+      // 0xf2, 0x0f, 0x11, 0x04, 0x24,
+      // 0x48, 0x83, 0xec, 0x10,
+      // 0xf2, 0x0f, 0x11, 0x0c, 0x24,
+      // 0x48, 0x83, 0xec, 0x10,
+      // 0xf2, 0x0f, 0x11, 0x14, 0x24,
+      // 0x48, 0x83, 0xec, 0x10,
+      // 0xf2, 0x0f, 0x11, 0x1c, 0x24,
+      // 0x48, 0x83, 0xec, 0x10,
+      // 0xf2, 0x0f, 0x11, 0x24, 0x24,
+      // 0x48, 0x83, 0xec, 0x10,
+      // 0xf2, 0x0f, 0x11, 0x2c, 0x24,
+      // 0x48, 0x83, 0xec, 0x10,
+      // 0xf2, 0x0f, 0x11, 0x34, 0x24,
+      // 0x48, 0x83, 0xec, 0x10,
+      // 0xf2, 0x0f, 0x11, 0x3c, 0x24
     };
 
     insert_instructions_at(pivot->prev, instr, sizeof(instr), INSERT_AFTER, &current);
@@ -722,7 +823,7 @@ static void vpt_call_routine(unsigned int total, symbol *callfunc, insn_info *pi
 
   //   insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
 
-  //   instruction_rela_node(func, current, RELOCATE_ABSOLUTE_64);
+  //   instruction_rela_node(callfunc, current, RELOCATE_ABSOLUTE_64);
   // }
 
   // Call user-defined routine
@@ -777,124 +878,167 @@ static void vpt_call_routine(unsigned int total, symbol *callfunc, insn_info *pi
   // POPF
 
   {
-    unsigned char instr[86] = {
-      0xf2, 0x0f, 0x10, 0x3c, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x34, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x2c, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x24, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x1c, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x14, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x0c, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x04, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0x41, 0x5b,
-      0x41, 0x5a,
-      0x41, 0x59,
-      0x41, 0x58,
+    unsigned char instr[3] = {
+    // unsigned char instr[86] = {
+      // 0xf2, 0x0f, 0x10, 0x3c, 0x24,
+      // 0x48, 0x83, 0xc4, 0x10,
+      // 0xf2, 0x0f, 0x10, 0x34, 0x24,
+      // 0x48, 0x83, 0xc4, 0x10,
+      // 0xf2, 0x0f, 0x10, 0x2c, 0x24,
+      // 0x48, 0x83, 0xc4, 0x10,
+      // 0xf2, 0x0f, 0x10, 0x24, 0x24,
+      // 0x48, 0x83, 0xc4, 0x10,
+      // 0xf2, 0x0f, 0x10, 0x1c, 0x24,
+      // 0x48, 0x83, 0xc4, 0x10,
+      // 0xf2, 0x0f, 0x10, 0x14, 0x24,
+      // 0x48, 0x83, 0xc4, 0x10,
+      // 0xf2, 0x0f, 0x10, 0x0c, 0x24,
+      // 0x48, 0x83, 0xc4, 0x10,
+      // 0xf2, 0x0f, 0x10, 0x04, 0x24,
+      // 0x48, 0x83, 0xc4, 0x10,
+      // 0x41, 0x5b,
+      // 0x41, 0x5a,
+      // 0x41, 0x59,
+      // 0x41, 0x58,
       0x5f,
       0x5e,
-      0x5a,
-      0x59,
+      // 0x5a,
+      // 0x59,
       0x58,
-      0x9d
+      // 0x9d
     };
 
     insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, NULL);
   }
 }
 
-static void vpt_instrument_access(insn_info *pivot, size_t sizeexp,
-  unsigned int *index, unsigned int *count, vpage **first, vpage **prev) {
-  vpage *entry, *found;
+static void vpt_flush(vpage *first, symbol *callfunc, insn_info *flushpoint) {
+  size_t index;
 
-  hnotice(3, "Instrumenting instruction '%s' at <%#08llx>\n",
-    pivot->i.x86.mnemonic, pivot->orig_addr);
+  vpage *entry, *prev;
 
-  ++*count;
+  for (entry = first, index = 0; entry; entry = entry->next, ++index) {
 
-  entry = calloc(sizeof(vpage), 1);
-
-  if (pivot->i.x86.uses_rip == true) {
-    entry->rip = true;
-  } else {
-    entry->base = pivot->i.x86.breg;
-    entry->index = pivot->i.x86.ireg;
-    entry->scale = pivot->i.x86.scale;
-    entry->disp = pivot->i.x86.disp;
-  }
-
-  if (pivot->reference != NULL) {
-    entry->sym = pivot->reference;
-  }
-
-  // if (pivot->x86.disp == 0x0 && pivot->reference != NULL) {
-  //   // We have a relocation, therefore we store the symbol offset
-  //   // from the symbol's section as the displacement
-  //   symbol *sym = pivot->reference;
-
-  //   entry->disp.section = sym->secnum;
-  //   entry->disp.offset = sym->position;
-  // } else {
-  //   // No relocation in place, just store the raw displacement
-  //   entry->disp.offset = pivot->x86.disp;
-  // }
-
-  found = vpt_find_vpage(entry, *first, sizeexp);
-
-  if (found) {
-    hnotice(3, "Virtual page already found, incrementing counter...\n");
-    // If the page has been already instrumented, skip this access and only
-    // increment the counter
-    free(entry);
-    entry = NULL;
-
-    found->counter += 1;
-  } else {
-    hnotice(3, "New virtual page found!\n");
-    // We captured a new page, let's store it into the application's address
-    // space and insert the instrumented code
-    entry->counter = 1;
-
-    if (*index < BUFFER_MAX_SIZE) {
+    if (index < BUFFER_MAX_SIZE) {
       // If more pages are accessed than the expected number BUFFER_MAX_SIZE,
-      // they will be skipped
+      // they will be skipped...
 
       // The virtual page address is resolved in the application's logic
-      // by means of appropriate instrumentation code
-      vpt_resolve_address(entry, *index, pivot);
+      // by means of appropriate instrumentation code, and the final
+      // access counter for that page is stored too into the application's
+      // address space
+      vpt_instrument_access(entry, index, entry->pivot);
     }
 
-    ++*index;
-
-    if (*prev != NULL) {
-      (*prev)->next = entry;
-    } else {
-      *first = entry;
-    }
-
-    *prev = entry;
+    prev = entry;
+    free(prev);
   }
+
+  if (index > 0) {
+    // The user-defined routine is called accepting the base address of
+    // the application-level buffer and the total number of different pages
+    // detected in this basic block
+    vpt_call_routine(index, callfunc, flushpoint);
+  }
+
+}
+
+static size_t vpt_track_func(function *func, symbol *callfunc) {
+  vpage *first, *entry, *prev;
+  insn_info *pivot;
+  block *blk;
+  block_vpt_data *vptdata;
+  symbol *sym;
+
+  size_t index, count;
+
+  first = NULL;
+  pivot = NULL;
+  count = 0;
+
+  for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
+    vptdata = blk->vptracker;
+
+    if (vptdata->score > threshold) {
+      // The block will be instrumented because its assigned score is
+      // greater than the acceptance threshold
+      hnotice(3, "Instrumenting block #%u with score %f\n", blk->id, vptdata->score);
+
+      for (pivot = blk->begin; pivot != blk->end->next; pivot = pivot->next) {
+        sym = pivot->reference;
+
+        if (IS_MEMRD(pivot) || IS_MEMWR(pivot) || (sym && sym->type == SYMBOL_VARIABLE)) {
+          hnotice(3, "Checking relevant instruction '%s' at <%#08llx>\n",
+            pivot->i.x86.mnemonic, pivot->orig_addr);
+
+          vpt_resolve_vpage(blk, pivot, &first);
+
+          ++count;
+        }
+
+        else if ( (IS_CALL(pivot) && sym && sym->type == SYMBOL_FUNCTION) || pivot == func->end_blk->begin) {
+          hnotice(3, "Found flushpoint at '%s' at <%#08llx>\n",
+            pivot->i.x86.mnemonic, pivot->orig_addr);
+
+          vpt_flush(first, callfunc, pivot);
+
+          first = NULL;
+        }
+
+      }
+    }
+  }
+
+  // flushpoint = func->end_blk->begin;
+  // index = 0;
+
+  // for (entry = first; entry; entry = entry->next) {
+  //   pivot = entry->pivot;
+
+  //   if (index < BUFFER_MAX_SIZE) {
+  //     // If more pages are accessed than the expected number BUFFER_MAX_SIZE,
+  //     // they will be skipped...
+
+  //     // The virtual page address is resolved in the application's logic
+  //     // by means of appropriate instrumentation code, and the final
+  //     // access counter for that page is stored too into the application's
+  //     // address space
+  //     vpt_instrument_access(entry, index, pivot);
+
+  //     ++index;
+  //   }
+
+  //   if (entry->flushpoint && entry->flushpoint != flushpoint) {
+  //     flushpoint = entry->flushpoint;
+
+  //     if (index > 0) {
+  //       // The user-defined routine is called accepting the base address of
+  //       // the application-level buffer and the total number of different pages
+  //       // detected in this basic block
+  //       vpt_call_routine(index, callfunc, flushpoint);
+
+  //       index = 0;
+  //     }
+  //   }
+
+  //   prev = entry;
+  //   free(prev);
+  // }
+
+  // if (index > 0) {
+  //   // The user-defined routine is called in the last hardcoded flushpoint
+  //   // which is end of function
+  //   vpt_call_routine(index, callfunc, func->end_blk->begin);
+  // }
+
+  return count;
 }
 
 size_t vpt_track(char *name, param **params, size_t numparams) {
-  float threshold;
-  size_t sizeexp;
-  symbol *callfunc, *sym;
-
+  symbol *callfunc;
   function *func;
-  block *block;
-  block_vpt_data *vptdata;
-  insn_info *pivot;
 
-  vpage *first, *entry, *prev;
-  unsigned int count, index, total;
+  size_t count;
 
   if (numparams > 2) {
     hinternal();
@@ -903,17 +1047,15 @@ size_t vpt_track(char *name, param **params, size_t numparams) {
   // We expect the only params to be the threshold value and the exponent for
   // the virtual page size
   threshold = atof(params[0]->value);
-  sizeexp = atoi(params[1]->value);
+  vpagesize = 1 << (atoi(params[1]->value));
 
   // A weak symbol is created that represents the user-defined function
   callfunc = create_symbol_node(name, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
 
   // We now iterate on all basic blocks to instrument the appropriate accesses
-  func = PROGRAM(v_code)[PROGRAM(version)];
   count = 0;
 
-  while (func) {
-    block = func->begin_blk;
+  for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
 
     if (ll_empty(&func->callto)) {
       // Protect the stack
@@ -924,80 +1066,10 @@ size_t vpt_track(char *name, param **params, size_t numparams) {
         0x48, 0x81, 0xec, 0x80, 0x00, 0x00, 0x00
       };
 
-      insert_instructions_at(block->end->prev, instr, sizeof(instr), INSERT_AFTER, NULL);
+      insert_instructions_at(func->begin_blk->end, instr, sizeof(instr), INSERT_AFTER, NULL);
     }
 
-    while (block != func->end_blk->next) {
-      vptdata = block->vptracker;
-      first = entry = prev = NULL;
-      index = 0;
-
-      if (vptdata->score > threshold) {
-        hnotice(3, "Instrumenting block #%u with score %f\n", block->id, vptdata->score);
-
-        // The block will be instrumented because its assigned score is
-        // greater than the acceptance threshold
-        pivot = block->begin;
-
-        while (pivot != block->end->next) {
-          if (pivot->flags & I_MEMRD) {
-            vpt_instrument_access(pivot, sizeexp, &index, &count, &first, &prev);
-          }
-
-          pivot = pivot->next;
-        }
-
-        // Let's make sure that we didn't forget other instructions
-        // such as LEA which work with memory references through
-        // relocation entries
-        sym = PROGRAM(symbols);
-
-        while (sym) {
-          pivot = sym->relocation.ref_insn;
-
-          // We only look at those relocations that fall into the current
-          // block. Note that this step is more expensive than needed and can
-          // be probably optimized by improving the symbols lookup mechanism
-          if (block_find(pivot) == block) {
-
-            // I_MEMRD instructions have already been instrumented...
-            // ... I_MEMWR instructions need not be taken into account
-            // since they always hit the cache!
-            if (pivot->flags & I_MEMRD == false && pivot->flags & I_MEMWR == false) {
-              vpt_instrument_access(pivot, sizeexp, &index, &count, &first, &prev);
-            }
-
-          }
-
-          sym = sym->next;
-        }
-
-        pivot = block->end;
-        entry = first;
-        total = index;
-        index = 0;
-
-        while (entry) {
-          // The final access counter for that page is stored into the application's
-          // address space by means of appropriate instrumentation code
-          vpt_store_counter(entry, index, pivot);
-
-          entry = entry->next;
-          free(entry);
-
-          ++index;
-        }
-
-        if (total > 0) {
-          // The final user-defined routine is called accepting the base address
-          // of the application-level buffer and the total number of different pages
-          // detected in this basic block
-          vpt_call_routine(total, callfunc, pivot);
-        }
-      }
-
-      block = block->next;
-    }
+    count += vpt_track_func(func, callfunc);
 
     if (ll_empty(&func->callto)) {
       // Protect the stack
@@ -1011,7 +1083,6 @@ size_t vpt_track(char *name, param **params, size_t numparams) {
       insert_instructions_at(func->end_blk->begin, instr, sizeof(instr), INSERT_BEFORE, NULL);
     }
 
-    func = func->next;
   }
 
   return count;

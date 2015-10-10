@@ -43,17 +43,20 @@
  *
  * @author Simone Economo
  */
-function *find_func(insn_info *instr) {
+function *find_func(function *functions, insn_info *instr, insn_address_type type) {
 	function *func, *prev;
 
-	func = PROGRAM(code);
+	func = functions;
 	prev = NULL;
 
 	while(func) {
 
-		if(func->insn->new_addr > instr->new_addr) {
+		if (type == NEW_ADDR && func->insn->new_addr > instr->new_addr) {
 			break;
 		}
+    else if (type == ORIG_ADDR && func->insn->orig_addr > instr->orig_addr) {
+      break;
+    }
 
 		prev = func;
 		func = func->next;
@@ -171,6 +174,11 @@ function * clone_function (function *func, char *suffix) {
 
 	// Updates the pointer to instruction list
 	clone->insn = clone_instruction_list(func->insn);
+
+  // [SE] Reset other references
+  clone->begin_blk = clone->end_blk = clone->source = NULL;
+  clone->calledfrom.first = clone->calledfrom.last = NULL;
+  clone->callto.first = clone->callto.last = NULL;
 
 	// Updates the symbol pointer (assume that symbols have been already be cloned)
 	size = strlen((const char *)func->name) + strlen(suffix) + 2; // one is \0, one is '_'

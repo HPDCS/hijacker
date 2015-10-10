@@ -222,9 +222,11 @@ struct _function {
 	block *begin_blk;        // [SE]
 	block *end_blk;          // [SE]
 
+  // Callgraph-related fields
   block *source;           // Starting block of the cfg
   linked_list calledfrom;  // List of basic blocks that call this function
   linked_list callto;      // List of functions that are called by this function
+  bool visited;            // True if the function was already met in the current visit
 
 	int     passes;
 	unsigned char   *name;
@@ -286,7 +288,7 @@ extern symbol *clone_symbol(symbol *sym);
 
 /* function.c */
 
-extern function *find_func(insn_info *target);
+extern function *find_func(function *functions, insn_info *target, insn_address_type type);
 extern function *find_func_from_sym(symbol *sym);
 extern function *create_function_node(char *name, insn_info *code);
 extern function *clone_function(function *func, char *suffix);
