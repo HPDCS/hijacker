@@ -86,6 +86,25 @@ static unsigned char *strtab(unsigned int byte) {
 }
 
 
+static void elf_tls_section(int sec) {
+
+	hnotice(2, "Nothing to do here...\n");
+
+	// We do not need to perform any particular task here...
+
+	if (sec_type(sec) & SHT_PROGBITS) {
+		add_section(SECTION_TLS, sec, sec_content(sec), NULL);
+
+		hdump(3, sec_name(sec), sec_content(sec), sec_size(sec));
+	} else {
+		add_section(SECTION_TLS, sec, NULL, NULL);
+	}
+
+	hsuccess();
+
+}
+
+
 static void elf_raw_section(int sec) {
 
 	hnotice(2, "Nothing to do here...\n");
@@ -210,7 +229,7 @@ static void elf_symbol_section(int sec) {
 		// TODO: handle binding, visibility (for ld.so)
 
 		if(type == STT_OBJECT || type == STT_COMMON || type == STT_FUNC || type == STT_NOTYPE ||
-				type == STT_SECTION || type == STT_FILE) {
+				type == STT_SECTION || type == STT_FILE || type == STT_TLS) {
 
 			switch(type) {
 			case STT_FUNC:
@@ -232,6 +251,10 @@ static void elf_symbol_section(int sec) {
 
 			case STT_FILE:
 				sym->type = SYMBOL_FILE;
+				break;
+
+			case STT_TLS:
+				sym->type = SYMBOL_TLS;
 				break;
 
 			default:
@@ -784,25 +807,21 @@ void link_jump_instructions(function *func, function *code_version) {
 
 				switch(PROGRAM(insn_set)) {
 					case X86_INSN:
-						jmp_addr = instr->orig_addr + instr->size + instr->i.x86.jump_dest;
-						// jmp_addr = instr->i.x86.jump_dest;
+						jmp_addr = instr->i.x86.jump_dest;
 						break;
 
 					default:
 						jmp_addr = 0;
 				}
 
-				// if(jmp_addr != 0) {
-				if(jmp_addr != instr->orig_addr + instr->size) {
+				if(jmp_addr != 0) {
 					// If the CALL has a non-null embedded offset, it is a call to a local function and
 					// the format is the same as a jump. The offset is interpreted, the called function
 					// retrieved and the instruction is translated into a zero'd CALL with an associated
 					// relocation entry.
 
 					// XXX: credo che fosse scorretto nel caso delle funzioni locali, infatti non trovava la funzione
-					//jmp_addr += insn->orig_addr + insn->size;
-
-					// jmp_addr = instr->orig_addr + instr->i.x86.insn_size + instr->i.x86.jump_dest;
+					jmp_addr += instr->orig_addr + instr->size;
 
 					hnotice(3, "Call to a local function at <%#08llx> detected\n", jmp_addr);
 
@@ -820,17 +839,6 @@ void link_jump_instructions(function *func, function *code_version) {
 					if(!callee) {
 						hinternal();
 					}
-
-					hnotice(3, "Callee function '%s' at <%#08llx> found\n", callee->name, callee->orig_addr);
-
-					// At this point 'func' will point to the destination function relative to the call;
-					// the only thing we have to do is to add the reference to the relative function's symbol
-					// so that, in the future emit step, the code will automatically retrieve the correct final
-					// address of the relocation. In such a way we threat local function calls as relocation enties.
-					sym = callee->symbol;
-
-					// The instruction object will be bound to the proper symbol
-					instruction_rela_node(sym, instr, RELOCATE_RELATIVE_32);
 
 					// CALL instruction embedded offset must be reinitialized to zero
 					switch(PROGRAM(insn_set)) {
@@ -867,6 +875,17 @@ void link_jump_instructions(function *func, function *code_version) {
 					// CALL to local function detected, augment the intermediate representation
 					// with the appropriate linking between instructions.
 					hnotice(3, "Callee function '%s' at <%#08llx> found\n", callee->name, callee->orig_addr);
+
+					// At this point 'func' will point to the destination function relative to the call;
+					// the only thing we have to do is to add the reference to the relative function's symbol
+					// so that, in the future emit step, the code will automatically retrieve the correct final
+					// address of the relocation. In such a way we threat local function calls as relocation enties.
+					sym = callee->symbol;
+
+					if (instr->reference == NULL || PROGRAM(version) > 0) {
+						// The instruction object will be bound to the proper symbol
+						instruction_rela_node(sym, instr, RELOCATE_RELATIVE_32);
+					}
 
 					set_jumpto_reference(instr, callee->insn);
 				}
@@ -947,6 +966,17 @@ static void resolve_symbols(void) {
 
 				hdump(3, sym->name, sym->initial, sym->size);
 			}
+			break;
+
+		case SYMBOL_TLS:
+			hnotice(2, "TLS symbol pointing to section %d (%s)\n", sym->secnum, sec_name(sym->secnum));
+
+			sym->initial = malloc(sym->size);
+			memcpy(sym->initial, sec_content(sym->secnum) + sym->position, sym->size);
+
+			hdump(3, sym->name, sym->initial, sym->size);
+
+			sym->sec = find_section(sym->secnum);
 			break;
 
 		case SYMBOL_UNDEF:
@@ -1265,7 +1295,12 @@ void elf_create_map(void) {
 			if(sec_test_flag(sec, SHF_EXECINSTR)) {
 				elf_code_section(sec);
 			} else {
-				elf_raw_section(sec); // Qui è sicuramente una sezione data
+				// Qui è sicuramente una sezione data
+				if(sec_test_flag(sec, SHF_TLS)) {
+					elf_tls_section(sec);
+				} else {
+					elf_raw_section(sec);
+				}
 			}
 			break;
 
@@ -1274,7 +1309,11 @@ void elf_create_map(void) {
 			break;
 
 		case SHT_NOBITS:
-			elf_raw_section(sec);
+			if(sec_test_flag(sec, SHF_TLS)) {
+				elf_tls_section(sec);
+			} else {
+				elf_raw_section(sec);
+			}
 			break;
 
 		case SHT_REL:

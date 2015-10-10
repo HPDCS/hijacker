@@ -57,6 +57,7 @@ static section *rela_data;
 static section *data;
 static section *bss;
 static section *tbss;
+static section *tdata;
 
 /**
  * Check if the section has enough available space.
@@ -297,9 +298,11 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 		case SYMBOL_TLS:
 			sym->type = STT_TLS;
 
-			// Hackish again...
 			if (sym->sec->name && !strcmp(sym->sec->name, ".tbss")) {
 				shndx = tbss->index;
+			}
+			else if (sym->sec->name && !strcmp(sym->sec->name, ".tdata")) {
+				shndx = tdata->index;
 			}
 			break;
 
@@ -783,9 +786,25 @@ static void elf_build(void) {
 	sym = find_symbol(".tbss");
 
 	if (sym) {
-		tbss = elf_create_section(SHT_NOBITS, 0, SHF_ALLOC|SHF_WRITE|SHF_TLS);
+		section *tbss_orig = find_section_by_name(".tbss");
+		tbss = elf_create_section(SHT_NOBITS, sym->size, SHF_ALLOC|SHF_WRITE|SHF_TLS);
 		elf_name_section(tbss, ".tbss");
 		tbss->type = SECTION_TLS;
+
+		set_hdr_info(tbss->header, sh_addralign,
+			header_info(((Section_Hdr *) tbss_orig->header), sh_addralign));
+	}
+
+	sym = find_symbol(".tdata");
+
+	if (sym) {
+		section *tdata_orig = find_section_by_name(".tdata");
+		tdata = elf_create_section(SHT_PROGBITS, sym->size, SHF_ALLOC|SHF_WRITE|SHF_TLS);
+		elf_name_section(tdata, ".tdata");
+		tdata->type = SECTION_TLS;
+
+		set_hdr_info(tdata->header, sh_addralign,
+			header_info(((Section_Hdr *) tdata_orig->header), sh_addralign));
 	}
 	// [/SE]
 
@@ -1230,7 +1249,7 @@ void elf_generate_file(char *path) {
 		}
 
 		if(sec->type == SECTION_TLS) {
-			set_hdr_info(sec->header, sh_addralign, 16);
+			// Do nothing
 		}
 
 		offset = elf_write_section(file, sec);

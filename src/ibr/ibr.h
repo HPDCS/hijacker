@@ -298,6 +298,7 @@ extern function *clone_function_descriptor(function *original, char *name);
 /* section.c */
 
 extern section *find_section(unsigned int idx);
+extern section *find_section_by_name(unsigned char *name);
 // extern reloc *find_reloc(section *sec, unsigned long offset);
 extern section *add_section(section_type type, int secndx, void *payload, section **first);
 

@@ -42,23 +42,17 @@
 
 
 typedef struct vpage {
-  bool rip;
-
-  unsigned char base;
-  unsigned char index;
-  unsigned char scale;
-  unsigned long disp;
+  unsigned long long counter;
 
   symbol *sym;
   block *blk;
   insn_info *pivot;
-  unsigned long long counter;
 
   struct vpage *next;
 } vpage;
 
 
-
+static section *tbss;
 static symbol *tbss_sym, *tls_buffer;
 
 static float threshold;
@@ -67,7 +61,7 @@ static size_t vpagesize;
 
 
 inline static void vpt_tls_init() {
-  section *sec, *tbss;
+  section *sec;
   void *tbss_payload;
   unsigned int tbss_size;
   char *tbss_name;
@@ -80,35 +74,27 @@ inline static void vpt_tls_init() {
   Elf64_Shdr *hdr64;
   Elf32_Shdr *hdr32;
 
-  sec = PROGRAM(sections);
-  tbss = NULL;
-  tbss_name = ".tbss";
   tbss_size = BUFFER_ENTRY_SIZE * BUFFER_MAX_SIZE;
-  tbss_payload = calloc(4, 1);
-  count = 0;
+  disp = 0;
 
-  while (sec) {
-    if (sec->name && !strcmp((const char *)sec->name, ".tbss")) {
+  // Counting the total number of sections and looking for .tbss, if exists
+  for (sec = PROGRAM(sections), count = 0; sec; sec = sec->next, ++count) {
+    if (tbss == NULL && sec->name && !strcmp((const char *)sec->name, ".tbss")) {
       tbss = sec;
-      // break;
     }
-    else if (sec->index && !strcmp((const char *) sec_name(sec->index), ".tbss")) {
+    else if (tbss == NULL && sec->index && !strcmp((const char *) sec_name(sec->index), ".tbss")) {
       tbss = sec;
-      // break;
     }
-    sec = sec->next;
-    ++count;
   }
 
   if (tbss == NULL) {
     // If the section hasn't been found, it's time to create it
+    hnotice(3, "Creating a new .tbss section\n");
+
+    tbss_payload = calloc(tbss_size, 1);
 
     tbss = add_section(SECTION_TLS, count, tbss_payload, NULL);
-    disp = 0;
-
-    // The respective symbol section must be created, too
-    tbss_sym = create_symbol_node(tbss_name, SYMBOL_SECTION, SYMBOL_LOCAL, 0);
-    tbss_sym->size = tbss_size;
+    tbss_sym = create_symbol_node(".tbss", SYMBOL_SECTION, SYMBOL_LOCAL, 0);
 
     // Now the ELF header...
     hdr = calloc(sizeof(Section_Hdr), 1);
@@ -133,28 +119,36 @@ inline static void vpt_tls_init() {
       hdr32->sh_size = tbss_size;
     }
 
+    tbss->header = hdr;
+
   } else {
     // Otherwise, let's hook to the existing section
-    hdr = tbss->header;
-
     tbss_sym = find_symbol(".tbss");
-    tbss_sym->sec = tbss;
-    tbss_sym->size += BUFFER_ENTRY_SIZE * BUFFER_MAX_SIZE;
+
+    hnotice(3, "Existing .tbss section found of size %u bytes\n", tbss_sym->size);
+
+    tbss_size += tbss_sym->size;
+    tbss_payload = calloc(tbss_size, 1);
+
+    hdr = tbss->header;
 
     if (ELF(is64)) {
       hdr64 = &(hdr->section64);
       disp = hdr64->sh_size;
 
-      hdr64->sh_size += BUFFER_ENTRY_SIZE * BUFFER_MAX_SIZE;
+      hdr64->sh_size = tbss_size;
     } else {
       hdr32 = &(hdr->section32);
       disp = hdr32->sh_size;
 
-      hdr32->sh_size += BUFFER_ENTRY_SIZE * BUFFER_MAX_SIZE;
+      hdr32->sh_size = tbss_size;
     }
   }
 
-  tbss->name = tbss_name;
+  tbss->payload = tbss->ptr = tbss_payload;
+  tbss->name = ".tbss";
+
+  tbss_sym->size = tbss_size;
   tbss_sym->sec = tbss;
 
   // A different buffer symbol is created for each version
@@ -402,21 +396,14 @@ void vpt_init(void) {
 }
 
 static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
+  insn_info_x86 *target_x86, *current_x86;
+
   vpage *target, *current, *prev, *found;
   section *target_sec, *current_sec;
 
   // A new virtual page is created to allow comparison with other
   // previously met virtual pages
   target = calloc(sizeof(vpage), 1);
-
-  if (pivot->i.x86.uses_rip == true) {
-    target->rip = true;
-  } else {
-    target->base = pivot->i.x86.breg;
-    target->index = pivot->i.x86.ireg;
-    target->scale = pivot->i.x86.scale;
-    target->disp = pivot->i.x86.disp;
-  }
 
   target->blk = blk;
   target->pivot = pivot;
@@ -429,6 +416,8 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
     target_sec = find_section(target->sym->secnum);
   }
 
+  target_x86 = &pivot->i.x86;
+
   // We now scan the entire list of captured virtual pages to see if there's
   // a duplicate, in which case the new virtual page gets discarded
   current = *list;
@@ -437,6 +426,7 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
   while (current) {
 
     if (current->blk == blk) {
+      current_x86 = &current->pivot->i.x86;
 
       // TODO: Verificare che i criteri sin qui espressi siano adeguati
       if (target->sym && current->sym) {
@@ -451,8 +441,14 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
       }
 
       else {
-        if (target->base == current->base) {
-          if ( abs(target->disp - current->disp) < vpagesize ) {
+        if (target_x86->has_base_register && current_x86->has_base_register) {
+          if (target_x86->breg == current_x86->breg
+              && abs(target_x86->disp - current_x86->disp) < vpagesize ) {
+            found = current;
+            break;
+          }
+        } else {
+          if ( abs(target_x86->disp - current_x86->disp) < vpagesize ) {
             found = current;
             break;
           }
@@ -492,10 +488,190 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
   }
 }
 
-static void vpt_instrument_access(vpage *entry, unsigned int index, insn_info *pivot) {
-  insn_info *current, *first;
+static void vpt_resolve_addr(vpage *entry) {
+  insn_info *pivot, *current;
+  insn_info_x86 *x86;
   symbol *sym;
 
+  pivot = entry->pivot;
+  x86 = &pivot->i.x86;
+  sym = entry->sym;
+
+  bool has_disp;
+  unsigned char scale, modrm, sib;
+
+  hnotice(3, "Resolving address of memory reference in '%s' at <%#08llx> with %u + (%u + %u * %u)\n",
+    pivot->i.x86.mnemonic, pivot->orig_addr, x86->disp, x86->breg, x86->ireg, x86->scale);
+
+  switch(x86->scale) {
+    case 8:
+      scale = 3;
+      break;
+
+    case 4:
+      scale = 2;
+      break;
+
+    case 2:
+      scale = 1;
+      break;
+
+    case 1:
+    default:
+      scale = 0;
+      break;
+  }
+
+  has_disp = true;
+
+  // We replace the source/destination register with %rsi
+  modrm = x86->modrm & 0xc7 | 0x30;
+  sib = x86->sib;
+
+  if (modrm >= 0x40 && modrm <= 0x7f) {
+    // disp8 gets replaced with disp32
+    modrm += 0x40;
+  }
+  else if (modrm <= 0x3f) {
+    // Neither disp8 nor disp32
+    has_disp = false;
+  }
+
+  // if (x86->has_base_register == false) {
+
+  //   if (x86->has_index_register == false && x86->has_scale == false) {
+  //     // No SIB (no base, no index and no scale)
+  //     modrm = 0x00;
+  //     sib = 0x00;
+  //   } else {
+  //     // SIB = S*I + 0 (no base)
+  //     modrm = 0xb4;
+  //     sib = 0x05 + 0x40 * scale + 0x08 * x86->ireg;
+  //   }
+
+  // } else {
+
+  //   if (x86->has_index_register == false && x86->has_scale == false) {
+  //     // No SIB (no index and no scale)
+  //     modrm = 0xb0 + x86->breg;
+  //     sib = 0x00;
+  //   } else {
+  //     // SIB = S*I + B
+  //     modrm = 0xb0 + x86->breg;
+  //     sib = x86->breg + 0x40 * scale + 0x08 * x86->ireg;
+  //   }
+
+  // }
+
+  // if (x86->modrm <= 0x3f) {
+  //   // It means the MOD field is 00B
+  //   modrm -= 0x80;
+  // }
+
+  if (sym == NULL) {
+    // No relocation, therefore it's likely to be a heap access
+    hnotice(3, "Instruction carries no relocation\n");
+
+    if (has_disp == false) {
+
+      if (sib != 0) {
+        unsigned char instr[4] = {
+          0x48, 0x8d, modrm, sib
+        };
+
+        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+      } else {
+        unsigned char instr[3] = {
+          0x48, 0x8d, modrm
+        };
+
+        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+      }
+
+    }
+
+    else {
+
+      if (sib != 0) {
+        unsigned char instr[8] = {
+          0x48, 0x8d, modrm, sib, 0x00, 0x00, 0x00, 0x00
+        };
+
+        *(uint32_t *)(instr + 4) = x86->disp;
+
+        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+      } else {
+        unsigned char instr[7] = {
+          0x48, 0x8d, modrm, 0x00, 0x00, 0x00, 0x00
+        };
+
+        *(uint32_t *)(instr + 3) = x86->disp;
+
+        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+      }
+
+    }
+
+  } else {
+    hnotice(3, "Instruction has relocation information of type %u\n", sym->relocation.type);
+
+    if (sym->relocation.type == R_X86_64_PC32) {
+      unsigned char instr[7] = {
+        0x48, 0x8d, 0x35, 0x00, 0x00, 0x00, 0x00
+      };
+
+      insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+
+      instruction_rela_node(sym, current, RELOCATE_RELATIVE_32);
+    }
+
+    else if (sym->relocation.type == R_X86_64_32) {
+      unsigned char instr[7] = {
+        0x48, 0xc7, 0xc6, 0x00, 0x00, 0x00, 0x00
+      };
+
+      insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+
+      instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_32);
+    }
+
+    else if (sym->relocation.type == R_X86_64_64) {
+      unsigned char instr[10] = {
+        0x48, 0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+      };
+
+      insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+
+      instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_64);
+    }
+
+    else {
+
+      if (sib != 0) {
+        unsigned char instr[8] = {
+          0x48, 0x8d, modrm, sib, 0x00, 0x00, 0x00, 0x00
+        };
+
+        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+      } else {
+        unsigned char instr[7] = {
+          0x48, 0x8d, modrm, 0x00, 0x00, 0x00, 0x00
+        };
+
+        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+      }
+
+      instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_64);
+    }
+
+  }
+}
+
+static void vpt_instrument_access(vpage *entry, unsigned int index) {
+  insn_info *pivot, *current, *first;
+  symbol *sym;
+
+  pivot = entry->pivot;
   current = first = NULL;
 
   // Protect old register values
@@ -519,92 +695,10 @@ static void vpt_instrument_access(vpage *entry, unsigned int index, insn_info *p
   // Resolve memory address
   // ----------------------
   // LEA disp(base, idx, scale), %rsi
+  // MOV addr, %rsi
+  // MOVABS addr, %rsi
 
-  {
-    unsigned char modrm = 0x0;
-    unsigned char sib = entry->base | (entry->index << 3) | (entry->scale << 6);
-
-    if (entry->index == 0x0 && entry->scale == 0x0) {
-      modrm = 0xb0 + entry->base;
-      sib += 0x20;
-    }
-
-    if (entry->sym == NULL) {
-      // No relocation, therefore it's likely to be a heap access
-
-      if (entry->disp == 0x0) {
-
-        if (modrm == 0x0) {
-          unsigned char instr[4] = {
-            0x48, 0x8d, 0x34, sib
-          };
-
-          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
-        } else {
-          unsigned char instr[3] = {
-            0x48, 0x8d, modrm
-          };
-
-          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
-        }
-
-      }
-
-      else {
-
-        if (modrm == 0x0) {
-          unsigned char instr[8] = {
-            0x48, 0x8d, 0xb4, sib, 0x00, 0x00, 0x00, 0x00
-          };
-
-          *(uint32_t *)(instr + 4) = entry->disp;
-
-          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
-        } else {
-          unsigned char instr[7] = {
-            0x48, 0x8d, modrm, 0x00, 0x00, 0x00, 0x00
-          };
-
-          *(uint32_t *)(instr + 3) = entry->disp;
-
-          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
-        }
-
-      }
-
-    } else {
-
-      if (entry->rip == true) {
-        unsigned char instr[7] = {
-          0x48, 0x8d, 0x35, 0x00, 0x00, 0x00, 0x00
-        };
-
-        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
-
-        instruction_rela_node(entry->sym, current, RELOCATE_RELATIVE_32);
-      }
-
-      else {
-
-        if (modrm == 0x0) {
-          unsigned char instr[8] = {
-            0x48, 0x8d, 0xb4, sib, 0x00, 0x00, 0x00, 0x00
-          };
-
-          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
-        } else {
-          unsigned char instr[8] = {
-            0x48, 0x8d, modrm, sib, 0x00, 0x00, 0x00, 0x00
-          };
-
-          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
-        }
-
-        instruction_rela_node(entry->sym, current, RELOCATE_ABSOLUTE_64);
-      }
-
-    }
-  }
+  vpt_resolve_addr(entry);
 
   // Compute vpage address from memory address
   // -----------------------------------------
@@ -647,47 +741,51 @@ static void vpt_instrument_access(vpage *entry, unsigned int index, insn_info *p
   // ---------------------------------
   // MOVQ entry->counter, %fs:disp+index*BUFFER_ENTRY_SIZE+BUFFER_ENTRY_SIZE/2
 
-  // {
-  //   unsigned char instr[13] = {
-  //     0x64, 0x48, 0xc7, 0x04, 0x25,
-  //     0x00, 0x00, 0x00, 0x00,
-  //     0x00, 0x00, 0x00, 0x00
-  //   };
-
-  //   *(uint32_t *)(instr + 9) = entry->counter;
-
-  //   insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
-
-  //   sym = instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
-  //   sym->relocation.offset = sym->relocation.addend;
-  //   sym->relocation.addend = index * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
-  // }
-
-  // Increment vpage counter in TLS buffer
-  // -------------------------------------
-  // MOVQ entry->counter, %rsi
-  // ADD %rsi, %fs:disp+index*BUFFER_ENTRY_SIZE+BUFFER_ENTRY_SIZE/2
-
-  {
-    unsigned char instr[7] = {
-      0x48, 0xc7, 0xc6, 0x00, 0x00, 0x00, 0x00
+  if (index == 0) {
+    unsigned char instr[13] = {
+      0x64, 0x48, 0xc7, 0x04, 0x25,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00
     };
 
-    *(uint32_t *)(instr + 3) = entry->counter;
-
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
-  }
-
-  {
-    unsigned char instr[9] = {
-      0x64, 0x48, 0x01, 0x34, 0x25, 0x00, 0x00, 0x00, 0x00
-    };
+    *(uint32_t *)(instr + 9) = entry->counter;
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
     sym = instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
     sym->relocation.offset = sym->relocation.addend;
     sym->relocation.addend = index * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
+  }
+
+  // Increment vpage counter in TLS buffer
+  // -------------------------------------
+  // MOVQ entry->counter, %rsi
+  // ADD %rsi, %fs:disp+index*BUFFER_ENTRY_SIZE+BUFFER_ENTRY_SIZE/2
+
+  else {
+
+    {
+      unsigned char instr[7] = {
+        0x48, 0xc7, 0xc6, 0x00, 0x00, 0x00, 0x00
+      };
+
+      *(uint32_t *)(instr + 3) = entry->counter;
+
+      insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+    }
+
+    {
+      unsigned char instr[9] = {
+        0x64, 0x48, 0x01, 0x34, 0x25, 0x00, 0x00, 0x00, 0x00
+      };
+
+      insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+
+      sym = instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
+      sym->relocation.offset = sym->relocation.addend;
+      sym->relocation.addend = index * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
+    }
+
   }
 
   // Restore old register values
@@ -740,34 +838,39 @@ static void vpt_call_routine(unsigned int total, symbol *callfunc, insn_info *pi
 
   {
     unsigned char instr[3] = {
-    // unsigned char instr[86] = {
-      // 0x9c,
       0x50,
-      // 0x51,
-      // 0x52,
       0x56,
-      0x57,
-      // 0x41, 0x50,
-      // 0x41, 0x51,
-      // 0x41, 0x52,
-      // 0x41, 0x53,
-      // 0x48, 0x83, 0xec, 0x10,
-      // 0xf2, 0x0f, 0x11, 0x04, 0x24,
-      // 0x48, 0x83, 0xec, 0x10,
-      // 0xf2, 0x0f, 0x11, 0x0c, 0x24,
-      // 0x48, 0x83, 0xec, 0x10,
-      // 0xf2, 0x0f, 0x11, 0x14, 0x24,
-      // 0x48, 0x83, 0xec, 0x10,
-      // 0xf2, 0x0f, 0x11, 0x1c, 0x24,
-      // 0x48, 0x83, 0xec, 0x10,
-      // 0xf2, 0x0f, 0x11, 0x24, 0x24,
-      // 0x48, 0x83, 0xec, 0x10,
-      // 0xf2, 0x0f, 0x11, 0x2c, 0x24,
-      // 0x48, 0x83, 0xec, 0x10,
-      // 0xf2, 0x0f, 0x11, 0x34, 0x24,
-      // 0x48, 0x83, 0xec, 0x10,
-      // 0xf2, 0x0f, 0x11, 0x3c, 0x24
+      0x57
     };
+
+    // unsigned char instr[86] = {
+    //   0x9c,
+    //   0x50,
+    //   0x51,
+    //   0x52,
+    //   0x56,
+    //   0x57,
+    //   0x41, 0x50,
+    //   0x41, 0x51,
+    //   0x41, 0x52,
+    //   0x41, 0x53,
+    //   0x48, 0x83, 0xec, 0x10,
+    //   0xf2, 0x0f, 0x11, 0x04, 0x24,
+    //   0x48, 0x83, 0xec, 0x10,
+    //   0xf2, 0x0f, 0x11, 0x0c, 0x24,
+    //   0x48, 0x83, 0xec, 0x10,
+    //   0xf2, 0x0f, 0x11, 0x14, 0x24,
+    //   0x48, 0x83, 0xec, 0x10,
+    //   0xf2, 0x0f, 0x11, 0x1c, 0x24,
+    //   0x48, 0x83, 0xec, 0x10,
+    //   0xf2, 0x0f, 0x11, 0x24, 0x24,
+    //   0x48, 0x83, 0xec, 0x10,
+    //   0xf2, 0x0f, 0x11, 0x2c, 0x24,
+    //   0x48, 0x83, 0xec, 0x10,
+    //   0xf2, 0x0f, 0x11, 0x34, 0x24,
+    //   0x48, 0x83, 0xec, 0x10,
+    //   0xf2, 0x0f, 0x11, 0x3c, 0x24
+    // };
 
     insert_instructions_at(pivot->prev, instr, sizeof(instr), INSERT_AFTER, &current);
   }
@@ -879,34 +982,39 @@ static void vpt_call_routine(unsigned int total, symbol *callfunc, insn_info *pi
 
   {
     unsigned char instr[3] = {
-    // unsigned char instr[86] = {
-      // 0xf2, 0x0f, 0x10, 0x3c, 0x24,
-      // 0x48, 0x83, 0xc4, 0x10,
-      // 0xf2, 0x0f, 0x10, 0x34, 0x24,
-      // 0x48, 0x83, 0xc4, 0x10,
-      // 0xf2, 0x0f, 0x10, 0x2c, 0x24,
-      // 0x48, 0x83, 0xc4, 0x10,
-      // 0xf2, 0x0f, 0x10, 0x24, 0x24,
-      // 0x48, 0x83, 0xc4, 0x10,
-      // 0xf2, 0x0f, 0x10, 0x1c, 0x24,
-      // 0x48, 0x83, 0xc4, 0x10,
-      // 0xf2, 0x0f, 0x10, 0x14, 0x24,
-      // 0x48, 0x83, 0xc4, 0x10,
-      // 0xf2, 0x0f, 0x10, 0x0c, 0x24,
-      // 0x48, 0x83, 0xc4, 0x10,
-      // 0xf2, 0x0f, 0x10, 0x04, 0x24,
-      // 0x48, 0x83, 0xc4, 0x10,
-      // 0x41, 0x5b,
-      // 0x41, 0x5a,
-      // 0x41, 0x59,
-      // 0x41, 0x58,
       0x5f,
       0x5e,
-      // 0x5a,
-      // 0x59,
-      0x58,
-      // 0x9d
+      0x58
     };
+
+    // unsigned char instr[86] = {
+    //   0xf2, 0x0f, 0x10, 0x3c, 0x24,
+    //   0x48, 0x83, 0xc4, 0x10,
+    //   0xf2, 0x0f, 0x10, 0x34, 0x24,
+    //   0x48, 0x83, 0xc4, 0x10,
+    //   0xf2, 0x0f, 0x10, 0x2c, 0x24,
+    //   0x48, 0x83, 0xc4, 0x10,
+    //   0xf2, 0x0f, 0x10, 0x24, 0x24,
+    //   0x48, 0x83, 0xc4, 0x10,
+    //   0xf2, 0x0f, 0x10, 0x1c, 0x24,
+    //   0x48, 0x83, 0xc4, 0x10,
+    //   0xf2, 0x0f, 0x10, 0x14, 0x24,
+    //   0x48, 0x83, 0xc4, 0x10,
+    //   0xf2, 0x0f, 0x10, 0x0c, 0x24,
+    //   0x48, 0x83, 0xc4, 0x10,
+    //   0xf2, 0x0f, 0x10, 0x04, 0x24,
+    //   0x48, 0x83, 0xc4, 0x10,
+    //   0x41, 0x5b,
+    //   0x41, 0x5a,
+    //   0x41, 0x59,
+    //   0x41, 0x58,
+    //   0x5f,
+    //   0x5e,
+    //   0x5a,
+    //   0x59,
+    //   0x58,
+    //   0x9d
+    // };
 
     insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, NULL);
   }
@@ -915,10 +1023,9 @@ static void vpt_call_routine(unsigned int total, symbol *callfunc, insn_info *pi
 static void vpt_flush(vpage *first, symbol *callfunc, insn_info *flushpoint) {
   size_t index;
 
-  vpage *entry, *prev;
+  vpage *entry;
 
   for (entry = first, index = 0; entry; entry = entry->next, ++index) {
-
     if (index < BUFFER_MAX_SIZE) {
       // If more pages are accessed than the expected number BUFFER_MAX_SIZE,
       // they will be skipped...
@@ -927,11 +1034,8 @@ static void vpt_flush(vpage *first, symbol *callfunc, insn_info *flushpoint) {
       // by means of appropriate instrumentation code, and the final
       // access counter for that page is stored too into the application's
       // address space
-      vpt_instrument_access(entry, index, entry->pivot);
+      vpt_instrument_access(entry, index);
     }
-
-    prev = entry;
-    free(prev);
   }
 
   if (index > 0) {
@@ -950,12 +1054,13 @@ static size_t vpt_track_func(function *func, symbol *callfunc) {
   block_vpt_data *vptdata;
   symbol *sym;
 
-  size_t index, count;
+  size_t count;
 
   first = NULL;
   pivot = NULL;
   count = 0;
 
+  // Instrumentation phase
   for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
     vptdata = blk->vptracker;
 
@@ -976,60 +1081,33 @@ static size_t vpt_track_func(function *func, symbol *callfunc) {
           ++count;
         }
 
-        else if ( (IS_CALL(pivot) && sym && sym->type == SYMBOL_FUNCTION) || pivot == func->end_blk->begin) {
-          hnotice(3, "Found flushpoint at '%s' at <%#08llx>\n",
-            pivot->i.x86.mnemonic, pivot->orig_addr);
-
-          vpt_flush(first, callfunc, pivot);
-
-          first = NULL;
-        }
-
       }
+    }
+
+  }
+
+  // Flushing phase
+  for (pivot = func->insn; pivot; pivot = pivot->next) {
+    sym = pivot->reference;
+
+    if ( (IS_CALL(pivot) && (pivot->jumpto || pivot->jumptable.size > 0 ))
+         || pivot == func->end_blk->begin) {
+      hnotice(3, "Found flushpoint at '%s' at <%#08llx>\n",
+        pivot->i.x86.mnemonic, pivot->orig_addr);
+
+      vpt_flush(first, callfunc, pivot);
     }
   }
 
-  // flushpoint = func->end_blk->begin;
-  // index = 0;
+  // Let's deallocate memory...
+  entry = first;
 
-  // for (entry = first; entry; entry = entry->next) {
-  //   pivot = entry->pivot;
+  while (entry) {
+    prev = entry;
+    entry = entry->next;
 
-  //   if (index < BUFFER_MAX_SIZE) {
-  //     // If more pages are accessed than the expected number BUFFER_MAX_SIZE,
-  //     // they will be skipped...
-
-  //     // The virtual page address is resolved in the application's logic
-  //     // by means of appropriate instrumentation code, and the final
-  //     // access counter for that page is stored too into the application's
-  //     // address space
-  //     vpt_instrument_access(entry, index, pivot);
-
-  //     ++index;
-  //   }
-
-  //   if (entry->flushpoint && entry->flushpoint != flushpoint) {
-  //     flushpoint = entry->flushpoint;
-
-  //     if (index > 0) {
-  //       // The user-defined routine is called accepting the base address of
-  //       // the application-level buffer and the total number of different pages
-  //       // detected in this basic block
-  //       vpt_call_routine(index, callfunc, flushpoint);
-
-  //       index = 0;
-  //     }
-  //   }
-
-  //   prev = entry;
-  //   free(prev);
-  // }
-
-  // if (index > 0) {
-  //   // The user-defined routine is called in the last hardcoded flushpoint
-  //   // which is end of function
-  //   vpt_call_routine(index, callfunc, func->end_blk->begin);
-  // }
+    free(prev);
+  }
 
   return count;
 }

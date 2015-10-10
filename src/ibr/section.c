@@ -26,7 +26,7 @@
 * @date July 13, 2015
 */
 
-#include <strings.h>
+#include <string.h>
 
 #include <hijacker.h>
 #include <prints.h>
@@ -88,6 +88,21 @@ inline section * find_section(unsigned int idx) {
 	sec = PROGRAM(sections);
 	while(sec) {
 		if(sec->index == idx)
+			break;
+		sec = sec->next;
+	}
+
+	return sec;
+}
+
+section *find_section_by_name(unsigned char *name) {
+	section *sec = NULL;
+
+	sec = PROGRAM(sections);
+	while(sec) {
+		if(sec->name && !strcmp(sec->name, name))
+			break;
+		else if (!strcmp(sec_name(sec->index), name))
 			break;
 		sec = sec->next;
 	}

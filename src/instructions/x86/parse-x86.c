@@ -5242,6 +5242,12 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 	// Copia i byte dell'opcode
 	memcpy(state.instrument->opcode, state.opcode, 2);
 
+  // [SE] Copia i rimanenti campi
+  state.instrument->rex = state.rex;
+  state.instrument->modrm = state.modrm;
+  state.instrument->sib = state.sib;
+  state.instrument->sse_prefix = state.sse_prefix;
+  memcpy(state.instrument->prefix, state.prefix, 4);
 
 	state.instrument->insn_size = (state.pos - *pos);
 	*pos = state.pos;

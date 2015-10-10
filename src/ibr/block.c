@@ -443,6 +443,7 @@ void block_graph_dump(function *functions, char *filename, char *mode) {
 
 static void block_graph_visit_next(block_edge *edge, graph_visit *visit) {
 	block *blk;
+	block_edge *current;
 	ll_node *tosched;
 
 	if (visit->dir == VISIT_FORWARD) {
@@ -473,12 +474,12 @@ static void block_graph_visit_next(block_edge *edge, graph_visit *visit) {
 		ll_push(&(visit->scheduled), tosched->elem);
 
 		if (visit->policy == VISIT_DEPTH) {
-			edge = ll_pop(&(visit->scheduled));
+			current = ll_pop(&(visit->scheduled));
 		} else {
-			edge = ll_pop_first(&(visit->scheduled));
+			current = ll_pop_first(&(visit->scheduled));
 		}
 
-		block_graph_visit_next(edge, visit);
+		block_graph_visit_next(current, visit);
 
 		tosched = tosched->next;
 	}
@@ -543,9 +544,11 @@ static bool block_graph_complete_pre(void *elem, void *data) {
 		edge->dir = EDGE_NEXT;
 	}
 
-	// This node becomes part of the current path since we're starting to
-	// explore its successor nodes
-	edge->to->active = true;
+	if (edge->to->visited == false) {
+		// This node becomes part of the current path since we're starting to
+		// explore its successor nodes
+		edge->to->active = true;
+	}
 
 	return true;
 }
@@ -719,7 +722,7 @@ block *block_graph_create(function *functions) {
 						ll_push(&func->callto, callee);
 
 						// TODO: Va fatto da un'altra parte
-						instruction_rela_node(callee->symbol, instr, RELOCATE_RELATIVE_32);
+						// instruction_rela_node(callee->symbol, instr, RELOCATE_RELATIVE_32);
 					}
 				}
 
@@ -746,7 +749,7 @@ block *block_graph_create(function *functions) {
 							ll_push(&func->callto, callee);
 
 							// TODO: Va fatto da un'altra parte
-							instruction_rela_node(callee->symbol, instr, RELOCATE_RELATIVE_32);
+							// instruction_rela_node(callee->symbol, instr, RELOCATE_RELATIVE_32);
 						}
 
 						idx = idx + 1;
@@ -780,7 +783,7 @@ block *block_graph_create(function *functions) {
 						ll_push(&func->callto, callee);
 
 						// TODO: Va fatto da un'altra parte
-						instruction_rela_node(callee->symbol, instr, RELOCATE_RELATIVE_32);
+						// instruction_rela_node(callee->symbol, instr, RELOCATE_RELATIVE_32);
 					}
 				}
 

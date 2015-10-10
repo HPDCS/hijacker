@@ -68,6 +68,11 @@ typedef struct insn_info_x86 {
 	unsigned int opcode_size;	// [DC] Dimensione dell'opcode per l'istruzione
 	int32_t jump_dest;		// Dove punta la jmp
 	bool uses_rip;
+  unsigned char rex;		// Il byte REX, o 0x00
+  unsigned char modrm;		// Byte ModR/M o 0x00
+  unsigned char sib;		// Byte SIB o 0x00
+  unsigned char sse_prefix;	// Terzo byte dell'istruzione SSE/SSE2
+  unsigned char prefix[4];	// Prefissi all'istruzione o 0x00
 } insn_info_x86;
 
 #endif /* _INSTRUCTION_X86_H */
