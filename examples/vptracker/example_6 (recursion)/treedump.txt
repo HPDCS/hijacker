@@ -1,8 +1,0 @@
-Block #5 from <0x000026> to <0x000030> has balance -1, left #2, right #4 and parent #0
-Block #2 from <0x000012> to <0x000017> has balance 0, left #1, right #3 and parent #5
-Block #4 from <0x000037> to <0x00003d> has balance -1, left #6, right #7 and parent #5
-Block #1 from <00000000> to <0x000010> has balance 0, left #0, right #0 and parent #2
-Block #3 from <0x000019> to <0x000021> has balance 0, left #0, right #0 and parent #2
-Block #6 from <0x000035> to <0x000035> has balance 0, left #0, right #0 and parent #4
-Block #7 from <0x00003e> to <0x000047> has balance -1, left #0, right #8 and parent #4
-Block #8 from <0x00004c> to <0x00004e> has balance 0, left #0, right #0 and parent #7
