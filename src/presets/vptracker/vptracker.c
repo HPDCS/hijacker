@@ -161,6 +161,7 @@ inline static void vpt_tls_init() {
 
   tls_buffer->sec = tbss;
   tls_buffer->position = disp;
+  tls_buffer->secnum = tbss->index;
 }
 
 static bool vpt_collect_loop_headers(void *elem, void *data) {
@@ -434,6 +435,7 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
 
         if (target_sec == current_sec) {
           if ( abs(current->sym->position - target->sym->position) < vpagesize ) {
+            hnotice(3, "Found by section correspondence\n");
             found = current;
             break;
           }
@@ -444,15 +446,17 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
         if (target_x86->has_base_register && current_x86->has_base_register) {
           if (target_x86->breg == current_x86->breg
               && abs(target_x86->disp - current_x86->disp) < vpagesize ) {
-            found = current;
-            break;
-          }
-        } else {
-          if ( abs(target_x86->disp - current_x86->disp) < vpagesize ) {
+            hnotice(3, "Found by base register correspondence\n");
             found = current;
             break;
           }
         }
+        // else if (!target_x86->has_base_register && !current_x86->has_base_register) {
+        //   if ( abs(target_x86->disp - current_x86->disp) < vpagesize ) {
+        //     found = current;
+        //     break;
+        //   }
+        // }
       }
 
     }
@@ -491,13 +495,13 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
 static void vpt_resolve_addr(vpage *entry) {
   insn_info *pivot, *current;
   insn_info_x86 *x86;
-  symbol *sym;
+  symbol *sym, *ref;
 
   pivot = entry->pivot;
   x86 = &pivot->i.x86;
   sym = entry->sym;
 
-  bool has_disp;
+  bool has_disp, has_fs;
   unsigned char scale, modrm, sib;
 
   hnotice(3, "Resolving address of memory reference in '%s' at <%#08llx> with %u + (%u + %u * %u)\n",
@@ -523,6 +527,7 @@ static void vpt_resolve_addr(vpage *entry) {
   }
 
   has_disp = true;
+  has_fs = x86->insn[0] == 0x64;
 
   // We replace the source/destination register with %rsi
   modrm = x86->modrm & 0xc7 | 0x30;
@@ -575,11 +580,20 @@ static void vpt_resolve_addr(vpage *entry) {
     if (has_disp == false) {
 
       if (sib != 0) {
-        unsigned char instr[4] = {
-          0x48, 0x8d, modrm, sib
-        };
 
-        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+        if (has_fs == true) {
+          unsigned char instr[9] = {
+            0x64, 0x48, 0x8b, modrm, sib, 0x00, 0x00, 0x00, 0x00
+          };
+
+          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+        } else {
+          unsigned char instr[8] = {
+            0x48, 0x8d, modrm, sib, 0x00, 0x00, 0x00, 0x00
+          };
+
+          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+        }
       } else {
         unsigned char instr[3] = {
           0x48, 0x8d, modrm
@@ -645,23 +659,67 @@ static void vpt_resolve_addr(vpage *entry) {
       instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_64);
     }
 
-    else {
+    else if (sym->relocation.type == R_X86_64_TPOFF32) {
 
-      if (sib != 0) {
-        unsigned char instr[8] = {
-          0x48, 0x8d, modrm, sib, 0x00, 0x00, 0x00, 0x00
-        };
+      if (has_fs) {
+        // We are using the %fs register to displace into a TLS area
 
-        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+        {
+          unsigned char instr[9] = {
+            0x64, 0x48, 0x8b, 0x34, 0x25, 0x00, 0x00, 0x00, 0x00
+          };
+
+          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+        }
+
+        {
+          unsigned char instr[7] = {
+            0x48, 0x8d, 0xb6, 0x00, 0x00, 0x00, 0x00
+          };
+
+          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+        }
       } else {
-        unsigned char instr[7] = {
-          0x48, 0x8d, modrm, 0x00, 0x00, 0x00, 0x00
-        };
+        // We are indirectly displacing into a TLS area using a regular SIB form
 
-        insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+        if (sib != 0) {
+          unsigned char instr[8] = {
+            0x48, 0x8d, modrm, sib, 0x00, 0x00, 0x00, 0x00
+          };
+
+          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+        } else {
+          unsigned char instr[7] = {
+            0x48, 0x8d, modrm, 0x00, 0x00, 0x00, 0x00
+          };
+
+          insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+        }
       }
 
-      instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_64);
+      ref = instruction_rela_node(sym, current, RELOCATE_TLS_RELATIVE_32);
+      ref->relocation.addend = sym->relocation.addend;
+    }
+
+    else {
+
+      hinternal();
+
+      // if (sib != 0) {
+      //   unsigned char instr[8] = {
+      //     0x48, 0x8d, modrm, sib, 0x00, 0x00, 0x00, 0x00
+      //   };
+
+      //   insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+      // } else {
+      //   unsigned char instr[7] = {
+      //     0x48, 0x8d, modrm, 0x00, 0x00, 0x00, 0x00
+      //   };
+
+      //   insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+      // }
+
+      // instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_64);
     }
 
   }
@@ -1064,7 +1122,7 @@ static size_t vpt_track_func(function *func, symbol *callfunc) {
   for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
     vptdata = blk->vptracker;
 
-    if (vptdata->score > threshold) {
+    if (vptdata->score >= threshold) {
       // The block will be instrumented because its assigned score is
       // greater than the acceptance threshold
       hnotice(3, "Instrumenting block #%u with score %f\n", blk->id, vptdata->score);
@@ -1072,7 +1130,8 @@ static size_t vpt_track_func(function *func, symbol *callfunc) {
       for (pivot = blk->begin; pivot != blk->end->next; pivot = pivot->next) {
         sym = pivot->reference;
 
-        if (IS_MEMRD(pivot) || IS_MEMWR(pivot) || (sym && sym->type == SYMBOL_VARIABLE)) {
+        if (IS_MEMRD(pivot) || IS_MEMWR(pivot) || IS_MEMIND(pivot)
+          || (sym && sym->type == SYMBOL_VARIABLE) || (sym && sym->type == SYMBOL_TLS)) {
           hnotice(3, "Checking relevant instruction '%s' at <%#08llx>\n",
             pivot->i.x86.mnemonic, pivot->orig_addr);
 

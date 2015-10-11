@@ -83,7 +83,7 @@ section *add_section(section_type type, int secndx, void *payload, section **fir
  * @return Returns the pointer to the section found, if any, NULL otherwise.
  */
 inline section * find_section(unsigned int idx) {
-	section *sec = 0;
+	section *sec = NULL;
 
 	sec = PROGRAM(sections);
 	while(sec) {

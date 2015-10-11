@@ -88,7 +88,7 @@ static unsigned char *strtab(unsigned int byte) {
 
 static void elf_tls_section(int sec) {
 
-	hnotice(2, "Nothing to do here...\n");
+	hnotice(2, "TLS section found %u\n", sec);
 
 	// We do not need to perform any particular task here...
 
@@ -274,11 +274,12 @@ static void elf_symbol_section(int sec) {
 			// sym->initial = symbol_info(s, st_value);
 			sym->bind = bind;
 
-			hnotice(2, "[%d] %s: '%s' in section %d :: %lld\n", sym->index, (sym->type == SYMBOL_FUNCTION ? "Function" :
+			hnotice(2, "[%d] %s: '%s' [%d] in section %d :: %lld\n",
+				sym->index, (sym->type == SYMBOL_FUNCTION ? "Function" :
 					(sym->type == SYMBOL_UNDEF ? "Undefined" :
 						sym->type == SYMBOL_SECTION ? "Section" :
 							sym->type == SYMBOL_FILE ? "File" :
-								"Variable")), sym->name, sym->secnum, sym->position);
+								"Variable")), sym->name, sym->size, sym->secnum, sym->position);
 
 			// insert symbol
 			sym->next = (symbol *) malloc(sizeof(symbol));
@@ -960,7 +961,7 @@ static void resolve_symbols(void) {
 			if (sym->secnum != SHN_COMMON) {
 				// [SE] The symbol's initial value is copied into a private buffer,
 				// then later flushed to the new ELF file during the emit step
-				sym->initial = malloc(sym->size);
+				sym->initial = calloc(sym->size, 1);
 				memcpy(sym->initial, sec_content(sym->secnum) + sym->position, sym->size);
 				// [/SE]
 
@@ -971,12 +972,14 @@ static void resolve_symbols(void) {
 		case SYMBOL_TLS:
 			hnotice(2, "TLS symbol pointing to section %d (%s)\n", sym->secnum, sec_name(sym->secnum));
 
-			sym->initial = malloc(sym->size);
-			memcpy(sym->initial, sec_content(sym->secnum) + sym->position, sym->size);
+			sym->initial = calloc(sym->size, 1);
+			sym->sec = find_section(sym->secnum);
+
+			if (sec_type(sym->secnum) & SHT_PROGBITS) {
+				memcpy(sym->initial, sec_content(sym->secnum) + sym->position, sym->size);
+			}
 
 			hdump(3, sym->name, sym->initial, sym->size);
-
-			sym->sec = find_section(sym->secnum);
 			break;
 
 		case SYMBOL_UNDEF:

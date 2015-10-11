@@ -369,7 +369,7 @@ insn one_byte_opcode_table[] = {
   /* 8C */
   { "mov", { ADDR_E, ADDR_S, ADDR_0 }, { OP_W, OP_W, OP_0 }, NULL, I_MEMWR },
   /* 8D */
-  { "lea", { ADDR_G, ADDR_M, ADDR_0 }, { OP_V, OP_0, OP_0 }, NULL, 0 },
+  { "lea", { ADDR_G, ADDR_M, ADDR_0 }, { OP_V, OP_0, OP_0 }, NULL, I_MEMIND },
   /* 8E */
   { "mov", { ADDR_S, ADDR_E, ADDR_0 }, { OP_W, OP_W, OP_0 }, NULL, I_MEMRD },
   /* 8F */

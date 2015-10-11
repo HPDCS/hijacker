@@ -298,10 +298,11 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 		case SYMBOL_TLS:
 			sym->type = STT_TLS;
 
-			if (sym->sec->name && !strcmp(sym->sec->name, ".tbss")) {
+			if (tbss && sym->secnum == tbss->index) {
 				shndx = tbss->index;
 			}
-			else if (sym->sec->name && !strcmp(sym->sec->name, ".tdata")) {
+			else if (tdata && sym->secnum == tdata->index) {
+				sym->position = elf_write_data(tdata, sym->initial, sym->size);
 				shndx = tdata->index;
 			}
 			break;
@@ -381,7 +382,7 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 	symbol_table->ptr = (void *)((char *)symbol_table->ptr + size);
 
 	hnotice(3, "Symbol [%u] '%s' (type %d and bind %d) of %d bytes written into section %u at offset <%#08llx>\n", sym->index, sym->name,
-			sym->type, sym->bind, sym->size, symbol_table->index, sym->position);
+			sym->type, sym->bind, sym->size, shndx, sym->position);
 
 	return sym->index;
 }
@@ -787,18 +788,26 @@ static void elf_build(void) {
 
 	if (sym) {
 		section *tbss_orig = find_section_by_name(".tbss");
+
 		tbss = elf_create_section(SHT_NOBITS, sym->size, SHF_ALLOC|SHF_WRITE|SHF_TLS);
 		elf_name_section(tbss, ".tbss");
 		tbss->type = SECTION_TLS;
 
 		set_hdr_info(tbss->header, sh_addralign,
 			header_info(((Section_Hdr *) tbss_orig->header), sh_addralign));
+
+		for (sym = PROGRAM(symbols); sym; sym = sym->next) {
+			if (sym->secnum == tbss_orig->index) {
+				sym->secnum = tbss->index;
+			}
+		}
 	}
 
 	sym = find_symbol(".tdata");
 
 	if (sym) {
 		section *tdata_orig = find_section_by_name(".tdata");
+
 		tdata = elf_create_section(SHT_PROGBITS, sym->size, SHF_ALLOC|SHF_WRITE|SHF_TLS);
 		elf_name_section(tdata, ".tdata");
 		tdata->type = SECTION_TLS;
@@ -1242,14 +1251,13 @@ void elf_generate_file(char *path) {
 		// now we shrink the size of the section in order to envelop exactly section's content
 		// and subsequently, the section will be copied into the file. this is done for all sections registered
 		shrink_section_size(sec);
-		set_hdr_info(sec->header, sh_addralign, 1);
 
 		if(sec->type == SECTION_SYMBOLS) {
 			set_hdr_info(sec->header, sh_addralign, 8);
 		}
 
-		if(sec->type == SECTION_TLS) {
-			// Do nothing
+		else if(sec->type != SECTION_TLS) {
+			set_hdr_info(sec->header, sh_addralign, 1);
 		}
 
 		offset = elf_write_section(file, sec);

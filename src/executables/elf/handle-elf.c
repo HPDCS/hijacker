@@ -248,6 +248,40 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 }
 
 
+static void clone_func_relocation(function *code, int version, unsigned char *suffix) {
+	function *func, *target_func;
+	symbol *sym;
+	insn_info *instr;
+
+	unsigned char name[256];
+
+	for (func = code; func; func = func->next) {
+		for (instr = func->insn; instr; instr = instr->next) {
+			sym = instr->reference;
+
+			if (!IS_CALL(instr) && sym && sym->type == SYMBOL_FUNCTION) {
+				hnotice(3, "Found function '%s' relocation to the instruction '%s' at address <%#08llx>\n",
+					sym->name, instr->i.x86.mnemonic, instr->orig_addr);
+
+				bzero(name, sizeof(name));
+				strcpy(name, sym->name);
+				strcat(name, "_");
+				strcat(name, suffix);
+
+				for (target_func = code; target_func; target_func = target_func->next) {
+					if (!strcmp(target_func->name, name)) {
+						hnotice(3, "Updating relocation with reference to new function '%s'\n",
+							target_func->symbol->name);
+
+						instruction_rela_node(target_func->symbol, instr, RELOCATE_ABSOLUTE_32);
+						break;
+					}
+				}
+			}
+		}
+	}
+}
+
 int switch_executable_version (int version) {
 	function *func, *code;
 
@@ -265,6 +299,7 @@ int switch_executable_version (int version) {
 		// to the new one by appending the user-defined suffix to each new function
 		code = func = clone_function_list(PROGRAM(v_code)[0], (char *)config.rules[version]->suffix);
 		PROGRAM(v_code)[version] = code;
+
 		clone_rodata_relocation(PROGRAM(symbols), code, version, (char *)config.rules[version]->suffix);
 
 		// Relinking jump instructions. Once cloned, instructions are no more
@@ -280,6 +315,8 @@ int switch_executable_version (int version) {
 		}
 
 		// [SE]
+		clone_func_relocation(code, version, (char *)config.rules[version]->suffix);
+
 		PROGRAM(blocks)[version] = block_graph_create(code);
 
 		block_tree_dump("treedump.txt", "a+");
