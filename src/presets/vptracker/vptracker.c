@@ -57,6 +57,7 @@ static symbol *tbss_sym, *tls_buffer;
 
 static float threshold;
 static size_t vpagesize;
+static bool usestack;
 
 
 
@@ -402,6 +403,16 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
   vpage *target, *current, *prev, *found;
   section *target_sec, *current_sec;
 
+  target_x86 = &pivot->i.x86;
+
+  if (usestack == false) {
+    if (target_x86->has_base_register == true && target_x86->breg == 5) {
+      hnotice(3, "Skipping instruction '%s' at <%#08llx> (stack reference)\n",
+        pivot->i.x86.mnemonic, pivot->orig_addr);
+      return;
+    }
+  }
+
   // A new virtual page is created to allow comparison with other
   // previously met virtual pages
   target = calloc(sizeof(vpage), 1);
@@ -416,8 +427,6 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
   if (target->sym) {
     target_sec = find_section(target->sym->secnum);
   }
-
-  target_x86 = &pivot->i.x86;
 
   // We now scan the entire list of captured virtual pages to see if there's
   // a duplicate, in which case the new virtual page gets discarded
@@ -542,39 +551,9 @@ static void vpt_resolve_addr(vpage *entry) {
     has_disp = false;
   }
 
-  // if (x86->has_base_register == false) {
-
-  //   if (x86->has_index_register == false && x86->has_scale == false) {
-  //     // No SIB (no base, no index and no scale)
-  //     modrm = 0x00;
-  //     sib = 0x00;
-  //   } else {
-  //     // SIB = S*I + 0 (no base)
-  //     modrm = 0xb4;
-  //     sib = 0x05 + 0x40 * scale + 0x08 * x86->ireg;
-  //   }
-
-  // } else {
-
-  //   if (x86->has_index_register == false && x86->has_scale == false) {
-  //     // No SIB (no index and no scale)
-  //     modrm = 0xb0 + x86->breg;
-  //     sib = 0x00;
-  //   } else {
-  //     // SIB = S*I + B
-  //     modrm = 0xb0 + x86->breg;
-  //     sib = x86->breg + 0x40 * scale + 0x08 * x86->ireg;
-  //   }
-
-  // }
-
-  // if (x86->modrm <= 0x3f) {
-  //   // It means the MOD field is 00B
-  //   modrm -= 0x80;
-  // }
-
   if (sym == NULL) {
     // No relocation, therefore it's likely to be a heap access
+    // or a base TLS address loading (e.g. MOV %fs:0x0, %reg)
     hnotice(3, "Instruction carries no relocation\n");
 
     if (has_disp == false) {
@@ -588,18 +567,29 @@ static void vpt_resolve_addr(vpage *entry) {
 
           insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
         } else {
+
+          if (x86->has_base_register == true) {
+            modrm += 0x80;
+          } else {
+            // It is probably a LEA used for fast arithmetic computation,
+            // therefore it should be probably discarded
+          }
+
           unsigned char instr[8] = {
             0x48, 0x8d, modrm, sib, 0x00, 0x00, 0x00, 0x00
           };
 
           insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
         }
+
       } else {
+
         unsigned char instr[3] = {
           0x48, 0x8d, modrm
         };
 
         insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+
       }
 
     }
@@ -607,6 +597,7 @@ static void vpt_resolve_addr(vpage *entry) {
     else {
 
       if (sib != 0) {
+
         unsigned char instr[8] = {
           0x48, 0x8d, modrm, sib, 0x00, 0x00, 0x00, 0x00
         };
@@ -614,7 +605,9 @@ static void vpt_resolve_addr(vpage *entry) {
         *(uint32_t *)(instr + 4) = x86->disp;
 
         insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+
       } else {
+
         unsigned char instr[7] = {
           0x48, 0x8d, modrm, 0x00, 0x00, 0x00, 0x00
         };
@@ -622,6 +615,7 @@ static void vpt_resolve_addr(vpage *entry) {
         *(uint32_t *)(instr + 3) = x86->disp;
 
         insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+
       }
 
     }
@@ -639,14 +633,19 @@ static void vpt_resolve_addr(vpage *entry) {
       instruction_rela_node(sym, current, RELOCATE_RELATIVE_32);
     }
 
-    else if (sym->relocation.type == R_X86_64_32) {
+    else if (sym->relocation.type == R_X86_64_32 || sym->relocation.type == R_X86_64_32S) {
       unsigned char instr[7] = {
         0x48, 0xc7, 0xc6, 0x00, 0x00, 0x00, 0x00
       };
 
       insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
-      instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_32);
+      ref = instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_32);
+      ref->relocation.addend = sym->relocation.addend;
+
+      if (sym->relocation.type == R_X86_64_32S) {
+        ref->relocation.type = R_X86_64_32S;
+      }
     }
 
     else if (sym->relocation.type == R_X86_64_64) {
@@ -656,7 +655,8 @@ static void vpt_resolve_addr(vpage *entry) {
 
       insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
-      instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_64);
+      ref = instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_64);
+      ref->relocation.addend = sym->relocation.addend;
     }
 
     else if (sym->relocation.type == R_X86_64_TPOFF32) {
@@ -1177,7 +1177,7 @@ size_t vpt_track(char *name, param **params, size_t numparams) {
 
   size_t count;
 
-  if (numparams > 2) {
+  if (numparams > 3) {
     hinternal();
   }
 
@@ -1185,6 +1185,7 @@ size_t vpt_track(char *name, param **params, size_t numparams) {
   // the virtual page size
   threshold = atof(params[0]->value);
   vpagesize = 1 << (atoi(params[1]->value));
+  usestack = numparams == 3 && !strcmp(params[2]->value, "true");
 
   // A weak symbol is created that represents the user-defined function
   callfunc = create_symbol_node(name, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
