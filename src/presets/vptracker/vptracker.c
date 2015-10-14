@@ -42,7 +42,10 @@
 
 
 typedef struct vpage {
-  unsigned long long counter;
+  size_t counter;
+  size_t index;
+
+  bool instrumented;
 
   symbol *sym;
   block *blk;
@@ -397,7 +400,7 @@ void vpt_init(void) {
   vpt_compute_score();
 }
 
-static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
+static size_t vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
   insn_info_x86 *target_x86, *current_x86;
 
   vpage *target, *current, *prev, *found;
@@ -405,11 +408,13 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
 
   target_x86 = &pivot->i.x86;
 
+  static size_t index;
+
   if (usestack == false) {
     if (target_x86->has_base_register == true && target_x86->breg == 5) {
       hnotice(3, "Skipping instruction '%s' at <%#08llx> (stack reference)\n",
         pivot->i.x86.mnemonic, pivot->orig_addr);
-      return;
+      return 0;
     }
   }
 
@@ -419,6 +424,7 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
 
   target->blk = blk;
   target->pivot = pivot;
+  target->instrumented = false;
 
   if (pivot->reference != NULL) {
     target->sym = pivot->reference;
@@ -484,6 +490,8 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
 
     free(target);
 
+    return 0;
+
   } else {
 
     // We captured a new page, gotcha! It will be later stored into the
@@ -494,9 +502,13 @@ static void vpt_resolve_vpage(block *blk, insn_info *pivot, vpage **list) {
 
     if (*list == NULL) {
       *list = target;
+      target->index = index = 0;
     } else {
       prev->next = target;
+      target->index = index = prev->index + 1;
     }
+
+    return 1;
 
   }
 }
@@ -725,12 +737,14 @@ static void vpt_resolve_addr(vpage *entry) {
   }
 }
 
-static void vpt_instrument_access(vpage *entry, unsigned int index) {
+static void vpt_instrument_access(vpage *entry) {
   insn_info *pivot, *current, *first;
   symbol *sym;
 
   pivot = entry->pivot;
   current = first = NULL;
+
+  entry->instrumented = true;
 
   // Protect old register values
   // ---------------------------
@@ -792,35 +806,35 @@ static void vpt_instrument_access(vpage *entry, unsigned int index) {
 
     sym = instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
     sym->relocation.offset = sym->relocation.addend;
-    sym->relocation.addend = index * BUFFER_ENTRY_SIZE;
+    sym->relocation.addend = entry->index * BUFFER_ENTRY_SIZE;
   }
 
   // Store vpage counter in TLS buffer
   // ---------------------------------
   // MOVQ entry->counter, %fs:disp+index*BUFFER_ENTRY_SIZE+BUFFER_ENTRY_SIZE/2
 
-  if (index == 0) {
-    unsigned char instr[13] = {
-      0x64, 0x48, 0xc7, 0x04, 0x25,
-      0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00
-    };
+  // if (entry->index == 0) {
+  //   unsigned char instr[13] = {
+  //     0x64, 0x48, 0xc7, 0x04, 0x25,
+  //     0x00, 0x00, 0x00, 0x00,
+  //     0x00, 0x00, 0x00, 0x00
+  //   };
 
-    *(uint32_t *)(instr + 9) = entry->counter;
+  //   *(uint32_t *)(instr + 9) = entry->counter;
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+  //   insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
-    sym = instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
-    sym->relocation.offset = sym->relocation.addend;
-    sym->relocation.addend = index * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
-  }
+  //   sym = instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
+  //   sym->relocation.offset = sym->relocation.addend;
+  //   sym->relocation.addend = entry->index * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
+  // }
 
   // Increment vpage counter in TLS buffer
   // -------------------------------------
   // MOVQ entry->counter, %rsi
   // ADD %rsi, %fs:disp+index*BUFFER_ENTRY_SIZE+BUFFER_ENTRY_SIZE/2
 
-  else {
+  // else {
 
     {
       unsigned char instr[7] = {
@@ -841,10 +855,10 @@ static void vpt_instrument_access(vpage *entry, unsigned int index) {
 
       sym = instruction_rela_node(tls_buffer, current, RELOCATE_TLS_RELATIVE_32);
       sym->relocation.offset = sym->relocation.addend;
-      sym->relocation.addend = index * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
+      sym->relocation.addend = entry->index * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
     }
 
-  }
+  // }
 
   // Restore old register values
   // ---------------------------
@@ -1078,47 +1092,23 @@ static void vpt_call_routine(unsigned int total, symbol *callfunc, insn_info *pi
   }
 }
 
-static void vpt_flush(vpage *first, symbol *callfunc, insn_info *flushpoint) {
-  size_t index;
-
-  vpage *entry;
-
-  for (entry = first, index = 0; entry; entry = entry->next, ++index) {
-    if (index < BUFFER_MAX_SIZE) {
-      // If more pages are accessed than the expected number BUFFER_MAX_SIZE,
-      // they will be skipped...
-
-      // The virtual page address is resolved in the application's logic
-      // by means of appropriate instrumentation code, and the final
-      // access counter for that page is stored too into the application's
-      // address space
-      vpt_instrument_access(entry, index);
-    }
-  }
-
-  if (index > 0) {
-    // The user-defined routine is called accepting the base address of
-    // the application-level buffer and the total number of different pages
-    // detected in this basic block
-    vpt_call_routine(index, callfunc, flushpoint);
-  }
-
-}
-
 static size_t vpt_track_func(function *func, symbol *callfunc) {
   vpage *first, *entry, *prev;
-  insn_info *pivot;
+  insn_info *pivot, *flushpoint;
   block *blk;
   block_vpt_data *vptdata;
   symbol *sym;
 
   size_t count;
+  bool is_relevant;
+  bool is_flushpoint;
 
   first = NULL;
   pivot = NULL;
+
+  // Decision phase
   count = 0;
 
-  // Instrumentation phase
   for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
     vptdata = blk->vptracker;
 
@@ -1130,14 +1120,20 @@ static size_t vpt_track_func(function *func, symbol *callfunc) {
       for (pivot = blk->begin; pivot != blk->end->next; pivot = pivot->next) {
         sym = pivot->reference;
 
-        if (IS_MEMRD(pivot) || IS_MEMWR(pivot) || IS_MEMIND(pivot)
-          || (sym && sym->type == SYMBOL_VARIABLE) || (sym && sym->type == SYMBOL_TLS)) {
+        // A relevant instruction is a memory read/write operation,
+        // an indirect memory address computation (e.g. LEA),
+        // plus every instruction which refers to a symbol which is either
+        // in global data regions (i.e. .data, .bss, .rodata)
+        // or thread-local ones (i.e. .tdata, .tbss)
+        is_relevant = IS_MEMRD(pivot) || IS_MEMWR(pivot) || IS_MEMIND(pivot);
+        is_relevant = is_relevant || (sym && sym->type == SYMBOL_VARIABLE);
+        is_relevant = is_relevant || (sym && sym->type == SYMBOL_TLS);
+
+        if (is_relevant) {
           hnotice(3, "Checking relevant instruction '%s' at <%#08llx>\n",
             pivot->i.x86.mnemonic, pivot->orig_addr);
 
-          vpt_resolve_vpage(blk, pivot, &first);
-
-          ++count;
+          count += vpt_resolve_vpage(blk, pivot, &first);
         }
 
       }
@@ -1145,16 +1141,51 @@ static size_t vpt_track_func(function *func, symbol *callfunc) {
 
   }
 
-  // Flushing phase
-  for (pivot = func->insn; pivot; pivot = pivot->next) {
-    sym = pivot->reference;
+  // Instrumentation and flushing phase
+  count = count > BUFFER_MAX_SIZE ? BUFFER_MAX_SIZE : count;
+  // prev = first;
 
-    if ( (IS_CALL(pivot) && (pivot->jumpto || pivot->jumptable.size > 0 ))
-         || pivot == func->end_blk->begin) {
-      hnotice(3, "Found flushpoint at '%s' at <%#08llx>\n",
-        pivot->i.x86.mnemonic, pivot->orig_addr);
+  for (flushpoint = func->insn; flushpoint; flushpoint = flushpoint->next) {
+    sym = flushpoint->reference;
 
-      vpt_flush(first, callfunc, pivot);
+    // A flushpoint is a call to a local function plus the first instruction of the
+    // last basic block for the current function
+    is_flushpoint = IS_CALL(flushpoint) && (flushpoint->jumpto || flushpoint->jumptable.size > 0);
+    is_flushpoint = is_flushpoint || flushpoint == func->end_blk->begin;
+
+    if (is_flushpoint) {
+      hnotice(3, "Found flushpoint '%s' at <%#08llx>\n",
+        flushpoint->i.x86.mnemonic, flushpoint->orig_addr);
+
+      // for (entry = prev; entry; entry = entry->next) {
+      for (entry = first; entry; entry = entry->next) {
+        // If we reach the maximum number of instructions that can be instrumented,
+        // or the current entry is beyond the current flashpoint, then the cycle is
+        // interrupted.
+        // if (entry->index >= count || entry->pivot->orig_addr > flushpoint->orig_addr) {
+        //   break;
+        // }
+        if (entry->index >= count) {
+          break;
+        }
+
+        // The virtual page address is resolved in the application's logic
+        // by means of appropriate instrumentation code, and the final
+        // access counter for that page in the current basic block
+        // is stored too into the application's address space
+        if (entry->instrumented == false) {
+          vpt_instrument_access(entry);
+        }
+      }
+
+      if (count > 0) {
+        // The user-defined routine is called with the base address of
+        // the application-level buffer and the total number of
+        // distinct pages detected in this function
+        vpt_call_routine(count, callfunc, flushpoint);
+      }
+
+      // prev = entry;
     }
   }
 
@@ -1175,7 +1206,7 @@ size_t vpt_track(char *name, param **params, size_t numparams) {
   symbol *callfunc;
   function *func;
 
-  size_t count;
+  size_t count, func_count;
 
   if (numparams > 3) {
     hinternal();
@@ -1195,7 +1226,10 @@ size_t vpt_track(char *name, param **params, size_t numparams) {
 
   for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
 
-    if (ll_empty(&func->callto)) {
+    func_count = vpt_track_func(func, callfunc);
+    count += func_count;
+
+    if (func_count > 0 && ll_empty(&func->callto)) {
       // Protect the stack
       // -----------------
       // SUB $0x80, %rsp
@@ -1207,10 +1241,8 @@ size_t vpt_track(char *name, param **params, size_t numparams) {
       insert_instructions_at(func->begin_blk->end, instr, sizeof(instr), INSERT_AFTER, NULL);
     }
 
-    count += vpt_track_func(func, callfunc);
-
-    if (ll_empty(&func->callto)) {
-      // Protect the stack
+    if (func_count > 0 && ll_empty(&func->callto)) {
+      // Unprotect the stack
       // -----------------
       // ADD $0x80, %rsp
 
