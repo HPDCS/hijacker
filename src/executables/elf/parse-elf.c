@@ -521,30 +521,57 @@ static reloc *find_reloc(section *sec, unsigned long offset) {
 
 
 static void resolve_jump_table(function *func, insn_info *instr,
-	unsigned int secnum, unsigned long addr, unsigned long long size) {
+	unsigned int secnum, unsigned long addr, unsigned long long size, symbol *text) {
 
 	insn_info *target;
 	section *sec;
-	reloc *rel;
+	symbol *rel;
 	function *foo;
+
+	linked_list relocs;
+	ll_node *relnode;
+
+	unsigned char *toname;
 
 	unsigned int i;
 
-	sec = find_section(secnum);
+	// sec = find_section(secnum);
 
-	if (!sec) {
-		hinternal();
+	// if (!sec) {
+	// 	hinternal();
+	// }
+
+	relocs.first = relocs.last = NULL;
+	toname = (text == NULL) ? (unsigned char*)".text" : text->name;
+	rel = NULL;
+
+	find_relocations(symbols->payload, sec_name(secnum), toname, &relocs);
+
+	// printf("%s %p\n", sec_name(secnum), addr);
+
+	for (relnode = relocs.first; relnode; relnode = relnode->next) {
+		rel = relnode->elem;
+
+		// printf("%p %p\n", addr, rel->relocation.offset);
+
+		if (rel->relocation.offset == addr) {
+			break;
+		}
 	}
 
-	rel = find_reloc(sec, addr);
-
-	if (!rel) {
-		// [SE] TODO: clone_rodata_relocation in handle-elf.c non riflette
-		// l'inserimento di nuove rilocazioni dentro la rispettiva struct section
-		// quindi al momento dell'instrumentazione (cioè a parsing già terminato)
-		// si incappa in questo branch
+	if (rel == NULL) {
 		return;
 	}
+
+	// rel = find_reloc(sec, addr);
+
+	// if (!rel) {
+	// 	// [SE] TODO: clone_rodata_relocation in handle-elf.c non riflette
+	// 	// l'inserimento di nuove rilocazioni dentro la rispettiva struct section
+	// 	// quindi al momento dell'instrumentazione (cioè a parsing già terminato)
+	// 	// si incappa in questo branch
+	// 	return;
+	// }
 
 	instr->jumptable.size = size;
 	instr->jumptable.entry = malloc(sizeof(insn_info *) * size);
@@ -552,23 +579,24 @@ static void resolve_jump_table(function *func, insn_info *instr,
 	// Keep parsing relocation entries until we reach the
 	// boundary of the jump table
 	i = 0;
-	while(i < size && rel) {
+	while(i < size && relnode) {
+		rel = relnode->elem;
 
 		if (IS_JUMPIND(instr)) {
-			target = find_insn(func, rel->addend, true);
+			target = find_insn(func, rel->relocation.addend, true);
 
 			set_jumptable_entry(instr, target, i);
 		}
 
 		else if (IS_CALLIND(instr)) {
-			foo = rel->symbol->func;
+			foo = rel->func;
 
-			if (rel->addend) {
+			if (rel->relocation.addend) {
 				// It doesn't make much sense to compute the address of a function
 				// from the address of another function and a displacement, but we
 				// handle that possibility anyway...
 				// [SE] TODO: Questo branch è abbastanza inutile
-				target = find_insn(NULL, foo->insn->orig_addr + rel->addend, true);
+				target = find_insn(NULL, foo->insn->orig_addr + rel->relocation.addend, true);
 
 				if (!target) {
 					hinternal();
@@ -588,12 +616,12 @@ static void resolve_jump_table(function *func, insn_info *instr,
 		}
 
 		i = i + 1;
-		rel = rel->next;
+		relnode = relnode->next;
 	}
 }
 
 // [SE] TODO: Funzione abbastanza rozzetta, da rivedere
-static void *infer_jump_table(function *func, insn_info *instr) {
+static void *infer_jump_table(function *func, insn_info *instr, symbol *text) {
 	insn_info *backinstr;
 	symbol *sym;
 
@@ -661,7 +689,7 @@ static void *infer_jump_table(function *func, insn_info *instr) {
 			// the last case statement, hence it must be increased by one if we
 			// wish to use it as the size of the jump table
 			size = size + 1;
-			resolve_jump_table(func, instr, secnum, start, size);
+			resolve_jump_table(func, instr, secnum, start, size, text);
 		}
 
 	}
@@ -711,7 +739,7 @@ static void *infer_jump_table(function *func, insn_info *instr) {
 			hnotice(6, "Array named %s starting at %s + <%#08llx> and sized %u\n",
 				sym->name, sec_name(sym->secnum), start, size);
 
-			resolve_jump_table(NULL, instr, secnum, start, size);
+			resolve_jump_table(NULL, instr, secnum, start, size, text);
 		}
 
 	}
@@ -732,7 +760,7 @@ static void *infer_jump_table(function *func, insn_info *instr) {
  * @param func The pointer to a valid function's descriptors
  */
 
-void link_jump_instructions(function *func, function *code_version) {
+void link_jump_instructions(function *func, function *code_version, symbol *text) {
 	insn_info *instr;	// Current instruction
 	insn_info *dest;	// Destination one
 	function *callee;	// Callee function
@@ -762,7 +790,7 @@ void link_jump_instructions(function *func, function *code_version) {
 				// NOTE: This is a very naive and loose algorithm that may fail
 				// in several cases, and is not kitten-proof! Beware!
 
-				infer_jump_table(func, instr);
+				infer_jump_table(func, instr, text);
 			}
 
 			else {
@@ -800,7 +828,7 @@ void link_jump_instructions(function *func, function *code_version) {
 			if (IS_CALLIND(instr)) {
 				// [SE] Handle indirect calls (tricky, uses the same naive algorithm
 				// as for switch-case statements)
-				infer_jump_table(func, instr);
+				infer_jump_table(func, instr, text);
 			}
 
 			else {
@@ -1233,7 +1261,7 @@ static void resolve_jumps(void) {
 	// links the jump instructions
 	func = functions;
 	while(func) {
-		link_jump_instructions(func, functions);
+		link_jump_instructions(func, functions, NULL);
 
 		func = func->next;
 	}

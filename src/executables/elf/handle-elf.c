@@ -139,82 +139,12 @@ void create_rela_node(symbol *sym, long long offset, long addend, unsigned char 
 }
 
 
-static linked_list *order_rodata_relocation(symbol *original, function *code) {
-	linked_list *ordered;
-	ll_node *node, *newnode;
-
-	bool put;
-
-	symbol *sym, *other;
-	function *func;
-
-	ordered = calloc(sizeof(linked_list), 1);
-
-	for (sym = original; sym != NULL; sym = sym->next) {
-
-		if (sym->version == 0 && sym->relocation.secname != NULL) {
-
-			// Looks for relocations in '.rodata' that refer to '.text' addresses
-			// (i.e. case statements) from the original code
-			if(!strcmp(sym->name, ".text") && !strcmp(sym->relocation.secname, ".rodata")) {
-
-				if (ll_empty(ordered)) {
-					ll_push(ordered, sym);
-				} else {
-					put = false;
-
-					for (node = ordered->first; node; node = node->next) {
-						other = node->elem;
-
-						if (other->relocation.offset > sym->relocation.offset) {
-							if (node == ordered->first) {
-								ll_push_first(ordered, sym);
-							} else {
-								newnode = calloc(sizeof(ll_node), 1);
-								newnode->elem = sym;
-								newnode->prev = node->prev;
-								newnode->next = node;
-
-								newnode->prev->next = newnode;
-								newnode->next->prev = newnode;
-							}
-
-							put = true;
-							break;
-						}
-					}
-
-					if (put == false) {
-						ll_push(ordered, sym);
-					}
-				}
-
-			}
-
-		}
-
-	}
-
-	return ordered;
-}
-
-
-static void clone_rodata_relocation(symbol *original, function *code, int version, unsigned char *suffix) {
-	symbol *sym, *text, *ref, *rodata;
+static void clone_rodata_relocation(symbol *original, function *code, int version, symbol *text) {
+	symbol *sym, *ref, *rodata;
 	function *func;
 	insn_info *instr;
 
-	unsigned char name[256];
 	unsigned int offset;
-
-	// A new section symbol is created that represents the .text.xyz section
-	// holding the current version's code. This step is mandatory to have the
-	// relocation towards the .text.xyz section aligned for the switch cases.
-	bzero(name, sizeof(name));
-	strcpy(name, ".text.");
-	strcat(name, (unsigned char *)suffix);
-
-	text = create_symbol_node((unsigned char *)name, SYMBOL_SECTION, SYMBOL_LOCAL, 0);
 
 	// Rather than creating as many read-only sections as the number of executable
 	// versions, we reuse the same '.rodata' section for all versions. Specifically,
@@ -227,12 +157,20 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 		return;
 	}
 
-	linked_list *ordered = order_rodata_relocation(original, code);
+	linked_list ordered = { NULL, NULL };
+
+	find_relocations(original, ".rodata", ".text", &ordered);
+
+	// linked_list *ordered = order_rodata_relocation(original, code);
 
 	offset = rodata->size;
 
-	while (!ll_empty(ordered)) {
-		sym = ll_pop_first(ordered);
+	while (!ll_empty(&ordered)) {
+		sym = ll_pop_first(&ordered);
+
+		if (sym->version > 0) {
+			continue;
+		}
 
 		// printf("%s\n", sym->name);
 
@@ -251,6 +189,7 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 					// updated accordingly (since the entire jump table is duplicated)
 
 					ref = symbol_check_shared(instr->reference);
+					ref->version = version;
 
 					ref->relocation.offset = instr->reference->relocation.offset;
 					ref->relocation.addend = offset;
@@ -270,6 +209,7 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 					// so that the original relocation from version 0 and the instruction from
 					// the current version aren't linked anymore
 					ref = symbol_check_shared(text);
+					ref->version = version;
 
 					ref->relocation.offset = offset;
 					ref->relocation.addend = sym->relocation.addend;
@@ -339,6 +279,8 @@ static void clone_func_relocation(function *code, int version, unsigned char *su
 
 int switch_executable_version (int version) {
 	function *func, *code;
+	symbol *text;
+	unsigned char name[256];
 
 	// Updates the current working version of the binary representation
 	PROGRAM(version) = version;
@@ -355,17 +297,24 @@ int switch_executable_version (int version) {
 		code = func = clone_function_list(PROGRAM(v_code)[0], (char *)config.rules[version]->suffix);
 		PROGRAM(v_code)[version] = code;
 
-		clone_rodata_relocation(PROGRAM(symbols), code, version, (char *)config.rules[version]->suffix);
+		// A new section symbol is created that represents the .text.xyz section
+		// holding the current version's code. This step is mandatory to have the
+		// relocation towards the .text.xyz section aligned for the switch cases.
+		bzero(name, sizeof(name));
+		strcpy(name, ".text.");
+		strcat(name, (unsigned char *)config.rules[version]->suffix);
+		text = create_symbol_node((unsigned char *)name, SYMBOL_SECTION, SYMBOL_LOCAL, 0);
+
+		// [SE] Jump tables are cloned, too
+		clone_rodata_relocation(PROGRAM(symbols), code, version, text);
 
 		// Relinking jump instructions. Once cloned, instructions are no more
 		// linked together; this task belongs to the parsing stage, nevertheless
 		// we have to re-execute it in order to realign the representation's semantics
 		// During the cloning operation, each instruction will be unreferenced otherwise
 		// we they still points to the old original copy, which would be incorrect!
-
-		// Iterates all over the functions
 		while(func) {
-			link_jump_instructions(func, code);
+			link_jump_instructions(func, code, text);
 			func = func->next;
 		}
 

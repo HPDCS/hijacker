@@ -249,3 +249,55 @@ static symbol *clone_symbol_list (symbol *sym) {
 }
 */
 
+void find_relocations(symbol *symbols, unsigned char *in, unsigned char *to, linked_list *list) {
+	symbol *sym, *other;
+	unsigned char *secname;
+
+	ll_node *node, *newnode;
+	bool put;
+
+	if (in == NULL || to == NULL || list == NULL) {
+		hinternal();
+	}
+
+	for (sym = symbols; sym; sym = sym->next) {
+		secname = sym->relocation.secname;
+
+		if (secname != NULL) {
+			if (!strcmp(secname, in) && !strcmp(sym->name, to)) {
+
+				if (ll_empty(list)) {
+					ll_push(list, sym);
+				} else {
+					put = false;
+
+					for (node = list->first; node; node = node->next) {
+						other = node->elem;
+
+						if (other->relocation.offset > sym->relocation.offset) {
+							if (node == list->first) {
+								ll_push_first(list, sym);
+							} else {
+								newnode = calloc(sizeof(ll_node), 1);
+								newnode->elem = sym;
+								newnode->prev = node->prev;
+								newnode->next = node;
+
+								newnode->prev->next = newnode;
+								newnode->next->prev = newnode;
+							}
+
+							put = true;
+							break;
+						}
+					}
+
+					if (put == false) {
+						ll_push(list, sym);
+					}
+				}
+
+			}
+		}
+	}
+}
