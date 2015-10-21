@@ -273,7 +273,9 @@ int elf_write_symbol(section *symbol_table, symbol *sym, section *string_table, 
 			// that is the variable is not allocated yet; otherwise .data section
 			// must be filled up with the relative content
 			if(sym->secnum != SHN_COMMON) {
-				sym->position = elf_write_data(data_sec, sym->initial, sym->size);
+				if (sym->secnum == data->index) {
+					sym->position = elf_write_data(data_sec, sym->initial, sym->size);
+				}
 				shndx = data_sec->index;	// TODO: it must be updated in order to support multiple .data sections
 			}
 			sym->type = STT_OBJECT;
@@ -1151,7 +1153,7 @@ static void elf_fill_sections(void) {
 			}
 
 			hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n", sym->name, sym->secnum, sym->size);
-			elf_write_data(bss, sec->payload, sym->size);
+			//elf_write_data(bss, sec->payload, sym->size);
 
 		} else if(sec->name && !strcmp(sec->name, ".tbss")) {
 			sym = find_symbol((unsigned char *) sec->name);

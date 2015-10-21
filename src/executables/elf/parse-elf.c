@@ -112,7 +112,9 @@ static void elf_raw_section(int sec) {
 	// We do not need to perform any particular task here...
 	add_section(SECTION_RAW, sec, sec_content(sec), NULL);
 
-	hdump(3, sec_name(sec), sec_content(sec), sec_size(sec));
+	if (sec_type(sec) & SHT_PROGBITS) {
+		hdump(3, sec_name(sec), sec_content(sec), sec_size(sec));
+	}
 
 	hsuccess();
 
@@ -990,7 +992,10 @@ static void resolve_symbols(void) {
 				// [SE] The symbol's initial value is copied into a private buffer,
 				// then later flushed to the new ELF file during the emit step
 				sym->initial = calloc(sym->size, 1);
-				memcpy(sym->initial, sec_content(sym->secnum) + sym->position, sym->size);
+
+				if (sec_type(sym->secnum) & SHT_PROGBITS) {
+					memcpy(sym->initial, sec_content(sym->secnum) + sym->position, sym->size);
+				}
 				// [/SE]
 
 				hdump(3, sym->name, sym->initial, sym->size);

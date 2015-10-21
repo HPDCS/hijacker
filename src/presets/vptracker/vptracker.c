@@ -321,8 +321,48 @@ inline static void vpt_compute_cycles() {
   }
 }
 
-inline static void vpt_compute_readratio() {
-  // TODO: Non implementata
+inline static void vpt_compute_memratio() {
+  block *blk;
+  block_vpt_data *vptdata;
+
+  insn_info *pivot;
+  symbol *sym;
+  bool is_relevant;
+
+  size_t memcount, highest;
+
+  highest = 0;
+
+  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+    vptdata = blk->vptracker;
+    memcount = 0;
+
+    for (pivot = blk->begin; pivot != blk->end->next; pivot = pivot->next) {
+      sym = pivot->reference;
+
+      is_relevant = IS_MEMRD(pivot) || IS_MEMWR(pivot) || IS_MEMIND(pivot);
+      is_relevant = is_relevant || (sym && sym->type == SYMBOL_VARIABLE);
+      is_relevant = is_relevant || (sym && sym->type == SYMBOL_TLS);
+
+      if (is_relevant) {
+        memcount += 1;
+      }
+    }
+
+    vptdata->memratio = memcount * memcount / blk->length;
+
+    if (highest < memcount) {
+      highest = memcount;
+    }
+  }
+
+  highest = highest > 0 ? highest : 1;
+
+  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+    vptdata = blk->vptracker;
+
+    vptdata->memratio /= highest;
+  }
 }
 
 inline static void vpt_compute_hasvector() {
@@ -338,7 +378,7 @@ inline static void vpt_compute_score() {
   // Features are computed
   vpt_compute_cycles();
 
-  vpt_compute_readratio();
+  vpt_compute_memratio();
 
   vpt_compute_hasvector();
 
@@ -351,7 +391,7 @@ inline static void vpt_compute_score() {
 
     vptdata->score = (
         vptdata->cycles
-      + vptdata->readratio
+      + vptdata->memratio
       + vptdata->hasvector
     );
 
