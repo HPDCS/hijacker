@@ -172,7 +172,7 @@ int main(size_t argc, char **argv) {
       printf("Relocation in section `%s` at %p to symbol '%s' +%p\n",
         sec->name, rel->address, (*rel->sym_ptr_ptr)->name, rel->addend);
 
-      printf("\n\t%s\n\n", rel->howto->name);
+      printf("\n\t%s\t%s\n\n", rel->howto->name, bfd_get_reloc_code_name(rel->howto->type));
     }
   }
 
