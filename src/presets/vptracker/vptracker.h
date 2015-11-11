@@ -34,7 +34,7 @@
 typedef struct {
   // Block-level features
   unsigned int cycles;    // Number of program cycles to which this block participates
-  float readratio;        // Number of read operations over block length
+  float memratio;        // Number of read operations over block length
   bool hasvector;         // True if it has vector operations
   float score;            // Final instrumentation score
 

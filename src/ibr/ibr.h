@@ -285,6 +285,7 @@ extern symbol *find_symbol(unsigned char *name);
 extern symbol *create_symbol_node(unsigned char *name, symbol_type type, symbol_bind bind, int size);
 extern symbol *symbol_check_shared(symbol *sym);
 extern symbol *clone_symbol(symbol *sym);
+extern void find_relocations(symbol *symbols, unsigned char *in, unsigned char *to, linked_list *list);
 
 /* function.c */
 
