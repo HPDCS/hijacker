@@ -678,7 +678,7 @@ static void *infer_jump_table(function *func, insn_info *instr) {
 			if (IS_MEMRD(backinstr) || IS_MEMWR(backinstr)) {
 				sym = backinstr->reference;
 
-				if (sym) {
+				if (sym != NULL) {
 					// Single function pointer
 					if (sym->type == SYMBOL_FUNCTION) {
 						foo = sym->func;
@@ -690,6 +690,8 @@ static void *infer_jump_table(function *func, insn_info *instr) {
 						size = sym->size / sizeof(char *);
 					}
 					else {
+						backinstr = backinstr->prev;
+						i = i + 1;
 						continue;
 					}
 
