@@ -89,6 +89,7 @@ typedef struct Preset {
 
 typedef struct Instruction {
 	unsigned int	flags;
+	unsigned int	skipFlags;
 	Call		*call;
 	int		nAssembly;
 	Assembly	*assembly[MAX_CHILDREN];

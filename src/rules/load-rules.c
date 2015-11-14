@@ -298,6 +298,7 @@ static Instruction *parseInstruction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr 
 	// Get the instruction's attributes
 	if (cur != NULL) {
 		ret->flags = parseInstructionFlags(xmlGetProp(cur, (const xmlChar *)"type"));
+		ret->skipFlags = parseInstructionFlags(xmlGetProp(cur, (const xmlChar *)"skip"));
 		ret->before = xmlGetProp(cur, (const xmlChar *)"injectBefore");
 		ret->after = xmlGetProp(cur, (const xmlChar *)"injectAfter");
 		ret->replace = xmlGetProp(cur, (const xmlChar *)"replace");
