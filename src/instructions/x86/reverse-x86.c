@@ -104,12 +104,17 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	unsigned char add[7] = {0x48, 0x81, 0xc4, 0x00, 0x00, 0x00, 0x00}; // [SE]
 	unsigned char call[5] = {0xe8, 0x00, 0x00, 0x00, 0x00};
 	unsigned char mov[8] = {0xc7, 0x44, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00};
+	unsigned char pushfw[2] = {0x66, 0x9c};
+	unsigned char popfw[2] = {0x66, 0x9d};
+
+	// Before to do anything we must to preserver EFLAGS register
+	insert_instructions_at(target, pushfw, sizeof(pushfw), INSERT_BEFORE, &instr);
 
 	*(unsigned int *)(sub + 3) = size;
 	*(unsigned int *)(add + 3) = size;
 
 	// add the SUB instruction in order to create a sufficent stack window for the structure
-	insert_instructions_at(target, sub, sizeof(sub), INSERT_BEFORE, &instr);
+	insert_instructions_at(instr, sub, sizeof(sub), INSERT_AFTER, &instr);
 
 	// [SE] For the sake of correctness, any JUMP instruction toward `target` should now
 	// point to the first instruction of the trampoline's preamble.
@@ -178,6 +183,9 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	// note: insn, now, points to the last MOV, therefore the complementary ADD has
 	// to be inserted after that instruction
 	insert_instructions_at(instr, add, sizeof(add), INSERT_AFTER, &instr);
+
+	// After all we need to replace the old EFLAG status
+	insert_instructions_at(instr, popfw, sizeof(popfw), INSERT_AFTER, &instr);
 
 	//TODO: da verificare l'uso di instr e target! E' un po' confuso...
 
