@@ -174,7 +174,6 @@ static void elf_code_section(int sec) {
 				x86_disassemble_instruction(sec_content(sec), &pos, &curr->i.x86, flags);
 				hnotice(6, "%#08lx: %s (%d)\n", curr->i.x86.initial, curr->i.x86.mnemonic, curr->i.x86.opcode_size);
 				hdump(1, "Disassembly", curr->i.x86.insn, 15);
-				hprint("%s, %s works on stack\n", curr->i.x86.mnemonic, curr->i.x86.flags & I_STACK ? "" : "not");
 
 				// Make flags arch-independent
 				curr->flags = curr->i.x86.flags;
@@ -555,7 +554,7 @@ void link_jump_instructions(function *func, function *code_version) {
 			// At this point 'dest' will point to the destination instruction relative to the jump 'instr'
 			instr->jumpto = dest;
 
-			hnotice(4, "Jump instruction at <%#08llx> linked to instruction at <%#08llx>\n", instr->orig_addr, dest->orig_addr);
+			hnotice(3, "Jump instruction at <%#08llx> linked to instruction at <%#08llx>\n", instr->orig_addr, dest->orig_addr);
 
 
 		// a CALL could be seen as a JUMP and could help in handling the embedded offset to local functions

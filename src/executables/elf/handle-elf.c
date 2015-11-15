@@ -622,6 +622,42 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 }
 
 
+static void clone_func_relocation(function *code, int version, unsigned char *suffix) {
+	function *func, *target_func;
+	symbol *sym;
+	insn_info *instr;
+
+	unsigned char name[256];
+
+	for (func = code; func != NULL; func = func->next) {
+		for (instr = func->insn; instr != NULL; instr = instr->next) {
+			sym = instr->reference;
+
+			//if (!IS_CALL(instr) && sym && sym->type == SYMBOL_FUNCTION) {
+			if(IS_CALL(instr) && sym != NULL && sym->type == SYMBOL_FUNCTION) {
+				hnotice(3, "Found function '%s' relocation to the instruction '%s' at address <%#08llx>\n",
+					sym->name, instr->i.x86.mnemonic, instr->orig_addr);
+
+				bzero(name, sizeof(name));
+				strcpy(name, sym->name);
+				strcat(name, "_");
+				strcat(name, suffix);
+
+				for (target_func = code; target_func; target_func = target_func->next) {
+					if (!strcmp(target_func->name, name)) {
+						hnotice(3, "Updating relocation with reference to new function '%s'\n",
+							target_func->symbol->name);
+
+						instruction_rela_node(target_func->symbol, instr, RELOCATE_RELATIVE_64);
+						break;
+					}
+				}
+			}
+		}
+	}
+}
+
+
 int switch_executable_version (int version) {
 	function *func, *code;
 
@@ -656,6 +692,8 @@ int switch_executable_version (int version) {
 			link_jump_instructions(func, code);
 			func = func->next;
 		}
+
+		clone_func_relocation(code, version, (char *)config.rules[version]->suffix);
 
 		hnotice(3, "Version %d of the executable's binary representation created\n", version);
 	}

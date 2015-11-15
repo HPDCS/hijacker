@@ -53,15 +53,18 @@
  * Creates a new instruction descriptor and adds it to the corresponding instructions chain
  * updating all the pointers.
  *
- * @param target Instruction descriptor (<em>insn_info</em>) that represents the instructions
- * referenced to by the rules at which apply it. The <em>flag</em> parameter is used in order
- * to decide if the new node will be added before or after the instruction pointed by <em>offset</em>
+ * @param target Instruction descriptor (<em>insn_info</em>) that represents pivot instruction
+ * 		referenced to by the rules at which apply it. The <em>flag</em> parameter is used in order
+ * 		to decide if the new node will be added before or after the instruction pointed by <em>offset</em>
+ * @param binary It is the buffer containing the raw instruction bytes to write
  * @param bytes Pointer to a buffer of bytes representing the instruction itself in the machine dependent format.
  * @param num_bytes Instruction's length (hence of the <em>bytes</em> parameter).
  * @param flag A flag [INSERT_BEFORE or INSERT_AFTER] indicating where insert the new node with respect to the
  * reference instruction point <em>offset</em>.
+ * @param insn A side-effect paramenter in which the function will write the pointer to the newly inserted instruction
  *
- * @return The pointer to the descriptor of the newly insterted instruction
+ * @return The number of bytes added. Note that this function makes a side effect on the <em>insn</em> parameter,
+ * after the execution it points to the currently inserted instruction.
  */
 //insn_info * insert_instruction_at (function *func, insn_info *offset, char *bytes, size_t num_bytes, int flag);
 int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size, int flag, insn_info **insn);
