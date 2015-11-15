@@ -524,6 +524,7 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 	function *func;
 	insn_info *instr;
 	unsigned char name[256];
+	unsigned int base = 0;
 	unsigned int offset = 0;
 	bool first = true;
 
@@ -555,6 +556,7 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 		return;
 	}
 
+	//base = rodata->size;
 	offset = rodata->size;
 
 	sym = original;
@@ -568,6 +570,12 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 			sym->version == 0) {
 
 			ref = symbol_check_shared(ref);
+
+			//offset = base + sym->relocation.offset;
+
+			/*if(first) {
+				offset -= sym->relocation.offset;
+			}*/
 
 			ref->relocation.offset = offset;
 			ref->relocation.addend = sym->relocation.addend;
@@ -611,7 +619,7 @@ static void clone_rodata_relocation(symbol *original, function *code, int versio
 			// instrumentare le tabelle per gli switch case in alcune condizioni
 			// che tuttavia non sono state ancora identificate...
 			offset += first ? 16 : 8;
-			rodata->size += 8;
+			rodata->size += first ? 16 : 8;
 			first = false;
 		}
 
