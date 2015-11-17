@@ -160,7 +160,7 @@ static void elf_code_section(int sec) {
 				x86_disassemble_instruction(sec_content(sec), &pos, &curr->i.x86, flags);
 				hnotice(6, "%#08lx: %s (%d)\n", curr->i.x86.initial, curr->i.x86.mnemonic, curr->i.x86.opcode_size);
 				hdump(1, "Disassembly", curr->i.x86.insn, 15);
-				hprint("%s, %s works on stack\n", curr->i.x86.mnemonic, curr->i.x86.flags & I_STACK ? "" : "not");
+				//hprint("%s, %s works on stack\n", curr->i.x86.mnemonic, curr->i.x86.flags & I_STACK ? "" : "not");
 
 				// Make flags arch-independent
 				curr->flags = curr->i.x86.flags;
@@ -996,6 +996,7 @@ static void resolve_symbols(void) {
 				// [SE] The symbol's initial value is copied into a private buffer,
 				// then later flushed to the new ELF file during the emit step
 				sym->initial = calloc(sym->size, 1);
+				sym->sec = find_section(sym->secnum);
 
 				if (sec_type(sym->secnum) & SHT_PROGBITS) {
 					memcpy(sym->initial, sec_content(sym->secnum) + sym->position, sym->size);
