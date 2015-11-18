@@ -658,6 +658,12 @@ static void shift_instruction_addresses(insn_info *target, int shift) {
 	}
 
 	foo = prev;
+
+	if (foo) {
+		// Only update the size of the function that contains the target instruction
+		foo->symbol->size += shift;
+	}
+
 	while(foo) {
 
 		instr = foo->insn;
@@ -698,8 +704,6 @@ static void shift_instruction_addresses(insn_info *target, int shift) {
 
 			instr = instr->next;
 		}
-
-		foo->symbol->size += shift;
 
 		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n",
 			foo->symbol->name, foo->insn->new_addr, foo->symbol->size);
