@@ -242,6 +242,9 @@ static unsigned int parseInstructionFlags(xmlChar *str) {
 	char *token;
 	int flags = 0;
 
+	if (str == NULL)
+		return;
+
 	// Make a temporary copy
 	source = (char *)malloc(strlen((char *)str) + 1);
 	strcpy(source, (char *)str);

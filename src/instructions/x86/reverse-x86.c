@@ -107,14 +107,11 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	unsigned char pushfw[2] = {0x66, 0x9c};
 	unsigned char popfw[2] = {0x66, 0x9d};
 
-	// Before to do anything we must to preserver EFLAGS register
-	insert_instructions_at(target, pushfw, sizeof(pushfw), INSERT_BEFORE, &instr);
-
 	*(unsigned int *)(sub + 3) = size;
 	*(unsigned int *)(add + 3) = size;
 
-	// add the SUB instruction in order to create a sufficent stack window for the structure
-	insert_instructions_at(instr, sub, sizeof(sub), INSERT_AFTER, &instr);
+	// Before to do anything we must to preserver EFLAGS register
+	insert_instructions_at(target, pushfw, sizeof(pushfw), INSERT_BEFORE, &instr);
 
 	// [SE] For the sake of correctness, any JUMP instruction toward `target` should now
 	// point to the first instruction of the trampoline's preamble.
@@ -125,6 +122,9 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	if (!target->virtual) {
 		set_virtual_reference(target, instr);
 	}
+
+	// add the SUB instruction in order to create a sufficient stack window for the structure
+	insert_instructions_at(instr, sub, sizeof(sub), INSERT_AFTER, &instr);
 
 	// iterates all over the mov needed
 	for (idx = 0; idx < num; idx++) {

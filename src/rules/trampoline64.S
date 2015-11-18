@@ -135,9 +135,11 @@ trampoline:
 	movslq	(%rdx), %rsi				# Carica la dimensione
 
 	.CallDymelor:
+	# ### ### ###
 	# %rdi contiene l'indirizzo iniziale in cui la movs scriverà
 	# %rsi contiene la dimensione (in byte) della movs
-
+	# ### ### ###
+	
 	# Controllo per vedere se siamo nello stack
 	# TODO: per il controllo nelo stack è necessario un controllo più sofisticato
 	# che tenga conto del multi-threading. (Generalmente pthread alloca con malloc!)

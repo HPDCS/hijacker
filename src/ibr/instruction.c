@@ -528,6 +528,7 @@ void update_instruction_addresses(void) {
 
 	unsigned long long offset;
 	unsigned long long old_offset;
+	unsigned long long foo_size;
 
 	long long rela_offset;
 	long long rela_addend;
@@ -541,6 +542,8 @@ void update_instruction_addresses(void) {
 	while(foo) {
 
 		hnotice(5, "Updating instructions in function '%s'\n", foo->name);
+
+		foo_size = 0;
 
 		instr = foo->insn;
 		while(instr != NULL) {
@@ -557,6 +560,7 @@ void update_instruction_addresses(void) {
 			}
 
 			offset += instr->size;
+			foo_size += instr->size;
 
 			// [SE] Updates the relocation entry to reflect the address update
 			if (instr->reference) {
@@ -574,7 +578,7 @@ void update_instruction_addresses(void) {
 			instr = instr->next;
 		}
 
-		foo->symbol->size = offset;
+		foo->symbol->size = foo_size;
 
 		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n",
 			foo->symbol->name, foo->insn->new_addr, foo->symbol->size);
