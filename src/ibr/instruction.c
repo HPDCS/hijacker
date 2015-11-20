@@ -661,7 +661,9 @@ static void shift_instruction_addresses(insn_info *target, int shift) {
 	}
 
 	foo = prev;
-	if(foo) {
+
+	if (foo) {
+		// Only update the size of the function that contains the target instruction
 		foo->symbol->size += shift;
 	}
 
