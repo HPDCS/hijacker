@@ -136,7 +136,7 @@ struct _block {
   struct _block *next;      // Ordered list of blocks
 
   // Presets-related fields
-  void *vptracker;
+  void *smtracer;
 
   // Callgraph-related fields
   function *callto;         // The function being called by this block

@@ -38,7 +38,7 @@
 #include <rules/apply-rules.h>
 
 // List of registered presets
-#include <vptracker/vptracker.h>
+#include <smtracer/smtracer.h>
 
 
 /// Global configuration
@@ -145,8 +145,8 @@ static bool parse_cmd_line(int argc, char **argv) {
 static void register_presets() {
 	hnotice(1, "Registering presets\n");
 
-	// So far vptracker is the only available preset
-	preset_register("vptracker", vpt_init, vpt_track);
+	// So far smtracer is the only available preset
+	preset_register(PRESET_SMTRACER, smt_init, smt_run);
 
 	hsuccess();
 }

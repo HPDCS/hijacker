@@ -23,7 +23,7 @@ hijacker_SOURCES =	main.c \
 			instructions/x86/parse-x86.c \
 			instructions/x86/reverse-x86.c \
 			presets/presets.c \
-			presets/vptracker/vptracker.c
+			presets/smtracer/smtracer.c
 
 lib_LIBRARIES = libhijacker.a
 libhijacker_a_SOURCES = rules/trampoline64.S
