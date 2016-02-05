@@ -38,10 +38,6 @@
 #include <smtracer/smtracer.h>
 
 
-// TODO: Implementare logica di incarnation number
-// TODO: I cicli devono partire da 1... ma davvero?
-
-
 
 // Size of a single entry in the TLS buffer
 #define BUFFER_ENTRY_SIZE (1<<4)
@@ -97,11 +93,9 @@ inline static bool smt_is_relevant(insn_info *instr) {
   // in global data regions (i.e. .data, .bss, .rodata)
   // or thread-local ones (i.e. .tdata, .tbss)
 
-  // TODO: Verificare che sia corretto
-
   is_relevant = IS_MEMRD(instr) || IS_MEMWR(instr) /* || IS_MEMIND(instr) */;
-  is_relevant = is_relevant || (sym && sym->type == SYMBOL_VARIABLE);
-  is_relevant = is_relevant || (sym && sym->type == SYMBOL_TLS);
+  // is_relevant = is_relevant || (sym && sym->type == SYMBOL_VARIABLE);
+  // is_relevant = is_relevant || (sym && sym->type == SYMBOL_TLS);
 
   return is_relevant;
 }
@@ -425,7 +419,7 @@ static void smt_compute_features(void) {
   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
     smt = blk->smtracer;
 
-    smt->score = smt->cycles + smt->memratio;
+    smt->score = (smt->cycles + 1) * smt->memratio;
 
     if (highest < smt->score) {
       highest = smt->score;
@@ -942,16 +936,12 @@ inline static size_t smt_absdiff_sym(smt_access *target, smt_access *current) {
   current_sec = find_section(current_sym->secnum);
 
   if (target_sec == current_sec) {
-    if (target_sym != current_sym) {
-      return abs(current_sym->position - target_sym->position - target_sym->size);
-    } else {
-      return 0;
-    }
+    // if (target_sym != current_sym) {
+      return abs(current_sym->position - target_sym->position /*- target_sym->size */);
+    // } else {
+    //   return 0;
+    // }
   }
-  // TODO: Rivedere
-  // else {
-  //   return abs(current_sec->position - target_sec->position - target_sec->size);
-  // }
 
   return chunk_size;
 }
@@ -1044,9 +1034,6 @@ static void smt_compute_access_scores(block *blk) {
         // already computed the dual case previously
         continue;
       }
-
-      // TODO: Comprendere meglio cosa succede quando i
-      // template differiscono
 
       if (smt_same_template(target, current)) {
         if (smt_is_irr(target)) {
@@ -1293,7 +1280,17 @@ static void smt_call_routine(unsigned int total, symbol *callfunc, insn_info *pi
 }
 
 static void smt_update_vtable(insn_info *instr, char *vtable) {
-  // TODO: Implement
+  insn_info_x86 *x86;
+
+  x86 = &instr->i.x86;
+
+  if (x86->dest_is_reg == true) {
+    if (x86->reg_dest >= SMT_VTABLE_SIZE) {
+      hinternal();
+    }
+
+    vtable[x86->reg_dest] += 1;
+  }
 }
 
 static bool smt_check_equivalence(smt_access *target, smt_access *current) {
@@ -1428,7 +1425,7 @@ static void smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
 static void smt_trace_block(block *blk) {
   insn_info *instr;
 
-  char vtable[16];
+  char vtable[SMT_VTABLE_SIZE];
 
   // We reset the general-purpose version table at the beginning
   // of a new basic block, as well as the number of

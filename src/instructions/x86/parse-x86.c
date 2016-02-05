@@ -4261,6 +4261,9 @@ void format_addr_g (struct disassembly_state *state, enum addr_method addr, enum
 			fprintf(stderr, "%s: %d: Unexpected operand %d\n", __FILE__, __LINE__, op);
 			break;
 	}
+
+  // [SE] Hack terribile per ottenere il codice del registro destinazione
+  state->instrument->reg_dest = reg_field;
 }
 
 /* format_addr_i
@@ -5223,6 +5226,11 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 		// operando per vedere se l'istruzione accede in memoria!
 		format_addr_op(&state, state.addr[k], state.op[k]);
 		state.read_dest = true;
+
+    // [SE] Hack terribile per capire se un registro è usato come destinazione
+    if (k == 0 && state.addr[k] == ADDR_G) {
+      state.instrument->dest_is_reg = true;
+    }
 	}
 
 	// Copia i byte dell'istruzione

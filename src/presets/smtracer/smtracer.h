@@ -29,19 +29,23 @@
 
 #include <presets.h>
 
+// Name of this preset
 #define PRESET_SMTRACER "smtracer"
+
+// Number of general-purpose registers on x86-64
+#define SMT_VTABLE_SIZE 16
 
 // Basic structures
 typedef struct smt_access {
-  size_t counter;     // Access count
-  size_t index;       // Index in the TLS buffer
+  size_t counter;                 // Access count
+  size_t index;                   // Index in the TLS buffer
 
-  insn_info *insn;    // Instruction performing the access
+  insn_info *insn;                // Instruction performing the access
 
-  bool instrumented;  // True if the access is logged
+  bool instrumented;              // True if the access is logged
 
-  char vtable[16];    // Version table for general-purpose registers
-  float score;        // Access instrumentation score
+  char vtable[SMT_VTABLE_SIZE];   // Version table for general-purpose registers
+  float score;                    // Access instrumentation score
 
   struct smt_access *next;
 } smt_access;
