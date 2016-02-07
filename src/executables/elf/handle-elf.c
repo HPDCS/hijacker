@@ -55,8 +55,9 @@ symbol *instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type)
 			// consider that the addend is backward and -(a - b) == (b - a)
 			break;
 
-		case RELOCATE_ABSOLUTE_32:
-		case RELOCATE_ABSOLUTE_64:
+		// case RELOCATE_ABSOLUTE_32:
+		// case RELOCATE_ABSOLUTE_64:
+		default:
 			addend = 0;
 			break;
 	}

@@ -615,7 +615,7 @@ static void smt_resolve_address(smt_access *access) {
       insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
       ref = instruction_rela_node(sym, current, RELOCATE_RELATIVE_32);
-      ref->relocation.addend = sym->relocation.addend;
+      // ref->relocation.addend = sym->relocation.addend;
     }
 
     else if (sym->relocation.type == R_X86_64_32 || sym->relocation.type == R_X86_64_32S) {
@@ -626,7 +626,7 @@ static void smt_resolve_address(smt_access *access) {
       insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
       ref = instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_32);
-      ref->relocation.addend = sym->relocation.addend;
+      // ref->relocation.addend = sym->relocation.addend;
 
       if (sym->relocation.type == R_X86_64_32S) {
         ref->relocation.type = R_X86_64_32S;
@@ -641,7 +641,7 @@ static void smt_resolve_address(smt_access *access) {
       insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
       ref = instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_64);
-      ref->relocation.addend = sym->relocation.addend;
+      // ref->relocation.addend = sym->relocation.addend;
     }
 
     else if (sym->relocation.type == R_X86_64_TPOFF32) {
@@ -683,7 +683,7 @@ static void smt_resolve_address(smt_access *access) {
       }
 
       ref = instruction_rela_node(sym, current, RELOCATE_TLS_RELATIVE_32);
-      ref->relocation.addend = sym->relocation.addend;
+      // ref->relocation.addend = sym->relocation.addend;
     }
 
     else {
@@ -777,7 +777,6 @@ static void smt_instrument_access(block *blk, smt_access *access) {
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
     ref = instruction_rela_node(tls_buffer_sym, current, RELOCATE_TLS_RELATIVE_32);
-    // ref->relocation.offset = sym->relocation.addend;
     ref->relocation.addend = access->index * BUFFER_ENTRY_SIZE;
   }
 
@@ -805,7 +804,6 @@ static void smt_instrument_access(block *blk, smt_access *access) {
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
     ref = instruction_rela_node(tls_buffer_sym, current, RELOCATE_TLS_RELATIVE_32);
-    // ref->relocation.offset = sym->relocation.addend;
     ref->relocation.addend = access->index * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
   }
 
