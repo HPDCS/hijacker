@@ -1383,12 +1383,11 @@ static void smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
 
   memcpy(target->vtable, vtable, sizeof(target->vtable));
 
-  // We now scan the entire list of captured virtual pages to see if there's
-  // a duplicate, in which case the new virtual page gets discarded
-  found = prev = NULL;
+  // We now scan the entire list of captured accesses to see if there's
+  // a duplicate, in which case the new access gets discarded
+  prev = NULL;
 
-  for (current = smt->candidates; current; current = current->next, prev = current) {
-
+  for (current = smt->candidates; current; prev = current, current = current->next) {
     if (smt_check_equivalence(target, current)) {
       // If an equivalence access were already intercepted,
       // skip this one and increment the counter of the former,
@@ -1396,15 +1395,15 @@ static void smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
       hnotice(3, "Found equivalence between accesses '%s' and '%s'\n",
         target->insn->i.x86.mnemonic, current->insn->i.x86.mnemonic);
 
-      found->counter += 1;
+      current->counter += 1;
 
       free(target);
       return;
     }
   }
 
-  // We captured a new page, gotcha! It will be later stored into the
-  // application's address space
+  // We captured a new access, gotcha! It will be later logged into the
+  // application's TLS buffer
   hnotice(3, "New access found '%s'!\n", target->insn->i.x86.mnemonic);
 
   if (smt->candidates == NULL) {
@@ -1453,7 +1452,7 @@ static size_t smt_trace_func(function *func, symbol *callfunc) {
   size_t count;
 
   insn_info *instr;
-  smt_access *access, *next;
+  smt_access *access, *temp;
 
   // PHASE 1: INSTRUMENTATION
   // ------------------------
@@ -1486,7 +1485,8 @@ static size_t smt_trace_func(function *func, symbol *callfunc) {
       count += smt_instrument_block(blk);
 
       // Free unnecessary heap memory
-      for (access = smt->candidates, next = access->next; access; access = next) {
+      for (access = smt->candidates; access; access = temp) {
+        temp = access->next;
         free(access);
       }
     }
