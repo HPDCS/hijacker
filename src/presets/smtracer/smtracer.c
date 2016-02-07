@@ -847,31 +847,48 @@ static size_t smt_instrument_block(block *blk) {
   ninstr = ceil(overhead * smt->ncandidates);
   cinstr = 0;
 
+  hnotice(3, "Maximum number of instrumentable candidates: %u\n", ninstr);
+
   // Keep instrumenting until there's no more space left
   // in our bag full of overhead...
   while(cinstr < ninstr) {
+    highest = NULL;
 
-    for (access = highest = smt->candidates; access; access = access->next) {
-      if (access->score > highest->score && access->instrumented == false) {
+    for (access = smt->candidates; access; access = access->next) {
+
+      if (highest == NULL && access->instrumented == false) {
+        // The first intercepted access is the first occurring
+        // access which hasn't been instrumented yet
+        highest = access;
+      }
+
+      if (highest != NULL && access->instrumented == false) {
         // NOTE: strict inequality, since our bias is toward the
         // first occurring access within the basic block
-        highest = access;
+        if (access->score > highest->score) {
+          highest = access;
+        }
       }
     }
 
-    if (access == NULL) {
+    if (highest == NULL) {
       // There are no more accesses to instrument
       // NOTE: it should never happen
+      hinternal();
       break;
     }
 
-    smt_instrument_access(blk, access);
+    smt_instrument_access(blk, highest);
 
-    access->instrumented = true;
-    access->index = index;
+    hnotice(3, "Instrumented access '%s' at <%#08llx>\n",
+      highest->insn->i.x86.mnemonic, highest->insn->orig_addr);
+
+    highest->instrumented = true;
+    highest->index = index;
 
     index += 1;
     cinstr += 1;
+
   }
 
   return cinstr;
@@ -1056,6 +1073,9 @@ static void smt_compute_access_scores(block *blk) {
 
     // Compute average distance
     target->score /= smt->ncandidates;
+
+    hnotice(3, "Access score for '%s' at <%#08llx> is '%0.2f'\n",
+      target->insn->i.x86.mnemonic, target->insn->orig_addr, target->score);
   }
 }
 
@@ -1404,7 +1424,8 @@ static void smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
 
   // We captured a new access, gotcha! It will be later logged into the
   // application's TLS buffer
-  hnotice(3, "New access found '%s'!\n", target->insn->i.x86.mnemonic);
+  hnotice(3, "New access found '%s' at <%#08llx>\n",
+    target->insn->i.x86.mnemonic, target->insn->orig_addr);
 
   if (smt->candidates == NULL) {
     smt->candidates = target;
