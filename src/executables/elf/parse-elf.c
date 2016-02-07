@@ -1286,8 +1286,10 @@ static void resolve_blocks(void) {
 
 	// We spit out some boring textual representation of both the balanced tree
 	// and the final flow graph
-	block_tree_dump("treedump.txt", "w+");
-	block_graph_dump(functions, "graphdump.txt", "w+");
+	if (config.verbose > 5) {
+		block_tree_dump("treedump.txt", "w+");
+		block_graph_dump(functions, "graphdump.txt", "w+");
+	}
 
 	hsuccess();
 }
