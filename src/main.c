@@ -71,12 +71,21 @@ static void process_configuration(char **argv) {
 		display_usage(argv);
 		herror(true, "Input file must be specified\n");
 	}
+	else if(!file_exists(config.input)) {
+		display_usage(argv);
+		herror(true, "Unable to find the requested input file\n");
+	}
 
 	// Early check on configuration file
 	if(config.rules_file == NULL) {
 		display_usage(argv);
 		herror(true, "Configuration-rules file must be specified\n");
 	}
+	else if(!file_exists(config.rules_file)) {
+		display_usage(argv);
+		herror(true, "Unable to find the requested configuration-rules file\n");
+	}
+
 
 	// Load the configuration file
 	hnotice(1, "Loading configuration file '%s'... \n", config.rules_file);

@@ -547,11 +547,6 @@ int parseRuleFile(char *f, Executable ***rules) {
 	int size;
 	register int i;
 
-	// Early check on file existence to avoid ugly error messages
-	if(!file_exists(f)) {
-		return -1;
-	}
-
 	// Do not generate nodes for formatting spaces
 	LIBXML_TEST_VERSION xmlKeepBlanksDefault(0);
 
