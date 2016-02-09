@@ -61,36 +61,43 @@ static section *tdata;
 
 /**
  * Check if the section has enough available space.
- * If the section could not sustain the required space, than
- * automatically it will be double its size.
+ * If the section cannot sustain the required space,
+ * its size is automatically doubled.
  *
  * @param sec Section descriptor
  * @param span Integer representing the size to be written
  */
 inline static void check_section_size(section *sec, int span) {
 	Section_Hdr *hdr;
-	unsigned long long offset;
-	unsigned long long size = 0;
-
+	unsigned long long offset, size;
 
 	hdr = (Section_Hdr *) sec->header;
 
 	offset = ((char *)sec->ptr - (char *)sec->payload);
 	size = header_info(hdr, sh_size);
 
-	hnotice(6, "Check if section '%s' (index %u) has enough available space (Available = %llu, Needed = %d, Offset = %llu)\n",
+	hnotice(6, "Check if section '%s' (index %u) has enough available space "
+		"(Available = %llu, Needed = %d, Offset = %llu)\n",
 		sec->name, sec->index, (size - offset), span, offset);
 
-	if(size == 0)
+	if (size == 0) {
 		size = SECTION_INIT_SIZE;
+	}
 
-	if(sec->ptr == NULL) {
+	if (sec->ptr == NULL) {
 		sec->ptr = sec->payload = malloc(size);
+
 		hnotice(6, "Allocated %llu bytes for section %u\n", size, sec->index);
-	} else if (((char *)sec->ptr + span) >= ((char *)sec->payload + size)) {
+	}
+
+	while (((char *)sec->ptr + span) >= ((char *)sec->payload + size)) {
 		size *= 2;
+
 		sec->ptr = sec->payload = realloc(sec->payload, size);
-		sec->ptr = (void *)((char *)sec->ptr + offset);		// Replace 'ptr' to the original displacement in the newly allocated block
+
+		// Replace 'ptr' to the original displacement in the newly-allocated block
+		sec->ptr = (void *)((char *)sec->ptr + offset);
+
 		hnotice(6, "Doubling size of section %u to %llu...\n", sec->index, size);
 	}
 
@@ -201,7 +208,7 @@ long elf_write_rodata(section *sec, void *buffer, int size) {
  * Writes a new data entry in the data section
  *
  * @param sec Data section to which write the entry
- * @param data Pointer to the buffer containing the data to be written
+ * @param buffer Pointer to the buffer containing the data to be written
  * @param size Size of the buffer data to copy into the section
  *
  * @return The offset of the data written from section's beginning

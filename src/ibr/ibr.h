@@ -255,7 +255,7 @@ struct _section {
 	unsigned int  index;
 	unsigned char *name;
 	void    *header;
-	void    *payload;
+	void    *payload;  // In-memory section contents (parse stage)
 	void    *ptr;   // [DC] Payload's file pointer (emit stage)
 	void    *reference; // [DC] May represent a reference to a relocation entry (emit stage)
 	struct _section *next;
