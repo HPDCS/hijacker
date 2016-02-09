@@ -26,7 +26,6 @@
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
-#include <assert.h>
 
 #include <hijacker.h>
 #include <prints.h>
@@ -81,8 +80,6 @@ inline static bool smt_is_relevant(insn_info *instr) {
 
   if (use_stack == false) {
     if (target_x86->has_base_register == true && target_x86->breg == 5) {
-      hnotice(3, "Skipping instruction '%s' at <%#08llx> (stack reference)\n",
-        instr->i.x86.mnemonic, instr->orig_addr);
       return false;
     }
   }
@@ -845,7 +842,8 @@ static size_t smt_instrument_block(block *blk) {
   ninstr = ceil(overhead * smt->ncandidates);
   cinstr = 0;
 
-  hnotice(3, "Maximum number of instrumentable candidates: %u\n", ninstr);
+  hnotice(3, "Instrumentable candidates: %u; Total candidates: %u; Total: %u\n",
+    ninstr, smt->ncandidates, smt->ntotal);
 
   // Keep instrumenting until there's no more space left
   // in our bag full of overhead...
@@ -896,53 +894,49 @@ inline static bool smt_same_breg(smt_access *target, smt_access *current) {
   bool same;
   insn_info_x86 *target_x86, *current_x86;
 
-  assert(target != NULL && current != NULL);
-
-  same = true;
   target_x86 = &target->insn->i.x86;
   current_x86 = &current->insn->i.x86;
 
   if (target_x86->has_base_register && current_x86->has_base_register) {
-    same = same && target_x86->breg == current_x86->breg;
+    same = target_x86->breg == current_x86->breg;
     same = same && target->vtable[target_x86->breg] == current->vtable[target_x86->breg];
+
+    return same;
   }
 
-  return same;
+  return false;
 }
 
 inline static bool smt_same_ireg(smt_access *target, smt_access *current) {
   bool same;
   insn_info_x86 *target_x86, *current_x86;
 
-  assert(target != NULL && current != NULL);
-
-  same = true;
   target_x86 = &target->insn->i.x86;
   current_x86 = &current->insn->i.x86;
 
   if (target_x86->has_index_register && current_x86->has_index_register) {
-    same = same && target_x86->ireg == current_x86->ireg;
+    same = target_x86->ireg == current_x86->ireg;
     same = same && target->vtable[target_x86->ireg] == current->vtable[target_x86->ireg];
 
     if (target_x86->has_scale && current_x86->has_scale) {
       same = same && target_x86->scale == current_x86->scale;
     }
+
+    return same;
   }
 
-  return same;
+  return false;
 }
 
 inline static size_t smt_absdiff_imm(smt_access *target, smt_access *current) {
-  assert(target != NULL && current != NULL);
-
   return abs(target->insn->i.x86.disp - target->insn->i.x86.disp);
 }
 
 inline static size_t smt_absdiff_sym(smt_access *target, smt_access *current) {
-  assert(target != NULL && current != NULL);
-
   symbol *target_sym, *current_sym;
   section *target_sec, *current_sec;
+
+  ptrdiff_t distance;
 
   target_sym = target->insn->reference;
   current_sym = current->insn->reference;
@@ -952,7 +946,10 @@ inline static size_t smt_absdiff_sym(smt_access *target, smt_access *current) {
 
   if (target_sec == current_sec) {
     // if (target_sym != current_sym) {
-      return abs(current_sym->position - target_sym->position /*- target_sym->size */);
+      distance = target_sym->position + target_sym->relocation.addend;
+      distance -= current_sym->position + current_sym->relocation.addend;
+
+      return abs(distance);
     // } else {
     //   return 0;
     // }
@@ -1044,6 +1041,7 @@ static void smt_compute_access_scores(block *blk) {
   for (i = 0, target = smt->candidates; target; target = target->next, ++i) {
 
     for (j = 0, current = smt->candidates; current; current = current->next, ++j) {
+
       if (target == current || distance[i][j] > 0) {
         // If distance[i][j] is greater than zero, then we have
         // already computed the dual case previously
@@ -1070,7 +1068,11 @@ static void smt_compute_access_scores(block *blk) {
     }
 
     // Compute average distance
-    target->score /= smt->ncandidates;
+    if (smt_is_irr(target)) {
+      target->score /= smt->nirr;
+    } else {
+      target->score /= smt->nrri;
+    }
 
     hnotice(3, "Access score for '%s' at <%#08llx> is '%0.2f'\n",
       target->insn->i.x86.mnemonic, target->insn->orig_addr, target->score);
@@ -1321,6 +1323,8 @@ static bool smt_check_equivalence(smt_access *target, smt_access *current) {
     return false;
   }
 
+  same = true;
+
   if (smt_is_irr(target)) {
     // Statically-allocated objects
     // ----------------------------
@@ -1332,8 +1336,20 @@ static bool smt_check_equivalence(smt_access *target, smt_access *current) {
 
     if (target_sym != current_sym) {
       // Different existing symbols mean non-equivalent accesses
+      // NOTE: The target symbol is implicitly non-NULL here
       return false;
     }
+
+    // For the sake of simplicity, we enforce the same
+    // relocation type for equivalent accesses.
+    // This is also reflected in the ability to compare
+    // two different addends without committing mistakes
+    same = same && (target_sym->relocation.type == current_sym->relocation.type);
+
+    // We also need to check the addend, since it is
+    // directly aggregated into the displacement value
+    // produced by the linker
+    same = same && (target_sym->relocation.addend == current_sym->relocation.addend);
 
     // Accesses to the same symbols, we now check relocation
     // information to further discriminate
@@ -1344,23 +1360,20 @@ static bool smt_check_equivalence(smt_access *target, smt_access *current) {
       || target_sym->relocation.type == R_X86_64_TPOFF64 ) {
       // Absolute addressing is being used, therefore we
       // must check base and index registers since they
-      // can still be specified within the expressions
-      same = true;
+      // can still be specified within the expressions.
 
       // Checking the base register
       same = same && smt_same_breg(target, current);
       // Checking the index register and the scale
       same = same && smt_same_ireg(target, current);
-
-      return same;
     }
     else if (target_sym->relocation.type == R_X86_64_PC32) {
       // These accesses use the RIP-relative addressing mode,
       // so checking for the equivalence of symbols is sufficient
       // to evaluate the equivalence of expressions
-
-      return true;
     }
+
+    return same;
   }
 
   else {
@@ -1368,7 +1381,6 @@ static bool smt_check_equivalence(smt_access *target, smt_access *current) {
     // -----------------------------
     // Accesses don't refer to any symbol, so we simply
     // check for base, index and displacement equivalence
-    same = true;
 
     // Checking the base register
     same = same && smt_same_breg(target, current);
@@ -1383,7 +1395,7 @@ static bool smt_check_equivalence(smt_access *target, smt_access *current) {
   return false;
 }
 
-static void smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
+static bool smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
   smt_data *smt;
   smt_access *target, *current, *prev, *found;
 
@@ -1416,7 +1428,7 @@ static void smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
       current->counter += 1;
 
       free(target);
-      return;
+      return false;
     }
   }
 
@@ -1438,6 +1450,8 @@ static void smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
   }
 
   smt->ncandidates += 1;
+
+  return true;
 }
 
 static void smt_trace_block(block *blk) {
@@ -1456,9 +1470,8 @@ static void smt_trace_block(block *blk) {
     // Check if the access is relevant and, in the positive case,
     // create an access entry
     if (smt_is_relevant(instr)) {
-      hnotice(3, "Relevant access '%s' at <%#08llx>\n",
+      hnotice(3, "Checking whether '%s' at <%#08llx> has an equivalent...\n",
         instr->i.x86.mnemonic, instr->orig_addr);
-
       smt_resolve_access(blk, instr, vtable);
     }
   }
