@@ -113,7 +113,7 @@ static void elf_raw_section(int sec) {
 	add_section(SECTION_RAW, sec, sec_content(sec), NULL);
 
 	if (sec_type(sec) & SHT_PROGBITS) {
-		hdump(3, sec_name(sec), sec_content(sec), sec_size(sec));
+		hdump(4, sec_name(sec), sec_content(sec), sec_size(sec));
 	}
 
 	hsuccess();
@@ -159,7 +159,7 @@ static void elf_code_section(int sec) {
 			case X86_INSN:
 				x86_disassemble_instruction(sec_content(sec), &pos, &curr->i.x86, flags);
 				hnotice(6, "%#08lx: %s (%d)\n", curr->i.x86.initial, curr->i.x86.mnemonic, curr->i.x86.opcode_size);
-				hdump(1, "Disassembly", curr->i.x86.insn, 15);
+				hdump(5, "Disassembly", curr->i.x86.insn, 15);
 				//hprint("%s, %s works on stack\n", curr->i.x86.mnemonic, curr->i.x86.flags & I_STACK ? "" : "not");
 
 				// Make flags arch-independent
@@ -168,6 +168,7 @@ static void elf_code_section(int sec) {
 				curr->size = curr->i.x86.insn_size;
 				curr->opcode_size = curr->i.x86.opcode_size;
 
+				curr->secname = sec_name(sec);
 
 				//TODO: debug
 				/*hprint("ISTRUZIONE:: '%s' -> opcode = %hhx%hhx, opsize = %d, insn_size = %d; breg = %x, "
@@ -316,43 +317,49 @@ static void elf_symbol_section(int sec) {
 
 
 
-//TODO: complete relocation by retrieving instruction embedded addend!!
+
 static void elf_rel_section(int sec) {
 	Elf_Rel *r;
-	reloc *first;
-	reloc *rel;
+	reloc *first, *prev, *rel;
 
-	unsigned int pos = 0;
-	unsigned int size = sec_size(sec);
-	long long info;
+	size_t pos, size;
+	unsigned long long info;
 
-	first = rel = (reloc *) malloc(sizeof(reloc));
-	bzero(first, sizeof(reloc));
+	r = NULL;
+	first = prev = rel = NULL;
+	pos = 0;
+	size = sec_size(sec);
 
-	while(pos < size){
-
+	while(pos < size) {
 		r = (Elf_Rel *) (sec_content(sec) + pos);
+
+		rel = (reloc *) calloc(sizeof(reloc), 1);
+
+		if (prev == NULL) {
+			first = rel;
+		} else {
+			prev->next = rel;
+		}
+
 		info = reloc_info(r, r_info);
 
 		rel->type = ELF(is64) ? ELF64_R_TYPE(info) : ELF32_R_TYPE(info);
-		rel->offset = reloc_info(r, r_offset);		// offset from begin of file to which apply the relocation
-		rel->s_index = ELF(is64) ? ELF64_R_SYM(info) : ELF32_R_SYM(info);	// section to which reloc symbol refers to
-		// the 'addend' paramenters in rel section are embedded in the instruction itself
-		// so it is required to retrieve this in a second pass
+		rel->offset = reloc_info(r, r_offset);
+		rel->s_index = ELF(is64) ? ELF64_R_SYM(info) : ELF32_R_SYM(info);
 
-		// TODO: link symbol to relocation entry, however they are not available yet
+		// TODO: Retrieve the addend, which is embedded into the instruction
 
-		// TODO: Needed to manage properly rel->type field?
-		hnotice(2, "%d: Relocation at offset %lld of section %#08x\n", rel->type, rel->offset, rel->s_index);
+		// link symbol to relocation entry, however they are not available yet
+		// so it is needed to be done in a future pass
 
-		rel->next = (reloc *) malloc(sizeof(reloc));
-		bzero(rel->next, sizeof(reloc));
-		rel = rel->next;
+		hnotice(2, "Relocation type %d refers symbol %d at offset <%#08llx>\n",
+			rel->type, rel->s_index, rel->offset);
 
+		prev = rel;
 		pos += (ELF(is64) ? sizeof(Elf64_Rel) : sizeof(Elf32_Rel));
 	}
 
-	// adds the section to the program
+	// Adds the section to the program map
 	add_section(SECTION_RELOC, sec, first, NULL);
 	add_section(SECTION_RELOC, sec, first, &relocs);
 
@@ -363,40 +370,45 @@ static void elf_rel_section(int sec) {
 
 static void elf_rela_section(int sec) {
 	Elf_Rela *r;
-	reloc *first;
-	reloc *rel;
+	reloc *first, *prev, *rel;
 
-	unsigned int pos = 0;
-	unsigned int size = sec_size(sec);
-	long long info;
+	size_t pos, size;
+	unsigned long long info;
 
-	first = rel = (reloc *) malloc(sizeof(reloc));
-	bzero(first, sizeof(reloc));
+	r = NULL;
+	first = prev = rel = NULL;
+	pos = 0;
+	size = sec_size(sec);
 
-	while(pos < size){
-
+	while(pos < size) {
 		r = (Elf_Rela *) (sec_content(sec) + pos);
+
+		rel = (reloc *) calloc(sizeof(reloc), 1);
+
+		if (prev == NULL) {
+			first = rel;
+		} else {
+			prev->next = rel;
+		}
+
 		info = reloc_info(r, r_info);
 
 		rel->type = ELF(is64) ? ELF64_R_TYPE(info) : ELF32_R_TYPE(info);
-		rel->offset = reloc_info(r, r_offset);		// offset within the section to which apply the relocation
-		rel->s_index = ELF(is64) ? ELF64_R_SYM(info) : ELF32_R_SYM(info);	// index of symbol relocation refers to
-		rel->addend = reloc_info(r, r_addend);		// explicit displacement to add to the offset
+		rel->offset = reloc_info(r, r_offset);
+		rel->s_index = ELF(is64) ? ELF64_R_SYM(info) : ELF32_R_SYM(info);
+		rel->addend = reloc_info(r, r_addend);
 
 		// link symbol to relocation entry, however they are not available yet
 		// so it is needed to be done in a future pass
 
-		hnotice(2, "Relocation of type %d refers symbol %d at offset %#08llx\n", rel->type, rel->s_index, rel->offset);
+		hnotice(2, "Relocation type %d refers symbol %d at offset <%#08llx>\n",
+			rel->type, rel->s_index, rel->offset);
 
-		// creates a new node and jumps to next rela entry
-		rel->next = (reloc *) malloc(sizeof(reloc));
-		bzero(rel->next, sizeof(reloc));
-		rel = rel->next;
-
+		prev = rel;
 		pos += (ELF(is64) ? sizeof(Elf64_Rela) : sizeof(Elf32_Rela));
 	}
 
-	// adds the section to the program
+	// Adds the section to the program map
 	add_section(SECTION_RELOC, sec, first, NULL);
 	add_section(SECTION_RELOC, sec, first, &relocs);
 
@@ -773,7 +785,7 @@ void link_jump_instructions(function *func, function *code_version, symbol *text
 	symbol *sym;		// Callee function's symbol
 	unsigned long long jmp_addr;	// Jump address
 
-	hnotice(2, "Link jump and call instructions of function '%s':\n", func->name);
+	hnotice(2, "Link jump and call instructions of function '%s'\n", func->name);
 
 	// For each instruction, look for jump/call ones
 	instr = func->insn;
@@ -858,7 +870,7 @@ void link_jump_instructions(function *func, function *code_version, symbol *text
 					// XXX: credo che fosse scorretto nel caso delle funzioni locali, infatti non trovava la funzione
 					jmp_addr += instr->orig_addr + instr->size;
 
-					hnotice(3, "Call to a local function at <%#08llx> detected\n", jmp_addr);
+					hnotice(4, "Call to a local function at <%#08llx> detected\n", jmp_addr);
 
 					// look for the relative function called
 					callee = code_version;
@@ -887,6 +899,7 @@ void link_jump_instructions(function *func, function *code_version, symbol *text
 				else {
 					// [SE] If the CALL instruction has no embedded offset, it is already associated with a relocation.
 					// We must check whether is it a CALL to a local function or not, and act accordingly.
+
 					jmp_addr = instr->reference->position;
 
 					// It means the function is defined elsewhere (i.e. in a different file object)
@@ -909,7 +922,7 @@ void link_jump_instructions(function *func, function *code_version, symbol *text
 				if (callee) {
 					// CALL to local function detected, augment the intermediate representation
 					// with the appropriate linking between instructions.
-					hnotice(3, "Callee function '%s' at <%#08llx> found\n", callee->name, callee->orig_addr);
+					hnotice(4, "Callee function '%s' at <%#08llx> found\n", callee->name, callee->orig_addr);
 
 					// At this point 'func' will point to the destination function relative to the call;
 					// the only thing we have to do is to add the reference to the relative function's symbol
@@ -969,6 +982,7 @@ static void resolve_symbols(void) {
 			split_function(sym, func);
 			func->symbol = sym;
 			sym->func = func;
+			sym->sec = find_section(sym->secnum);
 
 			hnotice(2, "Function '%s' (%d bytes long) :: <%#08llx>\n", sym->name, sym->size, func->orig_addr);
 
@@ -1003,7 +1017,7 @@ static void resolve_symbols(void) {
 				}
 				// [/SE]
 
-				hdump(3, sym->name, sym->initial, sym->size);
+				hdump(5, sym->name, sym->initial, sym->size);
 			}
 			break;
 
@@ -1017,7 +1031,7 @@ static void resolve_symbols(void) {
 				memcpy(sym->initial, sec_content(sym->secnum) + sym->position, sym->size);
 			}
 
-			hdump(3, sym->name, sym->initial, sym->size);
+			hdump(5, sym->name, sym->initial, sym->size);
 			break;
 
 		case SYMBOL_UNDEF:
@@ -1028,6 +1042,7 @@ static void resolve_symbols(void) {
 			hnotice(2, "Section symbol pointing to section %d (%s)\n", sym->secnum, sec_name(sym->secnum));
 			sym->name = (unsigned char *)sec_name(sym->secnum);
 			sym->size = sec_size(sym->secnum);
+			sym->sec = find_section(sym->secnum);
 			break;
 
 		case SYMBOL_FILE:
@@ -1093,7 +1108,7 @@ static void resolve_relocation(void) {
 	// For each relocation section
 	while(sec) {
 
-		hnotice(2, "Parsing next relocation section\n\n");
+		hnotice(2, "Parsing relocation section '%s'\n\n", sec_name(sec->index));
 
 		// Retrieve relocation's metadata
 		target = sec_field(sec->index, sh_info);
@@ -1104,13 +1119,19 @@ static void resolve_relocation(void) {
 		rel = sec->payload;
 		while(rel) {
 
+			if (rel->s_index == 0) {
+				// We should never have relocations toward STN_UNDEF
+				hinternal();
+			}
+
 			// We look for the symbol pointed to by the relocation's 'info' field
-			hnotice(2, "Looking up for symbol reference at index %d\n", rel->s_index);
+			hnotice(2, "Parsing relocation at '%s' + <%#08llx> + %d to [%d]\n",
+				sec_name(sec->index), rel->offset, rel->addend, rel->s_index);
 
 			sym = symbols->payload;
 			while(sym) {
 				if(sym->index == rel->s_index && rel->s_index){
-					hnotice(3, "Symbol found: '%s' [%s]\n", sym->name,
+					hnotice(3, "Symbol found: '%s' [%u] [%s]\n", sym->name, rel->s_index,
 							sym->type == SYMBOL_FUNCTION ? "function" :
 									sym->type == SYMBOL_VARIABLE ? "variable" :
 											sym->type == SYMBOL_SECTION ? "section" : "undefined");
@@ -1119,19 +1140,18 @@ static void resolve_relocation(void) {
 				sym = sym->next;
 			}
 
-			// Symbol does not exists, can we assume it was not important?
-			// continue parsing the next relocation entry
 			if(!sym){
-				hnotice(3, "Symbol not found!\n\n");
-				rel = rel->next;
-				continue;
+				hnotice(3, "Symbol [%u] not found!\n\n", rel->s_index);
+				hinternal();
+				// rel = rel->next;
+				// continue;
 			}
 
 			rel->symbol = sym;
 
 			if(flags & SHF_EXECINSTR) {
 				// the relocation applies to an instruction
-				hnotice(3, "Looking up for address <%#08llx>\n", rel->offset);
+				// hnotice(2, "Looking up for address <%#08llx>\n", rel->offset);
 
 				// Search in the function list the one containing the right instruction.
 				// This is simply done by looking for the function whose starting offset
@@ -1171,7 +1191,8 @@ static void resolve_relocation(void) {
 
 				// if instr is NULL, uuh...something is going wrong!
 				if(instr != NULL) {
-					hnotice(3, "Instruction pointed to by relocation: <%#08llx> '%s'\n", instr->orig_addr, instr->i.x86.mnemonic);
+					hnotice(3, "Instruction pointed to by relocation: <%#08llx> '%s'\n",
+						instr->orig_addr, instr->i.x86.mnemonic);
 
 
 					// TODO: now there is the create_rela_node functions, use it!
@@ -1180,7 +1201,7 @@ static void resolve_relocation(void) {
 					sym_2->relocation.addend = rel->addend;
 					sym_2->relocation.offset = rel->offset;
 					sym_2->relocation.type = rel->type;
-					sym_2->relocation.secname = (unsigned char *)".text";
+					sym_2->relocation.secname = (unsigned char *)sec_name(target);
 
 					// The instruction object will be bound to the proper symbol.
 					// This reference is read by the specific machine code emitter
@@ -1188,7 +1209,8 @@ static void resolve_relocation(void) {
 					sym_2->relocation.ref_insn = instr;
 					instr->reference = sym_2;
 
-					hnotice(2, "Symbol reference added\n\n");
+					hnotice(2, "Added symbol reference to '%s' + <%#08llx> + %d\n\n",
+						sym_2->relocation.secname, rel->offset, rel->addend);
 
 				} else {
 					herror(true, "Relocation cannot be applied, reference not found\n\n");
@@ -1201,7 +1223,7 @@ static void resolve_relocation(void) {
 				// If we are here, the relocation is SECTION->SECTION, otherwise
 				// an instruction would be found in the previous branch.
 
-				hnotice(3, "Looking up for address <%#08llx>\n", rel->addend);
+				// hnotice(3, "Looking up for address <%#08llx>\n", rel->addend);
 
 				// Search in the function list the one containing the right instruction.
 				// This is simply done by looking for the function whose starting offset
@@ -1252,7 +1274,8 @@ static void resolve_relocation(void) {
 					instr->pointedby = sym_2;
 				}
 
-				hnotice(2, "Added symbol reference to <%#08llx> + %d\n\n", rel->offset, rel->addend);
+				hnotice(2, "Added symbol reference to '%s' + <%#08llx> + %d\n\n",
+					sym_2->relocation.secname, rel->offset, rel->addend);
 			}
 
 			rel = rel->next;
@@ -1364,7 +1387,7 @@ void elf_create_map(void) {
 			break;
 
 		case SHT_RELA:
-			if(!strcmp(sec_name(sec), ".rela.text"))
+			if(str_prefix(sec_name(sec), ".rela.text"))
 				elf_rela_section(sec);
 			else if(!strcmp(sec_name(sec), ".rela.data"))
 				elf_rela_section(sec);

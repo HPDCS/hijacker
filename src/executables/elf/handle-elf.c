@@ -324,8 +324,10 @@ int switch_executable_version (int version) {
 
 		PROGRAM(blocks)[version] = block_graph_create(code);
 
-		block_tree_dump("treedump.txt", "a+");
-		block_graph_dump(code, "graphdump.txt", "a+");
+		if (config.verbose > 5) {
+			block_tree_dump("treedump.txt", "a+");
+			block_graph_dump(code, "graphdump.txt", "a+");
+		}
 		// [/SE]
 
 		hnotice(3, "Version %d of the executable's binary representation created\n", version);

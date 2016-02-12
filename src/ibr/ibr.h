@@ -64,6 +64,8 @@ struct _instruction {
 		insn_info_x86   x86;
 	} i;
 
+  char *secname;     // [SE] Code section the instruction belongs to
+
 	struct _instruction *jumpto;
 
 	// [SE] Jump table (used for both indirect jumps and calls)
@@ -206,12 +208,12 @@ struct _symbol {
 };
 
 struct _reloc {
-	long long offset;
+	long long offset;    // offset within the section to which apply the relocation
 	unsigned char *name;
 	symbol *symbol;
-	unsigned int s_index;
+	unsigned int s_index;  // index of symbol relocation refers to
 	int type;
-	int addend;
+	int addend;    // explicit displacement to add to the offset
 	struct _reloc *next;
 };
 
