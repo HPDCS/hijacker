@@ -466,12 +466,12 @@ void apply_rules(void) {
 			instrumented += apply_rule_function(exec, tagFunction);
 		}
 
-		if (version != 0 && instrumented) {
+		// if (version != 0 && instrumented) {
 			// [SE] If some actual instrumentation has been carried out, first update
 			// instruction addresses and then recompute jump displacements
-			update_instruction_addresses();
-			update_jump_displacements();
-		}
+			update_instruction_addresses(version);
+			update_jump_displacements(version);
+		// }
 
 		hnotice(1, "Instrumentation of executable version %d terminated: %d instructions have been instrumented\n",
 			version, instrumented);

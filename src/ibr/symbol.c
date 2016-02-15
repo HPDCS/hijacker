@@ -203,6 +203,7 @@ symbol *symbol_create(char *name, symbol_type type, symbol_bind bind,
 
 	sym->index = symbol_id(0, false);
 	sym->version = PROGRAM(version);
+	sym->authentic = true;
 
 	// We now append the symbol to the global list of symbols
 	symbol_append(sym, &PROGRAM(symbols));
@@ -292,6 +293,7 @@ symbol *symbol_create_from_ELF(Elf_Sym *elfsym) {
 	// sym->extra_flags = symbol_info(elfsym, st_info);
 
 	sym->version = PROGRAM(version);
+	sym->authentic = true;
 
 	// We now append the symbol to the global list of symbols
 	symbol_append(sym, &PROGRAM(symbols));
@@ -351,7 +353,7 @@ symbol *symbol_check_shared(symbol *sym) {
 
 	// Check if the symbol has already been referenced and, in that case,
 	// create a copy of it
-	if (sym->referenced == true) {
+	// if (sym->referenced == true) {
 		hnotice(5, "Multiple reference to '%s', duplicating symbol...\n", sym->name);
 
 		// Seek the end of the symbol list, starting from the input symbol
@@ -374,14 +376,14 @@ symbol *symbol_check_shared(symbol *sym) {
 
 		// Return the newly-created duplicate
 		return clone;
-	}
+	// }
 
-	// No duplicate must be created, return the symbol itself
-	hnotice(5, "First reference to '%s'\n", sym->name);
+	// // No duplicate must be created, return the symbol itself
+	// hnotice(5, "First reference to '%s'\n", sym->name);
 
-	sym->referenced = true;
+	// sym->referenced = true;
 
-	return sym;
+	// return sym;
 }
 
 
@@ -499,6 +501,8 @@ symbol *symbol_rela_create(symbol *sym, reloc_type type,
 	rela->relocation.sec = sec;
 	rela->relocation.target_insn = NULL;
 
+	rela->authentic = false;
+
 	switch(type) {
 		case RELOC_PCREL_32:
 			rela->relocation.type = R_X86_64_PC32;
@@ -566,6 +570,8 @@ symbol *symbol_rela_create_from_ELF(reloc *rel) {
 	rela->relocation.type = rel->type;
 	rela->relocation.sec = rel->sec;
 
+	rela->authentic = false;
+
 	hnotice(3, "New RELA node [%d] has been created at '%s' + %lld to symbol '%s' + %ld\n",
 		rela->relocation.type, rela->relocation.sec->name, rela->relocation.offset,
 			rela->name, rela->relocation.addend);
@@ -590,11 +596,13 @@ symbol *symbol_instr_rela_create(symbol *sym, insn_info *insn, reloc_type type) 
 	rela = symbol_check_shared(sym);
 
 	rela->referenced = true;
-	rela->relocation.offset = insn->new_addr - func->symbol->sec->offset;
+	rela->relocation.offset = insn->new_addr + insn->opcode_size - func->symbol->sec->offset;
 	rela->relocation.sec = func->symbol->sec;
 	rela->relocation.target_insn = insn;
 
 	insn->reference = rela;
+
+	rela->authentic = false;
 
 	switch(type) {
 		case RELOC_PCREL_32:
@@ -654,6 +662,8 @@ symbol *symbol_rela_clone(symbol *sym) {
 
 	clone = symbol_check_shared(sym);
 	clone->version = PROGRAM(version);
+
+	clone->authentic = false;
 
 	return clone;
 

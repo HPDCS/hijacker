@@ -49,16 +49,16 @@ function *find_func_from_instr(insn_info *instr, insn_address_type type) {
 	for (func = PROGRAM(v_code)[PROGRAM(version)], prev = NULL; func;
 		   prev = func, func = func->next) {
 		if (type == NEW_ADDR && func->begin_insn->new_addr > instr->new_addr) {
-			break;
+			return prev;
 		}
 		else if (type == ORIG_ADDR && func->begin_insn->orig_addr > instr->orig_addr) {
-			break;
+			return prev;
 		}
 	}
 
-	if (!func) {
-		return NULL;
-	}
+	// if (!func) {
+	// 	return NULL;
+	// }
 
 	return prev;
 }

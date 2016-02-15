@@ -182,7 +182,7 @@ section *section_clone(section *sec, char *suffix) {
 	name = malloc(sizeof(char) * length);
 	bzero(name, length);
 	strcpy(name, (const char *)sec->name);
-	strcat(name, "_");
+	strcat(name, ".");
 	strcat(name, suffix);
 
 	clone->name = (unsigned char *)name;

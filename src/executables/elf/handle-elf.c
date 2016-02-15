@@ -49,7 +49,7 @@ static void clone_text_sections(int version, char *suffix) {
 		if (sec != NULL) {
 			bzero(name, sizeof(name));
 			strcpy(name, sec->name);
-			strcat(name, "_");
+			strcat(name, ".");
 			strcat(name, suffix);
 
 			clone = find_section_by_name(name);

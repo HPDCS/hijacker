@@ -228,6 +228,7 @@ struct _symbol {
 	int version;       /// Integer indicating to which instrumenting version it belongs
 	bool duplicate;    /// Flag that tells if symbol is a duplicate
 	bool referenced;   /// Flag indicating the symbol has been referenced
+	bool authentic;
 
 	struct _symbol  *next;
 };
@@ -320,8 +321,9 @@ void set_jumpto_reference(insn_info *jump, insn_info *target);
 void set_jumptable_entry(insn_info *jump, insn_info *entry, unsigned int idx);
 void set_virtual_reference(insn_info *target, insn_info *virtual);
 void link_jump_instructions(function *func);
-void update_instruction_addresses(void);
-void update_jump_displacements(void);
+void update_instruction_addresses(int version);
+void update_jump_displacements(int version);
+void set_call_displacement(insn_info *jump, insn_info *target);
 
 /* symbol.c */
 

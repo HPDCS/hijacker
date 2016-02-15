@@ -924,7 +924,7 @@ void link_jump_instructions(function *func) {
  *
  * @author Davide Cingolani
  */
-void update_instruction_addresses(void) {
+void update_instruction_addresses(int version) {
 	function *foo;
 	insn_info *instr;
 
@@ -933,13 +933,12 @@ void update_instruction_addresses(void) {
 	unsigned long long foo_size;
 
 	long long rela_offset;
-	// long long rela_addend;
 
 	hnotice(4, "Recalculate instructions' addresses\n");
 
 	// Instruction addresses are recomputed from scratch starting from the very beginning
 	// of the code section.
-	foo = PROGRAM(code);
+	foo = PROGRAM(v_code)[version];
 	offset = 0;
 	while(foo) {
 
@@ -954,19 +953,16 @@ void update_instruction_addresses(void) {
 			// instr->i.x86.addr = instr->new_addr = offset;
 			instr->new_addr = offset;
 
-			if (instr->reference) {
-				rela_offset = instr->reference->relocation.offset - instr->new_addr;
-			}
-			else {
-				rela_offset = 0;
-			}
-
 			offset += instr->size;
 			foo_size += instr->size;
 
 			// [SE] Updates the relocation entry to reflect the address update
+			// if (instr->reference) {
+			// 	instr->reference->relocation.offset = instr->new_addr + rela_offset;
+			// }
 			if (instr->reference) {
-				instr->reference->relocation.offset = instr->new_addr + rela_offset;
+				// rela_offset = instr->reference->relocation.offset - instr->new_addr;
+				instr->reference->relocation.offset = instr->new_addr + instr->opcode_size;
 			}
 			// [SE] TODO: Hackish way to check for relocation from .text to .rodata, find better one
 			if (instr->pointedby && !strncmp((const char *)instr->pointedby->name, ".text", 5)) {
@@ -1023,6 +1019,39 @@ static void set_jump_displacement(insn_info *jump, insn_info *target) {
 
 	hnotice(4, "%s instruction at <%#08llx> (<%#08llx>) has updated displacement %#0llx\n",
 		IS_JUMP(jump) ? "Jump" : "Call",
+		jump->orig_addr, jump->new_addr, (unsigned long long) displacement);
+}
+
+
+void set_call_displacement(insn_info *jump, insn_info *target) {
+	long displacement;
+
+	unsigned int offset;
+	unsigned int size;
+
+	insn_info_x86 *x86;
+
+	if (!jump || !target) {
+		hinternal();
+	}
+
+	switch(PROGRAM(insn_set)) {
+	case X86_INSN:
+
+		x86 = &(jump->i.x86);
+		offset = x86->opcode_size;
+		size = x86->insn_size - x86->opcode_size - x86->disp_size;
+
+		displacement = target->new_addr - (jump->new_addr + jump->size);
+
+		memcpy((x86->insn + offset), &displacement, size);
+		break;
+
+	default:
+		hinternal();
+	}
+
+	hnotice(4, "Call instruction at <%#08llx> (<%#08llx>) has updated displacement %#0llx\n",
 		jump->orig_addr, jump->new_addr, (unsigned long long) displacement);
 }
 
@@ -1153,7 +1182,7 @@ static void shift_instruction_addresses(insn_info *target, int shift) {
  * @author Davide Cingolani
  * @author Simone Economo
  */
-void update_jump_displacements(void) {
+void update_jump_displacements(int version) {
 	function *foo;
 	insn_info *instr;
 	// insn_info *jumpto;
@@ -1172,7 +1201,7 @@ void update_jump_displacements(void) {
 
 	hnotice(4, "Update jump displacements\n");
 
-	foo = PROGRAM(code);
+	foo = PROGRAM(v_code)[version];
 	while(foo) {
 
 		hnotice(5, "In function '%s'\n", foo->name);
