@@ -383,6 +383,37 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
 }
 
 
+static void hijack_main(unsigned char *entry_point) {
+	// Find the current main function
+	symbol *sym_main;
+	function *main;
+	unsigned char code[1] = {0x90};
+
+	sym_main = find_symbol("main");
+	if(sym_main == NULL) {
+		// mmhhh.... something it's going wrong!
+		abort();
+	}
+
+	symbol *sym;
+	sym = PROGRAM(symbols);
+	while(sym) {
+		if(!strcmp((const char *)sym->name, "main"))
+			sym->name = "original_main";
+		sym = sym->next;
+	}
+
+	// Change the name of the original entry program's point
+	sym_main->name = sym_main->func->name = "original_main";
+
+	// Creates a new stub function that acts as the new main
+	main = create_function("main", code, sizeof(code));
+
+	// Adds the call to the new entry point
+	add_call_instruction(main->insn, entry_point, INSERT_BEFORE, &(main->insn));
+}
+
+
 /**
  * Given a rule, applies it by calling the correspondent function
  */
@@ -400,10 +431,13 @@ void apply_rules(void) {
 	Instruction *tagInstruction;
 	Function *tagFunction;
 
+    unsigned char *entry_point;
+
 	hprint("Start applying rules...\n");
 
 	// Create a temporary directory to place object files;
 	execute("mkdir", "-p", TEMP_PATH);
+
 
 	// Iterates all over executable versions
 	for (version = 0; version < config.nExecutables; version++) {
@@ -464,6 +498,12 @@ void apply_rules(void) {
 			tagFunction = exec->functions[tag];
 			hnotice(3, "Looking for the function '%s'\n", tagFunction->name);
 			instrumented += apply_rule_function(exec, tagFunction);
+		}
+
+		// Check for a new entry point to be selected, if any
+		if(exec->entryPoint != NULL) {
+		    hnotice(1, "A new entry point has been detected to function'%s'\n", exec->entryPoint);
+		    hijack_main(exec->entryPoint);
 		}
 
 		if (version != 0 && instrumented) {

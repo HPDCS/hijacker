@@ -75,6 +75,8 @@ function *find_func(function *functions, insn_info *instr, insn_address_type typ
  * created function is added to the program's code (at the end) and is associated
  * with a global symbol.
  *
+ * @author Davide Cingolani
+ *
  * @param name Buffer pointing to the new name of the function.
  * @param code Pointer to the instruction list that make up the body of the function.
  *
@@ -227,4 +229,50 @@ function *clone_function_list(function *func, char *suffix) {
 	}
 
 	return head;
+}
+
+
+// FIXME: unire le funzionalità di parse_instruction_bytes() come catena di istruzioni e
+// la funzioe create_function_node()!!!
+/**
+ * Create a function starting from an array of raw bytes that represents
+ * its instructions. The returned function description will be filled 
+ *
+ *
+ */
+function *create_function(char *name, unsigned char *code, size_t size) {
+	insn_info *insn, *first;
+	function *func;
+	unsigned long long pos;
+
+	first = calloc(sizeof(insn_info), 1);
+	if(first == NULL) {
+		abort();
+	}
+
+	insn = first;
+	pos = 0;
+
+	func = create_function_node(name, first);
+	insn->new_addr = func->new_addr;
+
+	// Parse the instruction bytes provided in order to create a chain of
+	// instructions to append to the newly created function
+	
+	// This will create the instrucion chain
+	while(pos < size) {
+
+		parse_instruction_bytes(code, &pos, &insn);
+		
+		insn->orig_addr += pos;
+		insn->new_addr += pos;
+
+		insn->next = calloc(sizeof(insn_info), 1);
+		
+		insn->next->new_addr = insn->new_addr;
+		insn->next->orig_addr = insn->orig_addr;
+		insn = insn->next;
+	}
+
+	return func;
 }

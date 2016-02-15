@@ -110,9 +110,13 @@ insn_info *find_last_insn(function *functions) {
 }
 
 
+// TODO: cambiare la funzione in modo da iterare sul numero di byte passati
+//		dovrebbe quindi restituire una catena già formata di istruzioni
 /**
  * Creates a new instruction node starting from an array of bytes which represents
  * its raw content.
+ *
+ * @author Davide Cingolani
  *
  * @param bytes The array of bytes representing the raw content of the instruction.
  * @param pos Pointer to an integer representing the current position within
@@ -120,7 +124,8 @@ insn_info *find_last_insn(function *functions) {
  * @param final Pointer to a variable which holds the pointer to the descriptor
  * of the newly parsed instruction.
  */
-static void parse_instruction_bytes(unsigned char *bytes, unsigned long int *pos, insn_info **final) {
+ // TODO: definire statica di nuovo!!!
+void parse_instruction_bytes(unsigned char *bytes, unsigned long int *pos, insn_info **final) {
 	insn_info *instr;
 	int flags;
 
