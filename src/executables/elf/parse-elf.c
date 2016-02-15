@@ -430,11 +430,11 @@ static void resolve_variable_symbol(symbol *sym) {
 static void resolve_section_symbol(symbol *sym) {
 	section *sec;
 
-	hnotice(2, "Section symbol pointing to section %d (%s)\n",
-		sym->secnum, sec_name(sym->secnum));
-
 	sym->name = (unsigned char *) sec_name(sym->secnum);
 	sym->size = sec_size(sym->secnum);
+
+	hnotice(2, "Section symbol %s (%d bytes long) pointing to section %d (%s)\n",
+		sym->name, sym->size, sym->secnum, sec_name(sym->secnum));
 
 	sec = find_section(sym->secnum);
 

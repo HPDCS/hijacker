@@ -310,6 +310,7 @@ struct _section {
 insn_info *find_insn(function *func, unsigned long long addr, insn_address_type type);
 insn_info *find_insn_cool(insn_info *head, unsigned long long addr);
 insn_info *find_last_insn(function *functions);
+void parse_instruction_bytes(unsigned char *bytes, unsigned long int *pos, insn_info **final);
 int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size,
 	insn_insert_mode mode, insn_info **last);
 int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size,
@@ -347,7 +348,8 @@ symbol *symbol_rela_clone(symbol *sym);
 
 function *find_func_from_instr(insn_info *instr, insn_address_type type);
 function *find_func_from_addr(unsigned long long addr);
-// function *create_function_node(char *name, insn_info *code);
+function *function_create_from_insn(char *name, insn_info *code);
+function *function_create_from_bytes(char *name, unsigned char *code, size_t size);
 function *clone_function(function *func, char *suffix);
 function *clone_function_list(function *func, char *suffix);
 // function *clone_function_descriptor(function *original, char *name);

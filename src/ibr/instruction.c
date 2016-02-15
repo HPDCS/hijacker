@@ -127,9 +127,13 @@ insn_info *find_last_insn(function *functions) {
 }
 
 
+// TODO: cambiare la funzione in modo da iterare sul numero di byte passati
+//		dovrebbe quindi restituire una catena già formata di istruzioni
 /**
  * Creates a new instruction node starting from an array of bytes which represents
  * its raw content.
+ *
+ * @author Davide Cingolani
  *
  * @param bytes The array of bytes representing the raw content of the instruction.
  * @param pos Pointer to an integer representing the current position within
@@ -137,7 +141,8 @@ insn_info *find_last_insn(function *functions) {
  * @param final Pointer to a variable which holds the pointer to the descriptor
  * of the newly parsed instruction.
  */
-static void parse_instruction_bytes(unsigned char *bytes, unsigned long int *pos, insn_info **final) {
+ // TODO: definire statica di nuovo!!!
+void parse_instruction_bytes(unsigned char *bytes, unsigned long int *pos, insn_info **final) {
 	insn_info *instr;
 	int flags;
 
@@ -355,6 +360,7 @@ int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t
 void add_call_instruction(insn_info *target, unsigned char *name, insn_insert_mode mode, insn_info **instr) {
 	section *sec;
 	symbol *sym;
+
 	unsigned char call[5];
 
 	bzero(call, sizeof(call));
@@ -364,7 +370,15 @@ void add_call_instruction(insn_info *target, unsigned char *name, insn_insert_mo
 		break;
 	}
 
-	sec = find_section_by_name(".text");
+	for (sec = PROGRAM(sections)[PROGRAM(version)]; sec; sec = sec->next) {
+		if (sec->type == SECTION_CODE) {
+			break;
+		}
+	}
+
+	if (sec == NULL) {
+		hinternal();
+	}
 
 	// Creates the symbol name
 	sym = symbol_create(name, SYMBOL_UNDEF, SYMBOL_GLOBAL, sec, 0);
