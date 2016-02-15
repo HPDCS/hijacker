@@ -30,11 +30,17 @@
 
 #include <stdbool.h>
 
+
 // Checks whether two strings have the same sequence of characters
-#define str_equal(str_a, str_b) (strcmp((str_a), (str_b)) == 0)
+#define str_equal(str_a, str_b) ( \
+  strcmp((const char *) (str_a), (const char *) (str_b)) == 0 \
+)
 
 // Checks whether 'str' has prefix 'pre'
-#define str_prefix(str, pre) (strncmp((pre), (str), strlen((pre))) == 0)
+#define str_prefix(str, pre) ( \
+  strncmp((const char *) (pre), (const char *) (str), \
+    strlen((const char *) (pre))) == 0 \
+)
 
 /**
  * Perform a hexdump of data.

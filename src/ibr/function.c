@@ -43,23 +43,17 @@
  *
  * @author Simone Economo
  */
-function *find_func(function *functions, insn_info *instr, insn_address_type type) {
+function *find_func_from_instr(insn_info *instr, insn_address_type type) {
 	function *func, *prev;
 
-	func = functions;
-	prev = NULL;
-
-	while(func) {
-
-		if (type == NEW_ADDR && func->insn->new_addr > instr->new_addr) {
+	for (func = PROGRAM(v_code)[PROGRAM(version)], prev = NULL; func;
+		   prev = func, func = func->next) {
+		if (type == NEW_ADDR && func->begin_insn->new_addr > instr->new_addr) {
 			break;
 		}
-    else if (type == ORIG_ADDR && func->insn->orig_addr > instr->orig_addr) {
-      break;
-    }
-
-		prev = func;
-		func = func->next;
+		else if (type == ORIG_ADDR && func->begin_insn->orig_addr > instr->orig_addr) {
+			break;
+		}
 	}
 
 	if (!func) {
@@ -67,6 +61,20 @@ function *find_func(function *functions, insn_info *instr, insn_address_type typ
 	}
 
 	return prev;
+}
+
+
+function *find_func_from_addr(unsigned long long addr) {
+	function *func;
+
+	for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
+		if (func->begin_insn->orig_addr <= addr
+		 && func->begin_insn->orig_addr + func->symbol->size > addr) {
+			return func;
+		}
+	}
+
+	return NULL;
 }
 
 
@@ -80,44 +88,44 @@ function *find_func(function *functions, insn_info *instr, insn_address_type typ
  *
  * @return Pointer to the new function descriptor.
  */
-function *create_function_node(char *name, insn_info *code) {
-	function *func, *list;
-	symbol *sym;
-	insn_info *insn;
-	int size;
+// function *create_function_node(char *name, insn_info *code) {
+// 	function *func, *list;
+// 	symbol *sym;
+// 	insn_info *insn;
+// 	int size;
 
-	size = 0;
-	insn = code;
-	while(insn) {
-		size += insn->size;
-		insn = insn->next;
-	}
+// 	size = 0;
+// 	insn = code;
+// 	while(insn) {
+// 		size += insn->size;
+// 		insn = insn->next;
+// 	}
 
-	sym = create_symbol_node((unsigned char *)name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, size);
+// 	sym = create_symbol_node((unsigned char *)name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, size);
 
-	func = (function *) malloc(sizeof(function));
-	if(!func) {
-		herror(true, "Out of memory!\n");
-	}
-	bzero(func, sizeof(function));
+// 	func = (function *) malloc(sizeof(function));
+// 	if(!func) {
+// 		herror(true, "Out of memory!\n");
+// 	}
+// 	bzero(func, sizeof(function));
 
-	func->name = (unsigned char *)name;
-	func->symbol = sym;
-	func->insn = code;
+// 	func->name = (unsigned char *)name;
+// 	func->symbol = sym;
+// 	func->begin_insn = code;
 
-	list = PROGRAM(code);
-	while(list->next) {
-		list = list->next;
-	}
+// 	list = PROGRAM(code);
+// 	while(list->next) {
+// 		list = list->next;
+// 	}
 
-	func->orig_addr = func->new_addr = (list->new_addr + list->symbol->size);
-	func->symbol->position = func->orig_addr;
-	list->next = func;
+// 	func->orig_addr = func->new_addr = (list->new_addr + list->symbol->size);
+// 	func->symbol->offset = func->orig_addr;
+// 	list->next = func;
 
-	hnotice(4, "New function '%s' created\n", name);
+// 	hnotice(4, "New function '%s' created\n", name);
 
-	return func;
-}
+// 	return func;
+// }
 
 /**
  * Computes the size in bytes of a function by summing up the length of all the
@@ -127,22 +135,22 @@ function *create_function_node(char *name, insn_info *code) {
  *
  * @return Size in bytes of the passed function.
  */
-static int get_function_size(function *func) {
-	insn_info *insn;
-	int size;
+// static int get_function_size(function *func) {
+// 	insn_info *insn;
+// 	int size;
 
-	if(func == NULL)
-		return -1;
+// 	if(func == NULL)
+// 		return -1;
 
-	insn = func->insn;
-	size = 0;
-	while(insn) {
-		size += insn->size;
-		insn = insn->next;
-	}
+// 	insn = func->begin_insn;
+// 	size = 0;
+// 	while(insn) {
+// 		size += insn->size;
+// 		insn = insn->next;
+// 	}
 
-	return size;
-}
+// 	return size;
+// }
 
 
 /**
@@ -160,27 +168,25 @@ function * clone_function (function *func, char *suffix) {
 	char *name;
 	int size;
 
-	if(!func)
+	if (!func) {
 		return NULL;
+	}
 
 	// Allocates memory for the new descriptor
-	clone = (function *) malloc(sizeof(function));
-	if(!clone) {
-		herror(true, "Out of memory!\n");
-	}
+	clone = (function *) calloc(sizeof(function), 1);
 
 	// Copies the original descriptor to the new one
 	memcpy(clone, func, sizeof(function));
 
 	// Updates the pointer to instruction list
-	clone->insn = clone_instruction_list(func->insn);
+	clone->begin_insn = clone_instruction_list(func->begin_insn);
 
-  // [SE] Reset other references
-  clone->begin_blk = clone->end_blk = clone->source = NULL;
-  clone->calledfrom.first = clone->calledfrom.last = NULL;
-  clone->callto.first = clone->callto.last = NULL;
+	// Reset some fields
+	clone->begin_blk = clone->end_blk = clone->source = NULL;
+	clone->calledfrom.first = clone->calledfrom.last = NULL;
+	clone->callto.first = clone->callto.last = NULL;
 
-	// Updates the symbol pointer (assume that symbols have been already be cloned)
+	// Compose the function name
 	size = strlen((const char *)func->name) + strlen(suffix) + 2; // one is \0, one is '_'
 	name = malloc(sizeof(char) * size);
 	bzero(name, size);
@@ -188,15 +194,21 @@ function * clone_function (function *func, char *suffix) {
 	strcat(name, "_");
 	strcat(name, suffix);
 
-	size = get_function_size(clone);
-	if(size <= 0) {
-		hinternal();
-	}
-
-	clone->symbol = create_symbol_node((unsigned char *)name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, size);
 	clone->name = (unsigned char *)name;
 
-	hnotice(6, "Function '%s' (%d bytes) cloned\n", clone->name, clone->symbol->size);
+	// FIXME: E' realmente necessario?
+	// size = get_function_size(clone);
+	// if (size <= 0) {
+	// 	hinternal();
+	// }
+
+	// Create a new symbol
+	clone->symbol = symbol_create(name, func->symbol->type, func->symbol->bind,
+		func->symbol->sec, size);
+
+	clone->symbol->func = clone;
+
+	// hnotice(4, "Function '%s' (%d bytes) cloned\n", clone->name, clone->symbol->size);
 
 	return clone;
 }
@@ -211,8 +223,6 @@ function * clone_function (function *func, char *suffix) {
  */
 function *clone_function_list(function *func, char *suffix) {
 	function *clone, *head;
-	insn_info *insn;
-	symbol *sym;
 
 	if(!func)
 		return NULL;

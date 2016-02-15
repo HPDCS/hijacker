@@ -42,7 +42,7 @@ void preset_register(char *name, preset_init_func init_func, preset_apply_func a
   current->apply_func = apply_func;
   current->next = config.presets;
 
-  hnotice(2, "Registered preset '%s'\n", current->name);
+  hnotice(1, "Registered preset '%s'\n", current->name);
 
   config.presets = current;
 }

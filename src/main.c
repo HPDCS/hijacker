@@ -64,7 +64,7 @@ static void display_usage(char **argv) {
 static void process_configuration(char **argv) {
 
 	// If verbose is not set, this line will not print
-	hnotice(1, "Verbose mode active\n");
+	hprint("Verbose mode active\n");
 
 	// Early check on input file
 	if(config.input == NULL) {
@@ -88,7 +88,7 @@ static void process_configuration(char **argv) {
 
 
 	// Load the configuration file
-	hnotice(1, "Loading configuration file '%s'... \n", config.rules_file);
+	hprint("Loading configuration file '%s'... \n", config.rules_file);
 	config.nExecutables = parseRuleFile(config.rules_file, &config.rules);
 
 	hsuccess();
@@ -151,8 +151,8 @@ static bool parse_cmd_line(int argc, char **argv) {
 
 
 
-static void register_presets() {
-	hnotice(1, "Registering presets\n");
+static void register_presets(void) {
+	hprint("Registering presets\n");
 
 	// So far smtracer is the only available preset
 	preset_register(PRESET_SMTRACER, smt_init, smt_run);

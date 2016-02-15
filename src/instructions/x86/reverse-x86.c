@@ -149,7 +149,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 		hnotice(4, "A RELA node has been found to this instruction; we have to duplicate the RELA to the entry's offset\n");
 
 		sym = target->reference;
-		instruction_rela_node(sym, instr->prev->prev->prev, RELOCATE_ABSOLUTE_32);
+		symbol_instr_rela_create(sym, instr->prev->prev->prev, RELOC_ABS_32);
 	}
 
 	// Adds the pointer to the function that the trampoline module has to call at runtime
@@ -166,7 +166,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	hnotice(4, "Push the function pointer to '%s' in the trampoline structure\n", func);
 
 	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
-	instruction_rela_node(sym, instr->prev, RELOCATE_ABSOLUTE_64);
+	symbol_instr_rela_create(sym, instr->prev, RELOC_ABS_64);
 
 
 	hnotice(4, "Adds the call to the trampoline hijacker library function\n");
@@ -176,7 +176,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 
 	// Checks and creates the symbol name that will be the target of the call
 	sym = create_symbol_node((unsigned char *)"trampoline", SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
-	instruction_rela_node(sym, instr, RELOCATE_RELATIVE_32);
+	symbol_instr_rela_create(sym, instr, RELOC_PCREL_32);
 
 	// in order to align the stack pointer we need to insert an ADD instruction
 	// to compensate the SUB used to make room for the structure

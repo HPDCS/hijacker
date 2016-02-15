@@ -31,7 +31,7 @@
 
 static block *root[MAX_VERSIONS];
 
-block *block_create() {
+block *block_create(void) {
 	block *blk;
 	static int id;
 
@@ -125,7 +125,7 @@ static void block_tree_rotate_right(block **parent, block **child) {
 }
 
 static void block_tree_rebalance(block *orig, block *new) {
-	block *parent, *first, *second, *temp;
+	block *parent, *first, *second;
 
 	// Node insertion: the right-most block replaces the original
 	// and the latter becomes the left child of the former
@@ -206,10 +206,12 @@ block *block_split(block *blk, insn_info *breakpoint, block_split_mode mode) {
 
 	// If the block is already split at the desired breakpoint
 	// just return it
-	if (blk->begin == breakpoint && mode == SPLIT_FIRST)
+	if (blk->begin == breakpoint && mode == SPLIT_FIRST) {
 		return blk;
-	if (blk->end == breakpoint && mode == SPLIT_LAST)
+	}
+	if (blk->end == breakpoint && mode == SPLIT_LAST) {
 		return blk;
+	}
 
 	// Allocate the new blocks, update the ordered list
 	// and appropriately mark their boundaries
@@ -250,7 +252,7 @@ block *block_split(block *blk, insn_info *breakpoint, block_split_mode mode) {
 		}
 	}
 
-	hnotice(3, "Block splitting result: #%u from <%#08llx> to <%#08llx>, "
+	hnotice(4, "Block splitting result: #%u from <%#08llx> to <%#08llx>, "
 		"#%u from <%#08llx> to <%#08llx>\n",
 		blk->id, blk->begin->orig_addr, blk->end->orig_addr,
 		new_blk->id, new_blk->begin->orig_addr, new_blk->end->orig_addr);
@@ -492,7 +494,6 @@ static void block_graph_visit_next(block_edge *edge, graph_visit *visit) {
 }
 
 void block_graph_visit(block_edge *edge, graph_visit *visit) {
-	linked_list *scheduled, *visited;
 	block *blk;
 
 	// A few sanity checks before running the visit
@@ -535,7 +536,7 @@ static bool block_graph_complete_pre(void *elem, void *data) {
 	// opposite ends of the current edge are respectively the loop
 	// header and loop footer
 	if (edge->to->visited == true && edge->to->active == true) {
-		hnotice(3, "Block #%u tagged as loop header\n", edge->to->id);
+		hnotice(4, "Block #%u tagged as loop header\n", edge->to->id);
 
 		edge->dir = EDGE_BACK;
 		edge->to->type = BLOCK_LOOP_HEADER;
@@ -564,36 +565,53 @@ static bool block_graph_complete_post(void *elem, void *data) {
 }
 
 block *block_graph_create(function *functions) {
-	function *func, *callee;
+	function *func, *next, *prev, *callee;
 	insn_info *instr;
 	block *blocks, *current_blk, *new_blk, *temp_blk, *temp_new_blk;
 
 	// The first block comprises the entire program, then it will be
 	// progressively split until we obtain basic blocks
 	current_blk = block_create();
-	current_blk->begin = functions->insn;
+	current_blk->begin = functions->begin_insn;
 	current_blk->end = find_last_insn(functions);
 
-	hnotice(2, "Program block #%u created from <%#08llx> to <%#08llx>\n",
+	hnotice(4, "Program block #%u created from <%#08llx> to <%#08llx>\n",
 		current_blk->id, current_blk->begin->orig_addr, current_blk->end->orig_addr);
 
 	blocks = current_blk;
 
 	// For each instruction in each function, we begin iteratively
 	// splitting current blocks into smaller and smaller chunks
-	for (func = functions; func; func = func->next) {
+	for (prev = NULL, func = functions; func; prev = func, func = func->next) {
+
+		hnotice(2, "Resolving CFG for function '%s' at <%#08llx>\n",
+			func->name, func->begin_insn->orig_addr);
+
+		if (prev != NULL && func->orig_addr == prev->orig_addr) {
+			// Handle the case of overlapping functions
+
+			func->begin_blk = prev->begin_blk;
+			func->end_blk = prev->end_blk;
+
+			func->source = prev->source;
+			func->calledfrom = prev->calledfrom;
+			func->callto = prev->callto;
+
+			continue;
+		}
 
 		// Beginning of a function
-		hnotice(2, "Function '%s' begin breakpoint at <%#08llx>\n", func->name, func->insn->orig_addr);
+		hnotice(3, "Function '%s' begin breakpoint at <%#08llx>\n",
+			func->name, func->begin_insn->orig_addr);
 
-		current_blk = block_split(current_blk, func->insn, SPLIT_FIRST);
+		current_blk = block_split(current_blk, func->begin_insn, SPLIT_FIRST);
 		func->begin_blk = current_blk;
 
-		for (instr = func->insn->next; instr->next; instr = instr->next) {
+		for (instr = func->begin_insn->next; instr->next; instr = instr->next) {
 
 			// Beginning of function body
 			if (instr->prev && !instr->prev->prev) {
-				hnotice(2, "Function %s body breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
+				hnotice(3, "Function %s body breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
 
 				current_blk = block_split(current_blk, instr, SPLIT_LAST);
 
@@ -613,7 +631,8 @@ block *block_graph_create(function *functions) {
 
 			// Function exit point
 			if (instr->next && IS_RET(instr->next)) {
-				hnotice(2, "Function %s return breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
+				hnotice(3, "Function %s return breakpoint at <%#08llx>\n",
+					func->name, instr->orig_addr);
 
 				new_blk = block_split(current_blk, instr, SPLIT_FIRST);
 
@@ -631,7 +650,7 @@ block *block_graph_create(function *functions) {
 				unsigned long idx;
 				insn_info *target;
 
-				hnotice(2, "Indirect jump breakpoint at <%#08llx>\n", instr->orig_addr);
+				hnotice(3, "Indirect jump breakpoint at <%#08llx>\n", instr->orig_addr);
 
 				new_blk = block_split(current_blk, instr, SPLIT_LAST);
 
@@ -639,7 +658,7 @@ block *block_graph_create(function *functions) {
 				while (idx < instr->jumptable.size) {
 					target = instr->jumptable.entry[idx];
 
-					hnotice(2, "Jump target breakpoint (jumptable) at <%#08llx>\n", target->orig_addr);
+					hnotice(3, "Jump target breakpoint (jumptable) at <%#08llx>\n", target->orig_addr);
 
 					temp_blk = block_find(target);
 					temp_new_blk = block_split(temp_blk, target, SPLIT_FIRST);
@@ -663,7 +682,7 @@ block *block_graph_create(function *functions) {
 			}
 
 			else if (IS_JUMP(instr)) {
-				hnotice(2, "Jump instruction %s breakpoint at <%#08llx> to target <%#08llx>\n",
+				hnotice(3, "Jump instruction %s breakpoint at <%#08llx> to target <%#08llx>\n",
 					(IS_CONDITIONAL(instr) ? "(conditional)" : "(absolute)"),
 					instr->orig_addr, instr->jumpto->orig_addr);
 
@@ -671,7 +690,7 @@ block *block_graph_create(function *functions) {
 
 				// The target of a jump creates a link between blocks, but we keep
 				// splitting blocks in an ordered manner: from first to last instruction
-				hnotice(2, "Jump target breakpoint at <%#08llx>\n", instr->jumpto->orig_addr);
+				hnotice(3, "Jump target breakpoint at <%#08llx>\n", instr->jumpto->orig_addr);
 
 				temp_blk = block_find(instr->jumpto);
 				temp_new_blk = block_split(temp_blk, instr->jumpto, SPLIT_FIRST);
@@ -702,7 +721,7 @@ block *block_graph_create(function *functions) {
 				unsigned long idx;
 				insn_info *target;
 
-				hnotice(2, "Indirect call breakpoint at <%#08llx>\n", instr->orig_addr);
+				hnotice(3, "Indirect call breakpoint at <%#08llx>\n", instr->orig_addr);
 
 				new_blk = block_split(current_blk, instr, SPLIT_LAST);
 
@@ -710,7 +729,7 @@ block *block_graph_create(function *functions) {
 
 				// Single function pointer
 				if (instr->jumpto) {
-					callee = find_func(functions, instr->jumpto, NEW_ADDR);
+					callee = find_func_from_instr(instr->jumpto, NEW_ADDR);
 
 					if (callee) {
 						hnotice(3, "Discovered call from block #%u to function '%s'\n",
@@ -722,7 +741,7 @@ block *block_graph_create(function *functions) {
 						ll_push(&func->callto, callee);
 
 						// TODO: Va fatto da un'altra parte
-						// instruction_rela_node(callee->symbol, instr, RELOCATE_RELATIVE_32);
+						// symbol_instr_rela_create(callee->symbol, instr, RELOC_PCREL_32);
 					}
 				}
 
@@ -735,9 +754,9 @@ block *block_graph_create(function *functions) {
 					while (idx < instr->jumptable.size) {
 						target = instr->jumptable.entry[idx];
 
-						hnotice(2, "Call target breakpoint (calltable) at <%#08llx>\n", target->orig_addr);
+						hnotice(3, "Call target breakpoint (calltable) at <%#08llx>\n", target->orig_addr);
 
-						callee = find_func(functions, target, NEW_ADDR);
+						callee = find_func_from_instr(target, NEW_ADDR);
 
 						if (callee) {
 							hnotice(3, "Discovered call from block #%u to function '%s'\n",
@@ -749,7 +768,7 @@ block *block_graph_create(function *functions) {
 							ll_push(&func->callto, callee);
 
 							// TODO: Va fatto da un'altra parte
-							// instruction_rela_node(callee->symbol, instr, RELOCATE_RELATIVE_32);
+							// symbol_instr_rela_create(callee->symbol, instr, RELOC_PCREL_32);
 						}
 
 						idx = idx + 1;
@@ -761,7 +780,7 @@ block *block_graph_create(function *functions) {
 			}
 
 			else if (IS_CALL(instr)) {
-				hnotice(2, "Call instruction breakpoint at <%#08llx> to function %s\n",
+				hnotice(3, "Call instruction breakpoint at <%#08llx> to function %s\n",
 					instr->orig_addr, instr->reference->name);
 
 				new_blk = block_split(current_blk, instr, SPLIT_LAST);
@@ -771,7 +790,7 @@ block *block_graph_create(function *functions) {
 				// We skip function declarations that don't have an actual
 				// definition in our relocatable object
 				if (instr->jumpto) {
-					callee = find_func(functions, instr->jumpto, NEW_ADDR);
+					callee = find_func_from_instr(instr->jumpto, NEW_ADDR);
 
 					if (callee) {
 						hnotice(3, "Discovered call from block #%u to function '%s'\n",
@@ -783,7 +802,7 @@ block *block_graph_create(function *functions) {
 						ll_push(&func->callto, callee);
 
 						// TODO: Va fatto da un'altra parte
-						// instruction_rela_node(callee->symbol, instr, RELOCATE_RELATIVE_32);
+						// symbol_instr_rela_create(callee->symbol, instr, RELOC_PCREL_32);
 					}
 				}
 
@@ -793,19 +812,29 @@ block *block_graph_create(function *functions) {
 		}
 
 		// End of function
-		hnotice(2, "Function %s end breakpoint at <%#08llx>\n", func->name, instr->orig_addr);
+		hnotice(3, "Function %s end breakpoint at <%#08llx>\n",
+			func->name, instr->orig_addr);
+
 		func->end_blk = current_blk;
 
-		// Hackish way to make the splitting work as expected
-		// [SE] TODO: Find a better way
-		if (func->next) {
-			instr->next = func->next->insn;
+		// Hackish way to make the splitting work as expected: we fast-forward
+		// the function chain until we skip over all aliases for the current
+		// function... the first non-overlapping function is temporarily
+		// linked with the current one in terms of instructions
+		// TODO: Find a better way
+		for (next = func->next; next; next = next->next) {
+			if (func->orig_addr != next->orig_addr) {
+				break;
+			}
+		}
+
+		if (next) {
+			instr->next = next->begin_insn;
 		}
 
 		current_blk = block_split(current_blk, instr, SPLIT_LAST);
 
-		// Restoring end of function... you haven't seen anything, have you? ;-)
-		// [SE] TODO: Find a better way
+		// Restoring end of function...
 		instr->next = NULL;
 
 		// Now let's compute block lengths, as well as the source block

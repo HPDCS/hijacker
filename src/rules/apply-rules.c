@@ -252,7 +252,7 @@ static int apply_rule_instruction(Executable *exec, Instruction *tagInstruction,
 
 	(void)exec;
 
-	insn = func->insn;
+	insn = func->begin_insn;
 	count = 0;
 
 	hnotice(2, "Entering Instruction scope; searching for instruction of type %d\n", tagInstruction->flags);
@@ -367,7 +367,7 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
 			// Check if a Call tag has been specified
 			if(tagFunction->call) {
 				tagCall = tagFunction->call;
-				apply_rule_addcall(tagCall, func->insn);
+				apply_rule_addcall(tagCall, func->begin_insn);
 			}
 
 		}
@@ -400,7 +400,7 @@ void apply_rules(void) {
 	Instruction *tagInstruction;
 	Function *tagFunction;
 
-	hprint("Start applying rules...\n");
+	hprint("Start applying rules...\n\n");
 
 	// Create a temporary directory to place object files;
 	execute("mkdir", "-p", TEMP_PATH);

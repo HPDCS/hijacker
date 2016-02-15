@@ -40,6 +40,10 @@
 #include <elf/handle-elf.h> // [SE] TODO: creare un multiplexer per creare entry di rilocazione
 
 
+#define MAX_LOOKBEHIND		10 // [SE] Used while reverse-parsing instruction to resolve jump tables
+
+
+
 /**
  * Seeks the instruction descriptor associated with a given instruction address
  * (either original or new) in the entire program or within a desired function.
@@ -64,17 +68,17 @@ insn_info *find_insn(function *func, unsigned long long addr, insn_address_type 
 	while (func) {
 
 		if (func->next) {
-			if (func->next->insn->orig_addr <= addr) {
+			if (func->next->begin_insn->orig_addr <= addr) {
 				func = func->next;
 				continue;
 			}
-			else if (func->next->insn->new_addr <= addr) {
+			else if (func->next->begin_insn->new_addr <= addr) {
 				func = func->next;
 				continue;
 			}
 		}
 
-		instr = func->insn;
+		instr = func->begin_insn;
 		while(instr) {
 			if (instr->orig_addr == addr && type == ORIG_ADDR) {
 				return instr;
@@ -92,6 +96,19 @@ insn_info *find_insn(function *func, unsigned long long addr, insn_address_type 
 	return NULL;
 }
 
+insn_info *find_insn_cool(insn_info *head, unsigned long long addr) {
+	insn_info *instr;
+
+	for (instr = head; instr; instr = instr->next) {
+		if (instr->orig_addr <= addr
+		 && instr->orig_addr + instr->size > addr) {
+			return instr;
+		}
+	}
+
+	return NULL;
+}
+
 insn_info *find_last_insn(function *functions) {
 	function *func;
 	insn_info *instr;
@@ -101,7 +118,7 @@ insn_info *find_last_insn(function *functions) {
 		func = func->next;
 	}
 
-	instr = func->insn;
+	instr = func->begin_insn;
 	while(instr->next) {
 		instr = instr->next;
 	}
@@ -127,6 +144,8 @@ static void parse_instruction_bytes(unsigned char *bytes, unsigned long int *pos
 	if(bytes == NULL || pos == NULL) {
 		hinternal();
 	}
+
+	flags = 0;
 
 	// parse the input bytes to correctly understand which instruction
 	// they represents
@@ -174,7 +193,7 @@ static void parse_instruction_bytes(unsigned char *bytes, unsigned long int *pos
  */
 static inline void insert_insn_at(insn_info *target, insn_info *instr, insn_insert_mode mode) {
 	// insn_info *pivot;
-	function *func;
+	// function *func;
 
 	// TODO: debug
 	/*hprint("ISTRUZIONE: '%s' <%#08lx> -- op_size=%d, disp_off=%d, jump_dest=%d, size=%d\n", x86->mnemonic, x86->addr,
@@ -258,6 +277,10 @@ int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size
 		// relocates and links jump instructions together.
 		parse_instruction_bytes(binary, &pos, &instr);
 
+		// Useful in order to be able to retrieve the section from
+		// the just added instruction
+		instr->orig_addr = instr->new_addr = target->new_addr;
+
 		// Adds the newly created instruction descriptor to the
 		// intermediate representation
 		insert_insn_at(target, instr, mode);
@@ -287,10 +310,10 @@ int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size
  *
  * @return Number of newly inserted instructions.
  */
-int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size, insn_info **last) {
+int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size,insn_info **last) {
 	insn_info *instr;
 	unsigned long int pos = 0;
-	unsigned int old_size;
+	// unsigned int old_size;
 	int count;
 
 	hnotice(4, "Substituting target instruction at %#08llx with binary code\n", target->new_addr);
@@ -329,7 +352,8 @@ int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t
  * before, after or in place of the target one.
  * @param instr Pointer to the CALL instruction just created.
  */
-void add_call_instruction(insn_info *target, unsigned char *func, insn_insert_mode mode, insn_info **instr) {
+void add_call_instruction(insn_info *target, unsigned char *name, insn_insert_mode mode, insn_info **instr) {
+	section *sec;
 	symbol *sym;
 	unsigned char call[5];
 
@@ -340,11 +364,13 @@ void add_call_instruction(insn_info *target, unsigned char *func, insn_insert_mo
 		break;
 	}
 
-	// Checks and creates the symbol name
-	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
+	sec = find_section_by_name(".text");
+
+	// Creates the symbol name
+	sym = symbol_create(name, SYMBOL_UNDEF, SYMBOL_GLOBAL, sec, 0);
 
 	// Adds the instruction to the binary representation
-	// WRANING! We MUST add the instruction BEFORE to create
+	// WRANING! We MUST add the instruction BEFORE creating
 	// the new rela node, otherwise the instruction's address
 	// will not be coherent anymore once at the amitting step
 	insert_instructions_at(target, call, sizeof(call), mode, instr);
@@ -353,7 +379,7 @@ void add_call_instruction(insn_info *target, unsigned char *func, insn_insert_mo
 	// Once the instruction has been inserted into the binary representation
 	// and each address and reference have been properly updated,
 	// create a new RELA entry
-	instruction_rela_node(sym, *instr, RELOCATE_RELATIVE_32);
+	symbol_instr_rela_create(sym, *instr, RELOC_PCREL_32);
 }
 
 
@@ -364,7 +390,7 @@ void add_call_instruction(insn_info *target, unsigned char *func, insn_insert_mo
 
  * @return Pointer to the clone instruction descriptor.
  */
-insn_info * clone_instruction (insn_info *insn) {
+insn_info * clone_instruction (insn_info *instr) {
 	insn_info *clone;
 
 	clone = (insn_info *) calloc(sizeof(insn_info), 1);
@@ -372,7 +398,7 @@ insn_info * clone_instruction (insn_info *insn) {
 		herror(true, "Out of memory!\n");
 	}
 
-	memcpy(clone, insn, sizeof(insn_info));
+	memcpy(clone, instr, sizeof(insn_info));
 
 	clone->jumpto = NULL;
 	clone->targetof.first = clone->targetof.last = NULL;
@@ -392,25 +418,26 @@ insn_info * clone_instruction (insn_info *insn) {
  *
  * @return Pointer to the first instruction descriptor of the clone list.
  */
-insn_info * clone_instruction_list (insn_info *insn) {
+insn_info * clone_instruction_list (insn_info *instr) {
 	insn_info *clone, *head;
 
-	if(!insn)
+	if(!instr)
 		return NULL;
 
-	head = clone = clone_instruction(insn);
+	head = clone = clone_instruction(instr);
 	clone->prev = NULL;
-	insn = insn->next;
+	instr = instr->next;
 
-	while(insn) {
-		clone->next = clone_instruction(insn);
+	while(instr) {
+		clone->next = clone_instruction(instr);
 		clone->next->prev = clone;
 		clone = clone->next;
-		insn = insn->next;
+		instr = instr->next;
 	}
 
 	return head;
 }
+
 
 
 /**
@@ -428,7 +455,7 @@ inline void set_jumpto_reference(insn_info *jump, insn_info *target) {
 
 	hnotice(3, "%s instruction at <%#08llx> (<%#08llx>) linked to instruction <%#08llx> at address <%#08llx> (<%#08llx>)\n",
 		IS_JUMP(jump) ? "Jump" : "Call",
-		jump->orig_addr, jump->new_addr, target, target->orig_addr, target->new_addr);
+		jump->orig_addr, jump->new_addr, (unsigned long long) target, target->orig_addr, target->new_addr);
 }
 
 /**
@@ -450,7 +477,7 @@ inline void set_jumptable_entry(insn_info *jump, insn_info *entry, unsigned int 
 
 	hnotice(3, "%s instruction at <%#08llx> (<%#08llx>) linked to instruction <%#08llx> at address <%#08llx> (<%#08llx>) in entry %u\n",
 		IS_JUMP(jump) ? "Jump" : "Call",
-		jump->orig_addr, jump->new_addr, entry, entry->orig_addr, entry->new_addr, idx);
+		jump->orig_addr, jump->new_addr, (unsigned long long) entry, entry->orig_addr, entry->new_addr, idx);
 }
 
 
@@ -504,12 +531,387 @@ void set_virtual_reference(insn_info *target, insn_info *virtual) {
 
 	if (target->pointedby) {
 		virtual->pointedby = target->reference;
-		virtual->pointedby->relocation.ref_insn = virtual;
+		virtual->pointedby->relocation.target_insn = virtual;
 
 		target->pointedby = NULL;
 
 		// virtual->reference->relocation.offset = virtual->new_addr;
 	}
+}
+
+
+static void set_jump_table(function *func, insn_info *instr, section *sec,
+	unsigned long long addr, unsigned long long size) {
+
+	section *text;
+	insn_info *target;
+	symbol *rel;
+	function *callee;
+
+	unsigned int i;
+
+	text = func->symbol->sec;
+
+	// Find the relocation entry associated with the table base address
+	linked_list relocs = { NULL, NULL };
+	ll_node *relnode;
+	rel = NULL;
+
+	find_relocations(PROGRAM(symbols), sec, text->sym, &relocs);
+
+	for (relnode = relocs.first; relnode; relnode = relnode->next) {
+		rel = relnode->elem;
+
+		if (rel->relocation.offset == addr) {
+			break;
+		}
+	}
+
+	if (rel == NULL) {
+		hinternal();
+	}
+
+	// Make room for the new jump table
+	instr->jumptable.size = size;
+	instr->jumptable.entry = malloc(sizeof(insn_info *) * size);
+
+	// Keep parsing relocation entries until we reach the
+	// boundary of the jump table
+	i = 0;
+
+	while(i < size && relnode) {
+		rel = relnode->elem;
+
+		if (IS_JUMPIND(instr)) {
+			target = find_insn(func, rel->relocation.addend, true);
+
+			set_jumptable_entry(instr, target, i);
+		}
+
+		else if (IS_CALLIND(instr)) {
+			callee = rel->func;
+
+			if (rel->relocation.addend) {
+				// It doesn't make much sense to compute the address of a function
+				// from the address of another function and a displacement, but we
+				// handle that possibility anyway...
+				// [SE] TODO: Questo branch è abbastanza inutile
+				target = find_insn(NULL, callee->begin_insn->orig_addr + rel->relocation.addend, true);
+
+				if (!target) {
+					hinternal();
+				}
+			} else {
+				target = callee->begin_insn;
+			}
+
+			set_jumptable_entry(instr, target, i);
+		}
+
+		else {
+			hinternal();
+		}
+
+		i = i + 1;
+		relnode = relnode->next;
+	}
+}
+
+
+static void resolve_jump_table(function *func, insn_info *instr) {
+	insn_info *backinstr;
+	symbol *sym;
+	section *sec;
+	function *callee;
+
+	unsigned long start;
+	unsigned long size;
+	unsigned int i;
+
+	backinstr = instr;
+	sym = sec = callee = NULL;
+	start = size = 0;
+
+
+	// Code for indirect jumps (very very unreliable!)
+	if (IS_JUMPIND(instr)) {
+		bool start_found;
+		bool size_found;
+
+		start_found = size_found = false;
+
+		// We keep searching for the start address and the size of the jump table
+		backinstr = instr;
+		i = 0;
+
+		while(backinstr && i < MAX_LOOKBEHIND && (!start_found || !size_found)) {
+
+			if (!start_found && IS_MEMRD(backinstr)) {
+				sym = backinstr->reference;
+
+				// We make the reasonable assumption that case statement addresses are in .rodata
+				if (sym && str_equal(sym->name, ".rodata")) {
+					sec = sym->sec;
+					start = sym->relocation.addend;
+
+					start_found = true;
+				}
+			}
+
+			else if (!size_found && IS_CTRL(backinstr)) {
+				switch(PROGRAM(insn_set)) {
+					case X86_INSN:
+						// [SE] TODO: Bisognerebbe beccare non semplicemente una CMP, ma quella
+						// che ha come destinazione il registro utilizzato nella MOV precedente,
+						// cioè quello impiegato come valore di indice per la jump table
+						size = backinstr->i.x86.immed;
+						break;
+
+					default:
+						size = 0;
+				}
+
+				size_found = true;
+			}
+
+			backinstr = backinstr->prev;
+			i = i + 1;
+		}
+
+		// It doesn't make sense to have zero-sized jump tables, therefore
+		// we assume that this check is safe enough...
+		if (size > 0) {
+			hnotice(6, "JT starting at %s + <%#08llx> and sized %lu\n",
+				sec->name, (unsigned long long) start, size);
+
+			// The immediate value of the previous CMP instruction is inclusive of
+			// the last case statement, hence it must be increased by one if we
+			// wish to use it as the size of the jump table
+			size = size + 1;
+			set_jump_table(func, instr, sec, start, size);
+		}
+	}
+
+
+	// Code for indirect calls (slightly more reliable)
+	else if (IS_CALLIND(instr)) {
+		backinstr = instr->prev;
+		i = 0;
+
+		while(backinstr && i < MAX_LOOKBEHIND) {
+
+			if (IS_MEMRD(backinstr) || IS_MEMWR(backinstr)) {
+				sym = backinstr->reference;
+
+				if (sym != NULL) {
+					// Single function pointer
+					if (sym->type == SYMBOL_FUNCTION) {
+						callee = sym->func;
+					}
+					// Array of function pointers
+					else if (sym->type == SYMBOL_VARIABLE) {
+						sec = sym->sec;
+						start = sym->offset;
+						size = sym->size / sizeof(char *);
+					}
+					else {
+						backinstr = backinstr->prev;
+						i = i + 1;
+						continue;
+					}
+
+					break;
+				}
+			}
+
+			backinstr = backinstr->prev;
+			i = i + 1;
+		}
+
+		// Zero-sized call tables mean a single function pointer
+		if (callee && size == 0) {
+			hnotice(6, "Function pointer to %s\n", callee->name);
+
+			set_jumpto_reference(instr, callee->begin_insn);
+		}
+
+		else if (size) {
+			hnotice(6, "Array named %s starting at %s + <%#08llx> and sized %lu\n",
+				sym->name, sec->name, (unsigned long long) start, size);
+
+			set_jump_table(NULL, instr, sec, start, size);
+		}
+	}
+
+
+	// Cannot handle any other kind of instruction
+	else {
+		hinternal();
+	}
+}
+
+
+/**
+ * Links jumps instructions to destination ones.
+ * Provided a valid function's descriptors, it will look up for all the jump instructions
+ * and will link them to their relative destination ones.
+ *
+ * @param func The pointer to a valid function's descriptors
+ */
+
+void link_jump_instructions(function *func) {
+	insn_info *instr;
+	insn_info *dest;
+
+	function *callee;
+	symbol *sym;
+
+	unsigned long long jmp_addr;
+
+	hnotice(2, "Resolve jumps/calls of function '%s'\n", func->name);
+
+	// For each instruction, look for jump/call ones
+	for (instr = func->begin_insn; instr; instr = instr->next) {
+
+		if(IS_JUMP(instr)) {
+			// If the jump instruction has a reference, this means that a relocation
+			// has to be applied. Hence, looking for the target instruction is incorrect.
+			if (instr->reference != NULL) {
+				// Simply skip the instruction; the linker will be in charge to correctly handle it
+				continue;
+			}
+
+			else if (IS_JUMPIND(instr)) {
+				// [SE] If the instruction is an indirect jump, try to resolve its
+				// associated jump table (currently only for switch-case statements)
+				// NOTE: This is a very naive and loose algorithm that may fail
+				// in several cases, and is not kitten-proof! Beware!
+
+				resolve_jump_table(func, instr);
+			}
+
+			else {
+
+				switch(PROGRAM(insn_set)) {
+					case X86_INSN:
+						jmp_addr = instr->orig_addr + instr->i.x86.insn_size + instr->i.x86.jump_dest;
+						break;
+
+					default:
+						hinternal();
+				}
+
+				dest = find_insn_cool(func->begin_insn, jmp_addr);
+
+				if(!dest) {
+					hinternal();
+				}
+
+				// At this point 'dest' will point to the destination instruction
+				// relative to the jump 'instr'
+				set_jumpto_reference(instr, dest);
+			}
+
+		}
+
+
+		else if(IS_CALL(instr)) {
+
+			if (IS_CALLIND(instr)) {
+				// [SE] Handle indirect calls (tricky, uses the same naive algorithm
+				// as for switch-case statements)
+				resolve_jump_table(func, instr);
+			}
+
+			else {
+				// A CALL could be seen as a JUMP and could help in handling the
+				// embedded offset to local functions
+
+				switch(PROGRAM(insn_set)) {
+					case X86_INSN:
+						jmp_addr = instr->i.x86.jump_dest;
+						break;
+
+					default:
+						hinternal();
+				}
+
+				if (jmp_addr != 0) {
+					// If the CALL has a non-null embedded offset, it is a call to a local function and
+					// the format is the same as a jump. The offset is interpreted, the called function
+					// retrieved and the instruction is translated into a zero'd CALL with an associated
+					// relocation entry.
+
+					// NOTE: credo che fosse scorretto nel caso delle funzioni locali, infatti
+					// non trovava la funzione
+					jmp_addr += instr->orig_addr + instr->size;
+
+					hnotice(4, "Call to a local function at <%#08llx> detected\n", jmp_addr);
+
+					callee = find_func_from_addr(jmp_addr);
+
+					if (!callee) {
+						hinternal();
+					}
+
+					// CALL instruction embedded offset must be reinitialized to zero
+					switch(PROGRAM(insn_set)) {
+						case X86_INSN:
+							memset(instr->i.x86.insn + 1, 0, (instr->size - instr->opcode_size));
+							break;
+					}
+
+				}
+
+				else {
+					// [SE] If the CALL instruction has no embedded offset, it is already
+					// associated with a relocation. In this case, we must check whether
+					// is it a CALL to a local function or not, and act accordingly.
+
+					// jmp_addr = instr->reference->position;
+
+					// It means the function is defined elsewhere (i.e. in a different file object)
+					// meaning that the linker will be in charge to correctly handle it
+					if (instr->reference->size == 0) {
+						// instr = instr->next;
+						continue;
+					}
+
+					// callee = find_func_from_addr(jmp_addr);
+					callee = instr->reference->func;
+
+					if (!callee) {
+						hinternal();
+					}
+				}
+
+				// if (callee) {
+					// CALL to local function detected, augment the intermediate representation
+					// with the appropriate linking between instructions.
+					hnotice(4, "Callee function '%s' at <%#08llx> found\n", callee->name, callee->orig_addr);
+
+					// At this point 'callee' will point to the destination function
+					// relative to the call; the only thing we have to do is to add the
+					// reference to the relative function's symbol so that, in the future
+					// emit step, the code will automatically retrieve the correct final
+					// address of the relocation. In such a way we threat local function
+					// calls as relocation entities.
+					sym = callee->symbol;
+
+					if (instr->reference == NULL || PROGRAM(version) > 0) {
+						// The instruction object will be bound to the proper symbol
+						symbol_instr_rela_create(sym, instr, RELOC_PCREL_32);
+					}
+
+					set_jumpto_reference(instr, callee->begin_insn);
+				// }
+
+			}
+
+		}
+
+	}
+
 }
 
 
@@ -531,7 +933,7 @@ void update_instruction_addresses(void) {
 	unsigned long long foo_size;
 
 	long long rela_offset;
-	long long rela_addend;
+	// long long rela_addend;
 
 	hnotice(4, "Recalculate instructions' addresses\n");
 
@@ -545,7 +947,7 @@ void update_instruction_addresses(void) {
 
 		foo_size = 0;
 
-		instr = foo->insn;
+		instr = foo->begin_insn;
 		while(instr != NULL) {
 
 			old_offset = instr->new_addr;
@@ -573,7 +975,7 @@ void update_instruction_addresses(void) {
 			// [/SE]
 
 			hnotice(6, "Instruction '%s' <%#08llx> at old address <%#08llx> (size %u) has new address <%#08llx>\n",
-				instr->i.x86.mnemonic, instr, old_offset, instr->size, instr->new_addr);
+				instr->i.x86.mnemonic, (unsigned long long) instr, old_offset, instr->size, instr->new_addr);
 
 			instr = instr->next;
 		}
@@ -581,7 +983,7 @@ void update_instruction_addresses(void) {
 		foo->symbol->size = foo_size;
 
 		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n",
-			foo->symbol->name, foo->insn->new_addr, foo->symbol->size);
+			foo->symbol->name, foo->begin_insn->new_addr, foo->symbol->size);
 
 		foo = foo->next;
 	}
@@ -621,7 +1023,7 @@ static void set_jump_displacement(insn_info *jump, insn_info *target) {
 
 	hnotice(4, "%s instruction at <%#08llx> (<%#08llx>) has updated displacement %#0llx\n",
 		IS_JUMP(jump) ? "Jump" : "Call",
-		jump->orig_addr, jump->new_addr, displacement);
+		jump->orig_addr, jump->new_addr, (unsigned long long) displacement);
 }
 
 /**
@@ -652,7 +1054,7 @@ static void shift_instruction_addresses(insn_info *target, int shift) {
 	// Skip functions that are before the target instruction
 	while(foo) {
 
-		if(foo->insn->new_addr > target->new_addr) {
+		if(foo->begin_insn->new_addr > target->new_addr) {
 			break;
 		}
 
@@ -669,7 +1071,7 @@ static void shift_instruction_addresses(insn_info *target, int shift) {
 
 	while(foo) {
 
-		instr = foo->insn;
+		instr = foo->begin_insn;
 		while(instr) {
 
 			// Skip instructions that come before 'target'
@@ -709,7 +1111,7 @@ static void shift_instruction_addresses(insn_info *target, int shift) {
 		}
 
 		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n",
-			foo->symbol->name, foo->insn->new_addr, foo->symbol->size);
+			foo->symbol->name, foo->begin_insn->new_addr, foo->symbol->size);
 
 		foo = foo->next;
 	}
@@ -756,9 +1158,9 @@ void update_jump_displacements(void) {
 	insn_info *instr;
 	// insn_info *jumpto;
 
-	unsigned int offset;
+	// unsigned int offset;
 
-	unsigned int size;
+	// unsigned int size;
 	unsigned int old_size; // [SE]
 
 	long delta;
@@ -775,7 +1177,7 @@ void update_jump_displacements(void) {
 
 		hnotice(5, "In function '%s'\n", foo->name);
 
-		instr = foo->insn;
+		instr = foo->begin_insn;
 		while(instr != NULL) {
 
 			if(IS_JUMP(instr) && instr->jumpto != NULL) {
@@ -789,7 +1191,7 @@ void update_jump_displacements(void) {
 				jump_displacement = instr->jumpto->new_addr - (instr->new_addr + instr->size);
 
 				hnotice(6, "Jump instruction at <%#08llx> (originally <%#08llx>) +%#0llx points to instruction '%s' at <%#08llx> (originally <%#08llx>)\n",
-					instr->new_addr, instr->orig_addr, jump_displacement,
+					instr->new_addr, instr->orig_addr, (unsigned long long) jump_displacement,
 					instr->jumpto->i.x86.mnemonic, instr->jumpto->new_addr, instr->jumpto->orig_addr);
 
 				if (PROGRAM(insn_set) == X86_INSN) {
@@ -833,7 +1235,7 @@ void update_jump_displacements(void) {
 							}
 
 							hnotice(6, "Short jump at <%#08llx> (originally <%#08llx>) will be converted to a long jump:\n",
-								instr->new_addr, instr->orig_addr, jump_displacement);
+								instr->new_addr, instr->orig_addr/*, jump_displacement */);
 
 							hdump(6, "FROM", instr->i.x86.insn, instr->size);
 							hdump(6, "TO", bytes, sizeof(bytes));
@@ -894,25 +1296,25 @@ void update_jump_displacements(void) {
  * @param target Target instruction's descriptor pointer.
  * @param insn Pointer to the descriptor of the instruction to substitute with.
  */
-static void substitute_insn_with(insn_info *target, insn_info *instr) {
+// static void substitute_insn_with(insn_info *target, insn_info *instr) {
 
-	// we have to update all the references
-	// delta shift should be the: d = (old size - the new one) [signed, obviously]
+// 	// we have to update all the references
+// 	// delta shift should be the: d = (old size - the new one) [signed, obviously]
 
-	// Copy addresses
-	instr->orig_addr = target->orig_addr;
-	instr->new_addr = target->new_addr;
+// 	// Copy addresses
+// 	instr->orig_addr = target->orig_addr;
+// 	instr->new_addr = target->new_addr;
 
-	// Update references
-	instr->prev = target->prev;
-	instr->next = target->next;
-	if(target->prev)
-		target->prev->next = instr;
-	if(target->next)
-		target->next->prev = instr;
+// 	// Update references
+// 	instr->prev = target->prev;
+// 	instr->next = target->next;
+// 	if(target->prev)
+// 		target->prev->next = instr;
+// 	if(target->next)
+// 		target->next->prev = instr;
 
-	// update_instruction_addresses(instr, (instr->size - target->size));
+// 	// update_instruction_addresses(instr, (instr->size - target->size));
 
-	//func = get_function(target);
-	//hnotice(4, "Substituting instruction at address <%#08lx> in function '%s'\n", target->orig_addr, func->symbol->name);
-}
+// 	//func = get_function(target);
+// 	//hnotice(4, "Substituting instruction at address <%#08lx> in function '%s'\n", target->orig_addr, func->symbol->name);
+// }
