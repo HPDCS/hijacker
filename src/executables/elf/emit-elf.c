@@ -224,7 +224,10 @@ long elf_write_data(section *sec, void *buffer, int size) {
 
 	hdr = (Section_Hdr *) sec->header;
 
-	memcpy(sec->ptr, buffer, size);
+	if (buffer != NULL) {
+		memcpy(sec->ptr, buffer, size);
+		hdump(4, "Data buffer dump", buffer, size);
+	}
 
 	ptr = sec->ptr;
 	sec->ptr = (void *)((char *)sec->ptr + size);
@@ -232,7 +235,6 @@ long elf_write_data(section *sec, void *buffer, int size) {
 	hnotice(3, "Data written into section '%s' [%d] at offset <%#08lx>\n",
 		sec->name, sec->index, ((char *)ptr - (char *)sec->payload));
 
-	hdump(4, "Data buffer dump", buffer, size);
 
 	return (long)((char *)ptr - (char *)sec->payload);
 }
@@ -289,7 +291,7 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 			// TODO: it must be updated in order to support multiple .data sections
 			if (sym->secnum != SHN_COMMON) {
 				if (str_equal(sym->sec->name, ".data")) {
-					sym->offset = elf_write_data(data, sym->payload, sym->size);
+					// sym->offset = elf_write_data(data, sym->payload, sym->size);
 					sec = data;
 					shndx = data->index;
 				}
@@ -301,18 +303,18 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 					sec = bss;
 					shndx = bss->index;
 				}
+			} else {
+				shndx = SHN_COMMON;
 			}
 			sym->type = STT_OBJECT;
 			break;
 
 		case SYMBOL_TLS:
-			// if (tdata && sym->secnum == tdata->index) {
 			if (str_equal(sym->sec->name, ".tdata")) {
 				sym->offset = elf_write_data(tdata, sym->payload, sym->size);
 				sec = tdata;
 				shndx = tdata->index;
 			}
-			// else if (tbss && sym->secnum == tbss->index) {
 			else if (str_equal(sym->sec->name, ".tbss")) {
 				sec = tbss;
 				shndx = tbss->index;
@@ -1183,8 +1185,6 @@ static void elf_fill_sections(void) {
 			hnotice(3, "Function '%s' has been written at '%s' + %u with size %u\n",
 				func->name, text[func->symbol->version]->name,
 					func->symbol->offset, func->symbol->size);
-
-			// func->symbol->sec->sym->size += func->symbol->size;
 		}
 	}
 
@@ -1213,21 +1213,33 @@ static void elf_fill_sections(void) {
 	for (sec = PROGRAM(sections)[0]; sec; sec = sec->next) {
 		sym = sec->sym;
 
-		if (!sym) {
-			// NOTE: Could be a .rela.xyz section
+		if (sym == NULL) {
+			// Could be a .rela.xyz section, anyway it's not of interest
 			continue;
 		}
 
-		if (str_equal(sec->name, ".rodata")) {
+		if (str_equal(sec->name, ".data")) {
 			size = sym->size;
 
 			hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n",
 				sec->name, sym->secnum, size);
 
 			content = calloc(size, 1);
-			if (content == NULL) {
-				herror(true, "Out of memory!\n");
-			}
+
+			// This is to handle the case that hijacker will adds data to
+			// pre-existent sections (e.g., in case of switch cases for
+			// different versions)
+			memcpy(content, sec->payload, sec_size(sec->index));
+			elf_write_data(data, content, size);
+		}
+
+		else if (str_equal(sec->name, ".rodata")) {
+			size = sym->size;
+
+			hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n",
+				sec->name, sym->secnum, size);
+
+			content = calloc(size, 1);
 
 			// This is to handle the case that hijacker will adds indirectly data to pre-existent sections
 			// i.e. in case of switch cases for different versions
@@ -1235,19 +1247,21 @@ static void elf_fill_sections(void) {
 			elf_write_data(rodata, content, size);
 		}
 
-		// else if (str_equal(sym->name, ".bss")) {
-		// 	hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n",
-		// 		sym->name, sym->secnum, sym->size);
+		else if (str_equal(sec->name, ".bss")) {
+			hnotice(3, "Setting size of section '%s' [%d] (%d bytes)\n",
+				sec->name, sym->secnum, sym->size);
 
-		// 	// elf_write_data(bss, sec->payload, sym->size);
-		// }
+			// set_hdr_info(bss->header, sh_size, sym->size);
+			elf_write_data(bss, sec->payload, sym->size);
+		}
 
-		// else if (str_equal(sym->name, ".tbss")) {
-		// 	hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n",
-		// 		sym->name, sym->secnum, sym->size);
+		else if (str_equal(sec->name, ".tbss")) {
+			hnotice(3, "Setting size of section '%s' [%d] (%d bytes)\n",
+				sec->name, sym->secnum, sym->size);
 
-		// 	// elf_write_data(tbss, sec->payload, sym->size);
-		// }
+			// set_hdr_info(tbss->header, sh_size, sym->size);
+			elf_write_data(tbss, sec->payload, sym->size);
+		}
 	}
 
 	// ------------------------------------------------------
@@ -1343,7 +1357,8 @@ void elf_generate_file(char *path) {
 
 		// We set additional information depending on the section type
 		if (sec->type == SECTION_SYMBOLS) {
-			set_hdr_info(sec->header, sh_addralign, 8);
+			set_hdr_info(sec->header, sh_addralign, sym_size());
+			// set_hdr_info(sec->header, sh_addralign, 8);
 		}
 		// else if (sec->type != SECTION_TLS) {
 		// 	set_hdr_info(sec->header, sh_addralign, 1);

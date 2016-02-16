@@ -388,7 +388,6 @@ void add_call_instruction(insn_info *target, unsigned char *name, insn_insert_mo
 	// the new rela node, otherwise the instruction's address
 	// will not be coherent anymore once at the amitting step
 	insert_instructions_at(target, call, sizeof(call), mode, instr);
-	//insert_insn_at(target, instr, where);
 
 	// Once the instruction has been inserted into the binary representation
 	// and each address and reference have been properly updated,
