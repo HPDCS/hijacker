@@ -387,7 +387,7 @@ static void hijack_main(unsigned char *entry_point) {
 	// Find the current main function
 	symbol *sym_main;
 	function *main;
-	unsigned char code[1] = {0x90};
+	unsigned char code[2] = {0xc9, 0xc3};
 
 	sym_main = find_symbol("main");
 	if(sym_main == NULL) {
