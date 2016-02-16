@@ -16,7 +16,10 @@ class AddressInfo():
 		self.full_access = acc
 		
 	def __str__(self):
-		return "addr: " + hex(self.address) + "\t full access: " + str(self.full_access) + "\t partial access: " + str(self.partial_access) + "\n"
+                if self.full_access = 0:
+                    return ""
+                else:
+                    return "addr: " + hex(self.address) + "\t full access: " + str(self.full_access) + "\t partial access: " + str(self.partial_access) + "\n"
 			
 
 class BlockInfo():
