@@ -318,6 +318,7 @@ int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t
 insn_info *clone_instruction(insn_info *insn);
 insn_info *clone_instruction_list(insn_info *insn);
 void add_call_instruction(insn_info *target, unsigned char *func, insn_insert_mode mode, insn_info **instr);
+void add_jump_instruction(insn_info *target, unsigned char *name, insn_insert_mode mode, insn_info **instr);
 void set_jumpto_reference(insn_info *jump, insn_info *target);
 void set_jumptable_entry(insn_info *jump, insn_info *entry, unsigned int idx);
 void set_virtual_reference(insn_info *target, insn_info *virtual);

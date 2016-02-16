@@ -408,8 +408,8 @@ static void hijack_main(unsigned char *entry_point) {
 	// Creates a new stub function that acts as the new main
 	main = function_create_from_bytes("main", code, sizeof(code));
 
-	// Adds the call to the new entry point
-	add_call_instruction(main->begin_insn, entry_point, INSERT_BEFORE, &(main->begin_insn));
+	// Adds the jump to the new entry point
+	add_jump_instruction(main->begin_insn, entry_point, INSERT_BEFORE, &(main->begin_insn));
 }
 
 

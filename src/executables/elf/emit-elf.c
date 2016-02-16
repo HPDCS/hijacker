@@ -56,6 +56,7 @@ static section *bss;
 static section *tbss;
 static section *tdata;
 
+
 /**
  * Check if the section has enough available space.
  * If the section cannot sustain the required space,
@@ -292,10 +293,10 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 					sec = data;
 					shndx = data->index;
 				}
-				// else if (sym->sec->sym == find_symbol_by_name(".rodata")) {
-				// 	sym->offset = elf_write_data(rodata, sym->payload, sym->size);
-				// 	shndx = rodata->index;
-				// }
+				else if (str_equal(sym->sec->name, ".rodata")) {
+					// sym->offset = elf_write_data(rodata, sym->payload, sym->size);
+					shndx = rodata->index;
+				}
 				else if (str_equal(sym->sec->name, ".bss")) {
 					sec = bss;
 					shndx = bss->index;
@@ -483,24 +484,22 @@ unsigned long elf_write_code(section *sec, function *func) {
 					displ = x86->disp_size;
 				}
 
+				instr->new_addr = offset + written;
 				addr = instr->new_addr + x86->opcode_size + displ;
 				// sym->relocation.offset = addr;
 				sym->relocation.sec = text[PROGRAM(version)];
 
-				// if (sym->bind == SYMBOL_LOCAL && sym->type == SYMBOL_FUNCTION) {
-				// 	set_call_displacement(sym->relocation.target_insn, sym->func->begin_insn);
-				// } else {
-					elf_write_reloc(rela_text[PROGRAM(version)], sym, addr, sym->relocation.addend);
-				// }
+				elf_write_reloc(rela_text[PROGRAM(version)], sym, addr, sym->relocation.addend);
 			}
 
 			// Handle instruction
 			memcpy(sec->ptr, x86->insn, instr->size);
 
 			sec->ptr = (void *)((char *)sec->ptr + instr->size);
+			written += instr->size;
 		}
 
-		written += (long)((char *)sec->ptr - (char *)ptr);
+		// written += (long)((char *)sec->ptr - (char *)ptr);
 		break;
 
 	default:
@@ -555,11 +554,13 @@ long elf_write_reloc(section *sec, symbol *sym, unsigned long long addr, long ad
 	// TODO: how to recalculate the relocation type?
 	if(ELF(is64)) {
 		rela->rel64.r_info = ELF64_R_INFO(sym->index, sym->relocation.type);
-		rela->rel64.r_offset = sym->relocation.offset;
+		rela->rel64.r_offset = addr;
+		// rela->rel64.r_offset = sym->relocation.offset;
 		rela->rel64.r_addend = addend;
 	} else {
 		rela->rel32.r_info = ELF32_R_INFO(sym->index, sym->relocation.type);
-		rela->rel32.r_offset = sym->relocation.offset;
+		rela->rel32.r_offset = addr;
+		// rela->rel32.r_offset = sym->relocation.offset;
 		rela->rel32.r_addend = addend;
 	}
 
@@ -752,7 +753,8 @@ static void elf_build(void) {
 	unsigned char secname[SECNAME_SIZE];
 
 	unsigned int targetndx;
-	// symbol *sym, *prev, *sym2;
+	symbol *sym;
+	// symbol *prev, *sym2;
 
 	function *func;
 
@@ -804,29 +806,54 @@ static void elf_build(void) {
 	// DATA SECTIONS
 	// ------------------------------------------------------
 
-	if (find_symbol_by_name(".rodata")) {
+	sym = find_symbol_by_name(".rodata");
+
+	if (sym) {
 		rodata = elf_create_section(SHT_PROGBITS, 0, SHF_ALLOC);
 		elf_name_section(rodata, ".rodata");
+
+		set_hdr_info(rodata->header, sh_addralign,
+			header_info(((Section_Hdr *) sym->sec->header), sh_addralign));
 	}
 
-	if (find_symbol_by_name(".data")) {
+	sym = find_symbol_by_name(".data");
+
+	if (sym) {
 		data = elf_create_section(SHT_PROGBITS, 0, SHF_ALLOC|SHF_WRITE);
 		elf_name_section(data, ".data");
+
+		set_hdr_info(data->header, sh_addralign,
+			header_info(((Section_Hdr *) sym->sec->header), sh_addralign));
 	}
 
-	if (find_symbol_by_name(".bss")) {
+	sym = find_symbol_by_name(".bss");
+
+	if (sym) {
 		bss = elf_create_section(SHT_NOBITS, 0, SHF_ALLOC|SHF_WRITE);
 		elf_name_section(bss, ".bss");
+
+		set_hdr_info(bss->header, sh_addralign,
+			header_info(((Section_Hdr *) sym->sec->header), sh_addralign));
 	}
 
-	if (find_symbol_by_name(".tdata")) {
+	sym = find_symbol_by_name(".tdata");
+
+	if (sym) {
 		tdata = elf_create_section(SHT_PROGBITS, 0, SHF_ALLOC|SHF_WRITE|SHF_TLS);
 		elf_name_section(tdata, ".tdata");
+
+		set_hdr_info(tdata->header, sh_addralign,
+			header_info(((Section_Hdr *) sym->sec->header), sh_addralign));
 	}
 
-	if (find_symbol_by_name(".tbss")) {
+	sym = find_symbol_by_name(".tbss");
+
+	if (sym) {
 		tbss = elf_create_section(SHT_NOBITS, 0, SHF_ALLOC|SHF_WRITE|SHF_TLS);
 		elf_name_section(tbss, ".tbss");
+
+		set_hdr_info(tbss->header, sh_addralign,
+			header_info(((Section_Hdr *) sym->sec->header), sh_addralign));
 	}
 
 	// [SE] Hackish...
@@ -1036,7 +1063,7 @@ static void elf_update_symbol_list(symbol *first) {
 		// accordingly, in such a case
 
 		if (sym->type == SYMBOL_FILE) {
-			sym->name = (unsigned char *)hijacked.path;
+			// sym->name = (unsigned char *)hijacked.path;
 		}
 
 		else if(sym->type == SYMBOL_SECTION) {
@@ -1191,11 +1218,11 @@ static void elf_fill_sections(void) {
 			continue;
 		}
 
-		if (str_equal(sym->name, ".rodata")) {
+		if (str_equal(sec->name, ".rodata")) {
 			size = sym->size;
 
 			hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n",
-				sym->name, sym->secnum, size);
+				sec->name, sym->secnum, size);
 
 			content = calloc(size, 1);
 			if (content == NULL) {
@@ -1318,9 +1345,9 @@ void elf_generate_file(char *path) {
 		if (sec->type == SECTION_SYMBOLS) {
 			set_hdr_info(sec->header, sh_addralign, 8);
 		}
-		else if (sec->type != SECTION_TLS) {
-			set_hdr_info(sec->header, sh_addralign, 1);
-		}
+		// else if (sec->type != SECTION_TLS) {
+		// 	set_hdr_info(sec->header, sh_addralign, 1);
+		// }
 
 		offset = elf_write_section(file, sec);
 		set_hdr_info(sec->header, sh_offset, offset);

@@ -397,6 +397,46 @@ void add_call_instruction(insn_info *target, unsigned char *name, insn_insert_mo
 }
 
 
+void add_jump_instruction(insn_info *target, unsigned char *name, insn_insert_mode mode, insn_info **instr) {
+	section *sec;
+	symbol *sym;
+
+	unsigned char jump[5];
+
+	bzero(jump, sizeof(jump));
+	switch (PROGRAM(insn_set)) {
+		case X86_INSN:
+			jump[0] = 0xe9;
+		break;
+	}
+
+	for (sec = PROGRAM(sections)[PROGRAM(version)]; sec; sec = sec->next) {
+		if (sec->type == SECTION_CODE) {
+			break;
+		}
+	}
+
+	if (sec == NULL) {
+		hinternal();
+	}
+
+	// Creates the symbol name
+	sym = symbol_create(name, SYMBOL_UNDEF, SYMBOL_GLOBAL, sec, 0);
+
+	// Adds the instruction to the binary representation
+	// WRANING! We MUST add the instruction BEFORE creating
+	// the new rela node, otherwise the instruction's address
+	// will not be coherent anymore once at the amitting step
+	insert_instructions_at(target, jump, sizeof(jump), mode, instr);
+	//insert_insn_at(target, instr, where);
+
+	// Once the instruction has been inserted into the binary representation
+	// and each address and reference have been properly updated,
+	// create a new RELA entry
+	symbol_instr_rela_create(sym, *instr, RELOC_PCREL_32);
+}
+
+
 /**
  * Clones an instruction descriptor.
  *
