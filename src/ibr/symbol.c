@@ -61,7 +61,7 @@ symbol *find_symbol(size_t index) {
 	symbol *sym;
 
 	for (sym = PROGRAM(symbols); sym; sym = sym->next) {
-		if (sym->index == index && !sym->duplicate) {
+		if (sym->index == index && sym->authentic) {
 			return sym;
 		}
 	}
@@ -82,7 +82,7 @@ symbol *find_symbol_by_name(unsigned char *name) {
 
 	// TODO: Multiple symbols with the same name can exist!
 	for (sym = PROGRAM(symbols); sym; sym = sym->next) {
-		if(str_equal(sym->name, name) && !sym->duplicate)
+		if (str_equal(sym->name, name) && sym->authentic)
 			return sym;
 	}
 
@@ -208,9 +208,9 @@ symbol *symbol_create(char *name, symbol_type type, symbol_bind bind,
 	// We now append the symbol to the global list of symbols
 	symbol_append(sym, &PROGRAM(symbols));
 
-	hnotice(3, "New %s/%s symbol '%s' (%d) in '%s' of size %d bytes has been created from scratch\n",
+	hnotice(3, "New %s/%s symbol '%s' (%d) in '%s' (%d) of size %d bytes has been created from scratch\n",
 		symbol_type_str[sym->type], symbol_bind_str[sym->bind],
-			sym->name, sym->index, (sym->sec ? sym->sec->name : "(none)"), sym->size);
+			sym->name, sym->index, (sym->sec ? sym->sec->name : "(none)"), sym->secnum, sym->size);
 
 	return sym;
 }
@@ -306,12 +306,14 @@ symbol *symbol_create_from_ELF(Elf_Sym *elfsym) {
 }
 
 void symbol_append(symbol *sym, symbol **head) {
-	symbol *curr;
+	symbol *curr, *prev;
 
 	// We append the symbol to an input list of symbols, at a position
 	// which depends on the symbol binding:
 	// - If local, append to the last local symbol in the list;
 	// - If global, append to the end of the list.
+
+	// printf("SYMBOL TO ADD: %s %s %p\n", sym->name, symbol_bind_str[sym->bind], sym);
 
 	if (head == NULL) {
 		hinternal();
@@ -321,17 +323,26 @@ void symbol_append(symbol *sym, symbol **head) {
 		*head = sym;
 	} else {
 		curr = *head;
+		prev = NULL;
 
-		while (curr->next) {
-			if (sym->type == SYMBOL_LOCAL && curr->next->bind != SYMBOL_LOCAL) {
+		while (curr) {
+			if (sym->bind == SYMBOL_LOCAL && curr->bind != SYMBOL_LOCAL) {
 				break;
 			}
 
+			prev = curr;
 			curr = curr->next;
 		}
 
-		curr->next = sym;
+		if (prev == NULL) {
+			*head = sym;
+			sym->next = curr;
+		} else {
+			sym->next = prev->next;
+			prev->next = sym;
+		}
 	}
+
 }
 
 /**

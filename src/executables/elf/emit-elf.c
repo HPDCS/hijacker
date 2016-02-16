@@ -287,16 +287,16 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 			// must be filled up with the relative content
 			// TODO: it must be updated in order to support multiple .data sections
 			if (sym->secnum != SHN_COMMON) {
-				if (sym->sec == find_section_by_name(".data")) {
+				if (str_equal(sym->sec->name, ".data")) {
 					sym->offset = elf_write_data(data, sym->payload, sym->size);
 					sec = data;
 					shndx = data->index;
 				}
-				// else if (sym->sec == find_section_by_name(".rodata")) {
+				// else if (sym->sec->sym == find_symbol_by_name(".rodata")) {
 				// 	sym->offset = elf_write_data(rodata, sym->payload, sym->size);
 				// 	shndx = rodata->index;
 				// }
-				else if (sym->sec == find_section_by_name(".bss")) {
+				else if (str_equal(sym->sec->name, ".bss")) {
 					sec = bss;
 					shndx = bss->index;
 				}
@@ -306,13 +306,13 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 
 		case SYMBOL_TLS:
 			// if (tdata && sym->secnum == tdata->index) {
-			if (sym->sec == find_section_by_name(".tdata")) {
+			if (str_equal(sym->sec->name, ".tdata")) {
 				sym->offset = elf_write_data(tdata, sym->payload, sym->size);
 				sec = tdata;
 				shndx = tdata->index;
 			}
 			// else if (tbss && sym->secnum == tbss->index) {
-			else if (sym->sec == find_section_by_name(".tbss")) {
+			else if (str_equal(sym->sec->name, ".tbss")) {
 				sec = tbss;
 				shndx = tbss->index;
 			}
@@ -325,6 +325,7 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 			sym->type = STT_SECTION;
 			sec = sym->sec;
 			shndx = sym->secnum;
+			sym->name = "";
 			break;
 
 		case SYMBOL_FILE:
@@ -803,27 +804,27 @@ static void elf_build(void) {
 	// DATA SECTIONS
 	// ------------------------------------------------------
 
-	if (find_section_by_name(".rodata")) {
+	if (find_symbol_by_name(".rodata")) {
 		rodata = elf_create_section(SHT_PROGBITS, 0, SHF_ALLOC);
 		elf_name_section(rodata, ".rodata");
 	}
 
-	if (find_section_by_name(".data")) {
+	if (find_symbol_by_name(".data")) {
 		data = elf_create_section(SHT_PROGBITS, 0, SHF_ALLOC|SHF_WRITE);
 		elf_name_section(data, ".data");
 	}
 
-	if (find_section_by_name(".bss")) {
+	if (find_symbol_by_name(".bss")) {
 		bss = elf_create_section(SHT_NOBITS, 0, SHF_ALLOC|SHF_WRITE);
 		elf_name_section(bss, ".bss");
 	}
 
-	if (find_section_by_name(".tdata")) {
+	if (find_symbol_by_name(".tdata")) {
 		tdata = elf_create_section(SHT_PROGBITS, 0, SHF_ALLOC|SHF_WRITE|SHF_TLS);
 		elf_name_section(tdata, ".tdata");
 	}
 
-	if (find_section_by_name(".tbss")) {
+	if (find_symbol_by_name(".tbss")) {
 		tbss = elf_create_section(SHT_NOBITS, 0, SHF_ALLOC|SHF_WRITE|SHF_TLS);
 		elf_name_section(tbss, ".tbss");
 	}

@@ -98,6 +98,7 @@ inline static bool smt_is_relevant(insn_info *instr) {
 }
 
 static void smt_tls_init(void) {
+  symbol *sym;
   void *tbss_payload;
   unsigned int tbss_size;
 
@@ -112,9 +113,10 @@ static void smt_tls_init(void) {
   tbss_size = BUFFER_ENTRY_SIZE * tls_buffer_size;
   disp = 0;
 
-  tbss_sec = find_section_by_name(".tbss");
+  sym = find_symbol_by_name(".tbss");
+  // tbss_sec = find_symbol_by_name(".tbss")->sec;
 
-  if (tbss_sec == NULL) {
+  if (sym == NULL) {
     // If the section hasn't been found, it's time to create it
     hnotice(3, "Creating a new .tbss section\n");
 
