@@ -388,6 +388,9 @@ static void hijack_main(unsigned char *entry_point) {
 	symbol *sym_main, *sym;
 	function *main;
 	unsigned char code[1] = {0x90};
+	unsigned char code2[1] = {0xc3};
+	unsigned char code2bis[1] = {0xc9};
+	unsigned char code3[4] = {0x48, 0x89, 0xe5, 0x55};
 
 	sym_main = find_symbol_by_name("main");
 
@@ -409,7 +412,12 @@ static void hijack_main(unsigned char *entry_point) {
 	main = function_create_from_bytes("main", code, sizeof(code));
 
 	// Adds the jump to the new entry point
-	add_jump_instruction(main->begin_insn, entry_point, INSERT_BEFORE, &(main->begin_insn));
+	insert_instructions_at(main->begin_insn, code2, sizeof(code2), INSERT_AFTER, &(main->begin_insn));	
+	insert_instructions_at(main->begin_insn, code2bis, sizeof(code2), INSERT_BEFORE, &(main->begin_insn));	
+	add_call_instruction(main->begin_insn, "dump", INSERT_BEFORE, &(main->begin_insn));
+	add_call_instruction(main->begin_insn, entry_point, INSERT_BEFORE, &(main->begin_insn));
+	insert_instructions_at(main->begin_insn, code3, sizeof(code3), INSERT_BEFORE, &(main->begin_insn));	
+
 }
 
 

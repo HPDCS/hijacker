@@ -4,9 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-int variabile;
-char var;
-short num = 3;
+static int variabile;
+static char var;
+static short num = 3;
 
 int foo(int a, int b) {
 	int c;
