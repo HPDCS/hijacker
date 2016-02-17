@@ -39,7 +39,9 @@
 
 
 // Size of a single entry in the TLS buffer
-#define BUFFER_ENTRY_SIZE (1<<4)
+#define BUFFER_ENTRY_SIZE (1<<4 + 1<<3)
+// Size of a single field in an entry of the TLS buffer
+#define BUFFER_FIELD_SIZE (1<<3)
 // Maximum length for the name of the TLS buffer symbol
 #define BUFFER_NAME_LEN   (1<<6)
 
@@ -758,7 +760,7 @@ static void smt_instrument_access(block *blk, smt_access *access) {
 
   // Store chunk address in TLS buffer
   // ---------------------------------
-  // MOV %rsi, %fs:disp+index*BUFFER_ENTRY_SIZE
+  // MOV %rsi, %fs:disp+(index*BUFFER_ENTRY_SIZE)
 
   {
     unsigned char instr[9] = {
@@ -771,18 +773,17 @@ static void smt_instrument_access(block *blk, smt_access *access) {
     ref->relocation.addend = access->index * BUFFER_ENTRY_SIZE;
   }
 
-  // Increment block id + access counter in TLS buffer
-  // -------------------------------------------------
-  // MOVQ (blk->id << 16 | access->counter), %rsi
-  // ADD %rsi, %fs:disp+index*BUFFER_ENTRY_SIZE+BUFFER_ENTRY_SIZE/2
+  // Increment access counter in TLS buffer
+  // --------------------------------------
+  // MOVQ access->counter, %rsi
+  // ADD %rsi, %fs:disp+(index*BUFFER_ENTRY_SIZE)+BUFFER_FIELD_SIZE
 
   {
     unsigned char instr[7] = {
       0x48, 0xc7, 0xc6, 0x00, 0x00, 0x00, 0x00
     };
 
-    // *(uint32_t *)(instr + 3) = access->counter;
-    *(uint32_t *)(instr + 3) = blk->id << 16 | access->counter;
+    *(uint32_t *)(instr + 3) = access->counter;
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
   }
@@ -795,7 +796,33 @@ static void smt_instrument_access(block *blk, smt_access *access) {
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
     ref = symbol_instr_rela_create(tls_buffer_sym, current, RELOC_TLSREL_32);
-    ref->relocation.addend = access->index * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
+    ref->relocation.addend = access->index * BUFFER_ENTRY_SIZE + BUFFER_FIELD_SIZE;
+  }
+
+  // Store block ID in the TLS buffer
+  // --------------------------------
+  // MOVQ blk->id, %rsi
+  // MOV %rsi, %fs:disp+(index*BUFFER_ENTRY_SIZE)+BUFFER_FIELD_SIZE*2
+
+  {
+    unsigned char instr[7] = {
+      0x48, 0xc7, 0xc6, 0x00, 0x00, 0x00, 0x00
+    };
+
+    *(uint32_t *)(instr + 3) = blk->id;
+
+    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+  }
+
+  {
+    unsigned char instr[9] = {
+      0x64, 0x48, 0x89, 0x34, 0x25, 0x00, 0x00, 0x00, 0x00
+    };
+
+    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+
+    ref = symbol_instr_rela_create(tls_buffer_sym, current, RELOC_TLSREL_32);
+    ref->relocation.addend = access->index * BUFFER_ENTRY_SIZE + BUFFER_FIELD_SIZE * 2;
   }
 
   // Restore old register values
