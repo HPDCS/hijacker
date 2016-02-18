@@ -41,7 +41,7 @@ long write_x86_code(function *func, section *text, section *relocation) {
 	int displ;
 
 	ptr = text->ptr;
-	instr = func->insn;
+	instr = func->begin_insn;
 
 	while(instr != NULL) {
 		x86 = &instr->i.x86;

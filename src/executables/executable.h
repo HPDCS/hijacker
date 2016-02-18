@@ -30,7 +30,6 @@
 #define _EXECUTABLE_H
 
 #include <ibr.h>
-
 #include <elf/elf-defs.h>
 
 
@@ -52,10 +51,10 @@ typedef struct _executable {
 	unsigned int	symnum;
 	symbol		*symbols;
 	unsigned int	secnum;
-	section		*sections;
+	section		*sections[MAX_VERSIONS];
 	function	*code;		// [DC] Added this field to handle the parsed functions
 	void 	*rawdata;		// [DC] Added this filed to handle preallocated raw data
-	block *blocks;		// [SE] Basic block overlay
+	block *blocks[MAX_VERSIONS];		// [SE] Basic block overlay
 } executable_info;
 
 

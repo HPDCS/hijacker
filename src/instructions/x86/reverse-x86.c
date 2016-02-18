@@ -61,28 +61,25 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	}
 	bzero(entry, sizeof(insn_entry));
 
-	// [SE] Added to correctly pass addressing mode flags to the trampoline routine
-	// Note that as of the date of this commit, handling of MOVS and STOS instruction
-	// is commented out of the trampoline routine, so I don't treat the respective
-	// flags in the code below.
-	flags = 0;
-
-	if (x86->has_base_register) {
-		flags |= BASE;
-	}
-	if (x86->has_index_register) {
-		flags |= IDX;
-	}
-	// [/SE]
-
 	// fill the structure
 	entry->size = x86->span;
 	entry->offset = (signed) x86->disp;
-	// entry->flags = x86->flags;
-	entry->flags = flags;
 	entry->base = x86->breg;
 	entry->idx = x86->ireg;
 	entry->scala = x86->scale;
+
+	// computes the flags field
+	if((x86->flags & I_STRING) == 1)
+		entry->flags |= MOVS;
+
+	if(x86->has_base_register)
+		entry->flags |= BASE;
+
+	if(x86->has_index_register)
+		entry->flags |= IDX;
+
+	if(x86->uses_rip)
+		entry->flags |= RIP;
 
 	//hdump(0, "entry:", entry, 24);
 	//printf("disp=%llx, disp_size=%d\n", x86->disp, x86->disp_size);
@@ -107,12 +104,14 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	unsigned char add[7] = {0x48, 0x81, 0xc4, 0x00, 0x00, 0x00, 0x00}; // [SE]
 	unsigned char call[5] = {0xe8, 0x00, 0x00, 0x00, 0x00};
 	unsigned char mov[8] = {0xc7, 0x44, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00};
+	unsigned char pushfw[2] = {0x66, 0x9c};
+	unsigned char popfw[2] = {0x66, 0x9d};
 
 	*(unsigned int *)(sub + 3) = size;
 	*(unsigned int *)(add + 3) = size;
 
-	// add the SUB instruction in order to create a sufficent stack window for the structure
-	insert_instructions_at(target, sub, sizeof(sub), INSERT_BEFORE, &instr);
+	// Before to do anything we must to preserver EFLAGS register
+	insert_instructions_at(target, pushfw, sizeof(pushfw), INSERT_BEFORE, &instr);
 
 	// [SE] For the sake of correctness, any JUMP instruction toward `target` should now
 	// point to the first instruction of the trampoline's preamble.
@@ -123,6 +122,9 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	if (!target->virtual) {
 		set_virtual_reference(target, instr);
 	}
+
+	// add the SUB instruction in order to create a sufficient stack window for the structure
+	insert_instructions_at(instr, sub, sizeof(sub), INSERT_AFTER, &instr);
 
 	// iterates all over the mov needed
 	for (idx = 0; idx < num; idx++) {
@@ -136,6 +138,18 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 
 		// create and add the new instruction to the rest of code
 		insert_instructions_at(instr, mov, sizeof(mov), INSERT_AFTER, &instr);
+	}
+
+	// Warning! The at this stage the displacement value could be zero
+	// since it can be the result of a relocation; therefore the structure
+	// would save an incorrect value. It is necessary to look for a relocation
+	// symbol, if any, and duplicate the entry relative to the exact
+	// point where the offset will be placed in the structure
+	if(target->reference != NULL) {
+		hnotice(4, "A RELA node has been found to this instruction; we have to duplicate the RELA to the entry's offset\n");
+
+		sym = target->reference;
+		symbol_instr_rela_create(sym, instr->prev->prev->prev, RELOC_ABS_32);
 	}
 
 	// Adds the pointer to the function that the trampoline module has to call at runtime
@@ -152,7 +166,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	hnotice(4, "Push the function pointer to '%s' in the trampoline structure\n", func);
 
 	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
-	instruction_rela_node(sym, instr->prev, RELOCATE_ABSOLUTE_64);
+	symbol_instr_rela_create(sym, instr->prev, RELOC_ABS_64);
 
 
 	hnotice(4, "Adds the call to the trampoline hijacker library function\n");
@@ -162,13 +176,16 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 
 	// Checks and creates the symbol name that will be the target of the call
 	sym = create_symbol_node((unsigned char *)"trampoline", SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
-	instruction_rela_node(sym, instr, RELOCATE_RELATIVE_32);
+	symbol_instr_rela_create(sym, instr, RELOC_PCREL_32);
 
 	// in order to align the stack pointer we need to insert an ADD instruction
 	// to compensate the SUB used to make room for the structure
 	// note: insn, now, points to the last MOV, therefore the complementary ADD has
 	// to be inserted after that instruction
 	insert_instructions_at(instr, add, sizeof(add), INSERT_AFTER, &instr);
+
+	// After all we need to replace the old EFLAG status
+	insert_instructions_at(instr, popfw, sizeof(popfw), INSERT_AFTER, &instr);
 
 	//TODO: da verificare l'uso di instr e target! E' un po' confuso...
 

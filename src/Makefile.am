@@ -1,6 +1,6 @@
 ACLOCAL_AMFLAGS = -I m4
 AM_MAKEFLAGS = --no-print-directory
-AM_CFLAGS = -I . -I executables -I instructions -I rules -I ibr -DLIBDIR=\"$(libdir)\"
+AM_CFLAGS = -I . -I executables -I instructions -I rules -I ibr -I presets -DLIBDIR=\"$(libdir)\"
 
 bin_PROGRAMS = hijacker
 
@@ -21,7 +21,9 @@ hijacker_SOURCES =	main.c \
 			rules/apply-rules.c \
 			instructions/x86/emit-x86.c \
 			instructions/x86/parse-x86.c \
-			instructions/x86/reverse-x86.c
+			instructions/x86/reverse-x86.c \
+			presets/presets.c \
+			presets/smtracer/smtracer.c
 
 lib_LIBRARIES = libhijacker.a
 libhijacker_a_SOURCES = rules/trampoline64.S

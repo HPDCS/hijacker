@@ -30,14 +30,7 @@
 #include <executable.h>
 #include <instruction.h>
 
-#define RELOCATE_RELATIVE_32	0
-#define RELOCATE_RELATIVE_64	1
-#define RELOCATE_ABSOLUTE_32	2
-#define RELOCATE_ABSOLUTE_64	3
 
-void instruction_rela_node (symbol *sym, insn_info *insn, unsigned char type);
-
-void create_rela_node(symbol *sym, long long offset, long addend, unsigned char *secname);
 
 
 /**

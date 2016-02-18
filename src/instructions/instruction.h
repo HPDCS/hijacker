@@ -27,8 +27,12 @@
 */
 
 #pragma once
-#ifndef _INSTRUCTION_H
-#define _INSTRUCTION_H
+#ifndef _INSTRUCTIONS_H
+#define _INSTRUCTIONS_H
+
+#include <x86/instruction.h>
+
+#include <executable.h>
 
 // [FV] Flags contenenti informazioni utili sul comportamento o la classe delle funzioni
 #define I_MEMRD		0x1	// Legge dalla memoria
@@ -49,11 +53,12 @@
 #define I_STACK		0x8000	// Se l'istruzione opera nello stack
 #define I_JUMPIND	0x10000	// Indirect Branch
 #define I_CALLIND 0x20000 // [SE] Indirect Call
-
+#define I_MEMIND	0x40000 // [SE] Indirect memory address load (LEA)
 
 // [FV] Macro per il testing dei flags
 #define IS_MEMRD(X)		((X)->flags & I_MEMRD)
 #define IS_MEMWR(X)		((X)->flags & I_MEMWR)
+#define IS_MEMIND(X)	((X)->flags & I_MEMIND)
 #define IS_CTRL(X)		((X)->flags & I_CTRL)
 #define IS_JUMP(X)		((X)->flags & I_JUMP)
 #define IS_JUMPIND(X)		((X)->flags & I_JUMPIND)
@@ -75,6 +80,7 @@
 // Strings to load macros from the configuration file
 #define I_MEMRD_S	"I_MEMRD"
 #define I_MEMWR_S	"I_MEMWR"
+#define I_MEMIND_S "I_MEMIND"
 #define I_CTRL_S	"I_CTRL"
 #define I_JUMP_S	"I_JUMP"
 #define I_JUMPIND_S	"I_JUMPIND"

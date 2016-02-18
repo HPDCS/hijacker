@@ -35,6 +35,6 @@
 extern void elf_create_map(void);
 extern int elf_instruction_set(void);
 extern bool is_elf(char *path);
-extern void link_jump_instructions(function *func, function *code);
+extern unsigned char *strtab(unsigned int byte);
 
 #endif /* PARSE_ELF_H_ */

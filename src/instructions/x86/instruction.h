@@ -61,13 +61,21 @@ typedef struct insn_info_x86 {
 	unsigned long scale;		// La scala
 	unsigned long disp_offset;	// Lo spiazzamento del displacement dall'inizio del testo, o 0x00
 	int disp_size;			// Dimensione in byte del displacement, o 0x00
-	unsigned long long disp;	// Il valore dello spiazzamento
+	long long disp;	// Il valore dello spiazzamento
 	unsigned long immed_offset;	// [SE] Lo spiazzamento dei dati immediati dall'inizio del testo, o 0x00
 	int immed_size;		// [SE] La dimensione dei dati immediati, o 0x00
 	unsigned long long immed;	// [SE] Il valore dei dati immediati
 	unsigned int opcode_size;	// [DC] Dimensione dell'opcode per l'istruzione
 	int32_t jump_dest;		// Dove punta la jmp
 	bool uses_rip;
+  unsigned char rex;		// Il byte REX, o 0x00
+  unsigned char modrm;		// Byte ModR/M o 0x00
+  unsigned char sib;		// Byte SIB o 0x00
+  unsigned char sse_prefix;	// Terzo byte dell'istruzione SSE/SSE2
+  unsigned char prefix[4];	// Prefissi all'istruzione o 0x00
+
+  bool dest_is_reg;   // [SE] Indica se la destinazione è un registro
+  unsigned char reg_dest;   // [SE] Codice del registro destinazione (se esiste)
 } insn_info_x86;
 
 #endif /* _INSTRUCTION_X86_H */

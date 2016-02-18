@@ -26,11 +26,76 @@
 * @date July 13, 2015
 */
 
-#include <strings.h>
+#include <string.h>
 
 #include <hijacker.h>
 #include <prints.h>
 #include <ibr.h>
+
+
+const char *section_type_str[] = {
+	"NULL", "CODE", "SYMBOLS", "NAMES", "RELOC", "TLS", "RAW"
+};
+
+
+size_t section_id(size_t nextid, bool update) {
+	static size_t id = 0;
+
+	if (nextid > id && update == true) {
+		id = nextid;
+	}
+
+	return (update == true ? id : id++);
+}
+
+
+section *section_create(char *name, section_type type, void *payload) {
+	section *sec;
+
+	sec = (section *) calloc(sizeof(section), 1);
+
+	sec->name = (char *) malloc(strlen((const char *) name) + 1);
+	strcpy(sec->name, name);
+
+	sec->type = type;
+	sec->payload = payload;
+	sec->index = section_id(0, false);
+
+	sec->sym = symbol_create(name, SYMBOL_SECTION, SYMBOL_LOCAL, sec, 0);
+
+	section_append(sec, &PROGRAM(sections)[PROGRAM(version)]);
+
+	hnotice(3, "New %s section '%s' (%d) has been created from scratch\n",
+		section_type_str[sec->type], sec->name, sec->index);
+
+	return sec;
+}
+
+section *section_create_from_ELF(size_t index, section_type type) {
+	section *sec;
+
+	sec = (section *) calloc(sizeof(section), 1);
+
+	sec->name = sec_name(index);
+	sec->type = type;
+	sec->payload = sec_content(index);
+
+	// TODO: Check for special section index values!
+	sec->index = section_id(index, true);
+
+	sec->offset = sec_field(index, sh_offset);
+	sec->header = sec_header(index);
+
+	// NOTE: We don't create any symbol, since we expect it to be
+	// done in a separate step
+
+	section_append(sec, &PROGRAM(sections)[PROGRAM(version)]);
+
+	hnotice(3, "New %s section '%s' (%d) has been created from ELF\n",
+		section_type_str[sec->type], sec->name, sec->index);
+
+	return sec;
+}
 
 /**
  * Creates and links a new section descriptor, representing a symbol with a given
@@ -41,54 +106,89 @@
  * symbol table included in the executable file.
  * @param first Pointer to a list of sections to which append the new one.
  */
-void add_section(section_type type, int secndx, void *payload, section **first) {
-	section *s;
+void section_append(section *sec, section **head) {
+	section *curr;
 
-	// [SE] TODO: Verificare se risolve del tutto la ridondanza fra le due funzioni
-	// [SE] TODO: Meglio static!
-	if (!first) {
-		first = &PROGRAM(sections);
+	if (head == NULL) {
+		hinternal();
 	}
-	// [/SE]
 
-	// Create and populate the new node
-	section *new = (section *)malloc(sizeof(section));
-	if(!new){
-		herror(true, "Out of memory!\n");
-	}
-	bzero(new, sizeof(section));
+	if (*head == NULL) {
+		*head = sec;
+	} else {
+		curr = *head;
 
-	new->type = type;
-	new->index = secndx;
-	new->header = sec_header(secndx);
-	new->payload = payload;
-
-	if(*first == NULL)
-		*first = new;
-	else {
-		s = *first;
-		while(s->next != NULL) {
-			s = s->next;
+		while (curr->next) {
+			curr = curr->next;
 		}
-		s->next = new;
+
+		curr->next = sec;
 	}
 }
 
 
 /**
- * Seeks the section descriptor associated with a given index in the symbol table.
+ * Looks for the section with the index specified.
  *
- * @return Pointer to the section descriptor found, if any, or <em>NULL</em>.
+ * @return Returns the pointer to the section found, if any, NULL otherwise.
  */
-inline section *find_section(unsigned int idx) {
+inline section *find_section(unsigned int index) {
 	section *sec;
 
-	sec = PROGRAM(sections);
-	while(sec) {
-		if(sec->index == idx)
-			break;
-		sec = sec->next;
+	for (sec = PROGRAM(sections)[PROGRAM(version)]; sec; sec = sec->next) {
+		if (sec->index == index) {
+			return sec;
+		}
 	}
 
-	return sec;
+	return NULL;
+}
+
+
+section *find_section_by_name(unsigned char *name) {
+	section *sec;
+
+	for (sec = PROGRAM(sections)[PROGRAM(version)]; sec; sec = sec->next) {
+		if (str_equal(sec->name, name)) {
+			return sec;
+		}
+	}
+
+	return NULL;
+}
+
+section *section_clone(section *sec, char *suffix) {
+	section *clone;
+	char *name;
+
+	size_t length;
+
+	if (sec == NULL) {
+		return NULL;
+	}
+
+	// Allocates memory for the new descriptor
+	clone = (section *) calloc(sizeof(section), 1);
+
+	// Copies the original descriptor to the new one
+	memcpy(clone, sec, sizeof(section));
+
+	// Reset some fields
+	clone->index = section_id(0, false);
+	clone->next = NULL;
+
+	// Compose the function name
+	length = strlen((const char *)sec->name) + strlen(suffix) + 2; // one is \0, one is '_'
+	name = malloc(sizeof(char) * length);
+	bzero(name, length);
+	strcpy(name, (const char *)sec->name);
+	strcat(name, ".");
+	strcat(name, suffix);
+
+	clone->name = (unsigned char *)name;
+
+	// Create a new symbol
+	clone->sym = symbol_create(name, SYMBOL_SECTION, SYMBOL_LOCAL, clone, sec->sym->size);
+
+	return clone;
 }

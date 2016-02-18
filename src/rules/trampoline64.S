@@ -21,6 +21,7 @@
 * @file trampoline64.S
 * @brief Module to determine at runtime the memory destination address and
 * 	 call a specified function - x86_64 version
+*
 * @author Alessandro Pellegrini
 * @author Roberto Vitali
 * @author Davide Cingolani
@@ -65,6 +66,7 @@ trampoline:
 	movsd	%xmm2,(%rsp)
 	sub	$16,%rsp
 	movsd	%xmm3,(%rsp)
+
 	
 # OCCHIO CHE QUESTO DEVE ESSERE GESTITO DA HIJACKER NELLA GENERAZIONE DELLE ISTRUZIONI INTORNO ALLA CALL
 #	pushfw				# salva il registro EFLAGS
@@ -110,6 +112,10 @@ trampoline:
 
 	.ScritturaNormale:
 	xor	%rdi, %rdi			# %rdi conterrà l'indirizzo iniziale della scrittura
+	
+	testb $8, %al			# Controlla se lo spiazzamento è RIP-Relative, nel caso salta a .NoBase
+	jnz .NoBase
+
 	testb	$4, %al 		# Controlla se c'è un registro indice
 	jz	.NoIndex
 	movsbq	6(%rdx), %rcx				# Carica in %rcx il valore dell'indice
@@ -131,9 +137,15 @@ trampoline:
 	movslq	(%rdx), %rsi				# Carica la dimensione
 
 	.CallDymelor:
+	# Standard ABI V wants stack to BE ALIGNED to double word!!
+	# Section 5.2.1.2
+	sub $6, %rsp
+
+	# ### ### ###
 	# %rdi contiene l'indirizzo iniziale in cui la movs scriverà
 	# %rsi contiene la dimensione (in byte) della movs
-
+	# ### ### ###
+	
 	# Controllo per vedere se siamo nello stack
 	# TODO: per il controllo nelo stack è necessario un controllo più sofisticato
 	# che tenga conto del multi-threading. (Generalmente pthread alloca con malloc!)
@@ -148,9 +160,9 @@ trampoline:
 	# call	reverse_code_generator		# Chiama la funzione che si preoccupa della generazione del codice inverso
 	call *16(%rdx)			# Chiama la funzione specificata nelle regole XML, contenuta nell'ultimo campo della struttura di trampoline
 
+	add $6, %rsp
 
 	.Fine:
-
 	movsd	(%rsp),%xmm3
 	add	$16,%rsp
 	movsd	(%rsp),%xmm2

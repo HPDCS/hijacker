@@ -179,11 +179,71 @@ static xmlChar *parseInject(/*xmlDocPtr doc, xmlNsPtr ns, */xmlNodePtr cur) {
 
 
 
+static Param *parseParam(/*xmlDocPtr doc, xmlNsPtr ns, */xmlNodePtr cur) {
+	Param *ret = NULL;
+
+	// Allocate the struct
+	ret = (Param *) malloc(sizeof(Param));
+	if (ret == NULL) {
+		herror(true, "Out of memory\n");
+	}
+	memset(ret, 0, sizeof(Param));
+
+	// Get the attributes
+	if (cur != NULL) {
+		ret->name = xmlGetProp(cur, (const xmlChar *)"name");
+		ret->value = xmlGetProp(cur, (const xmlChar *)"value");
+	}
+
+	return ret;
+}
+
+
+
+static Preset *parsePreset(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr cur) {
+	Preset *ret = NULL;
+	Param *curParam;
+
+	// Allocate the struct
+	ret = (Preset *) malloc(sizeof(Preset));
+	if (ret == NULL) {
+		herror(true, "Out of memory\n");
+	}
+	memset(ret, 0, sizeof(Preset));
+
+	// Get the attributes
+	if (cur != NULL) {
+		ret->name = xmlGetProp(cur, (const xmlChar *)"name");
+		ret->function = xmlGetProp(cur, (const xmlChar *)"function");
+		ret->convention = xmlGetProp(cur, (const xmlChar *)"convention");
+	}
+
+	cur = cur->xmlChildrenNode;
+	while (cur != NULL) {
+
+		if (xmlStrcmp(cur->name, (const xmlChar *)"Param") == 0 && cur->ns == ns) {
+			curParam = parseParam(cur);
+			if (curParam != NULL) {
+				ret->param[ret->nParam++] = curParam;
+			}
+		}
+
+		cur = cur->next;
+	}
+
+	return ret;
+}
+
+
+
 static unsigned int parseInstructionFlags(xmlChar *str) {
 	char *source;
 	char *curSource;
 	char *token;
 	int flags = 0;
+
+	if (str == NULL)
+		return;
 
 	// Make a temporary copy
 	source = (char *)malloc(strlen((char *)str) + 1);
@@ -241,6 +301,7 @@ static Instruction *parseInstruction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr 
 	// Get the instruction's attributes
 	if (cur != NULL) {
 		ret->flags = parseInstructionFlags(xmlGetProp(cur, (const xmlChar *)"type"));
+		ret->skipFlags = parseInstructionFlags(xmlGetProp(cur, (const xmlChar *)"skip"));
 		ret->before = xmlGetProp(cur, (const xmlChar *)"injectBefore");
 		ret->after = xmlGetProp(cur, (const xmlChar *)"injectAfter");
 		ret->replace = xmlGetProp(cur, (const xmlChar *)"replace");
@@ -343,6 +404,7 @@ static int parseExecutable(char *filename, Executable ***rules) {
 	xmlNodePtr execNode;
 
 	xmlChar *curInject;
+	Preset *curPreset;
 	Instruction *curInstruction;
 	Function *curFunction;
 	Executable *exec;
@@ -435,6 +497,14 @@ static int parseExecutable(char *filename, Executable ***rules) {
 				}
 			}
 
+			// Preset Node
+			if (xmlStrcmp(cur->name, (const xmlChar *)"Preset") == 0 && cur->ns == ns) {
+				curPreset = parsePreset(/*doc, */ns, cur);
+				if (curPreset != NULL && exec->nPresets < MAX_CHILDREN) {
+					exec->presets[exec->nPresets++] = curPreset;
+				}
+			}
+
 			// Instruction Node
 			else if (xmlStrcmp(cur->name, (const xmlChar *)"Instruction") == 0 && cur->ns == ns) {
 				curInstruction = parseInstruction(/*doc, */ns, cur);
@@ -476,11 +546,6 @@ static int parseExecutable(char *filename, Executable ***rules) {
 int parseRuleFile(char *f, Executable ***rules) {
 	int size;
 	register int i;
-
-	// Early check on file existence to avoid ugly error messages
-	if(!file_exists(f)) {
-		return -1;
-	}
 
 	// Do not generate nodes for formatting spaces
 	LIBXML_TEST_VERSION xmlKeepBlanksDefault(0);

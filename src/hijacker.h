@@ -29,6 +29,7 @@
 
 #include <stdbool.h>
 
+#include <presets/presets.h>
 #include <rules/load-rules.h>
 #include <executables/executable.h>
 
@@ -41,6 +42,7 @@ typedef struct _configuration {
 	char		*output;
 	char		*inject_path;
 	executable_info	program;
+  preset *presets;
 } configuration;
 
 

@@ -37,6 +37,9 @@
 #include <rules/load-rules.h>
 #include <rules/apply-rules.h>
 
+// List of registered presets
+#include <smtracer/smtracer.h>
+
 
 /// Global configuration
 configuration config;
@@ -61,12 +64,16 @@ static void display_usage(char **argv) {
 static void process_configuration(char **argv) {
 
 	// If verbose is not set, this line will not print
-	hnotice(1, "Verbose mode active\n");
+	hprint("Verbose mode active\n");
 
 	// Early check on input file
 	if(config.input == NULL) {
 		display_usage(argv);
 		herror(true, "Input file must be specified\n");
+	}
+	else if(!file_exists(config.input)) {
+		display_usage(argv);
+		herror(true, "Unable to find the requested input file\n");
 	}
 
 	// Early check on configuration file
@@ -74,9 +81,14 @@ static void process_configuration(char **argv) {
 		display_usage(argv);
 		herror(true, "Configuration-rules file must be specified\n");
 	}
+	else if(!file_exists(config.rules_file)) {
+		display_usage(argv);
+		herror(true, "Unable to find the requested configuration-rules file\n");
+	}
+
 
 	// Load the configuration file
-	hnotice(1, "Loading configuration file '%s'... \n", config.rules_file);
+	hprint("Loading configuration file '%s'... \n", config.rules_file);
 	config.nExecutables = parseRuleFile(config.rules_file, &config.rules);
 
 	hsuccess();
@@ -137,6 +149,20 @@ static bool parse_cmd_line(int argc, char **argv) {
 }
 
 
+
+
+static void register_presets(void) {
+	hprint("Registering presets\n");
+
+	// So far smtracer is the only available preset
+	preset_register(PRESET_SMTRACER, smt_init, smt_run);
+
+	hsuccess();
+}
+
+
+
+
 /**
  * Links all the additional modules that can be found in the
  * current working directory.
@@ -145,11 +171,11 @@ static void link_modules(void) {
 	hnotice(1, "Link additional modules in '%s' to the output instrumented file 'hijacked.o'\n", TEMP_PATH);
 
 	// Step 1: link libhijacker
-	link("-r", "-L", LIBDIR, "__temp.o", "-o", "__temp_libhijacked.o", "-lhijacker");
+	link("__temp.o", "-r", "-L", LIBDIR, "-o", "__temp_libhijacked.o", "-lhijacker");
 
 	// Step 2: link other injected modules
 	if(file_exists("incremental.o")) {
-		link("-r", "-L", LIBDIR, "incremental.o", "__temp_libhijacked.o", "-o", config.output);
+		link("__temp_libhijacked.o", "-r", "-L", LIBDIR, "incremental.o", "-o", config.output);
 	} else {
 		rename("__temp_libhijacked.o", config.output);
 	}
@@ -173,6 +199,9 @@ int main(int argc, char **argv) {
 
 	// Process the specified command-line configuration
 	process_configuration(argv);
+
+	// Register all the available presets
+	register_presets();
 
 	// Load executable and build a map in memory
 	load_program(config.input);
