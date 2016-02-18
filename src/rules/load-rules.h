@@ -25,8 +25,8 @@
 */
 
 #pragma once
-#ifndef _INTRUMENTOR_RULES_H
-#define _INTRUMENTOR_RULES_H
+#ifndef _LOAD_RULES_H
+#define _LOAD_RULES_H
 
 #include <libxml/xmlmemory.h>
 #include <libxml/parser.h>
@@ -71,15 +71,31 @@ typedef struct Assembly {
 } Assembly;
 
 
+typedef struct Param {
+	xmlChar *name;
+	xmlChar *value;
+} Param;
+
+
+typedef struct Preset {
+	xmlChar	*name;
+	xmlChar	*function;
+	xmlChar	*convention;
+
+	int 		nParam;
+	Param	*param[MAX_CHILDREN];
+} Preset;
+
+
 typedef struct Instruction {
-	unsigned int	flags;
-	unsigned int 	skipFlags;
-	Call		*call;
+	unsigned int	flags;					//! Instruction flags to catch for the instrumentation process
+	unsigned int	skipFlags;				//! Instruction flags to filter out from instrumentation
+	Call		*call;						//! External user function to call
 	int		nAssembly;
 	Assembly	*assembly[MAX_CHILDREN];
-	xmlChar		*before;
-	xmlChar		*after;
-	xmlChar		*replace;
+	xmlChar		*before;					//! What must be injected BEFORE the matched instruction
+	xmlChar		*after;						//! What must be injected AFTER the matched instruction
+	xmlChar		*replace;					//! What will replace the matched instruction with
 } Instruction;
 
 
@@ -94,10 +110,12 @@ typedef struct Function {
 
 
 typedef struct Executable {
-	xmlChar		*entryPoint;
+	xmlChar		*entryPoint;					//! Where the program must start
 	xmlChar		*suffix;
 	int		nInjects;
 	xmlChar		*injectFiles[MAX_CHILDREN];
+	int 	nPresets;
+	Preset 		*presets[MAX_CHILDREN];
 	int		nInstructions;
 	Instruction	*instructions[MAX_CHILDREN];
 	int		nFunctions;
@@ -107,5 +125,5 @@ typedef struct Executable {
 
 int parseRuleFile(char *f, Executable ***rules);
 
-#endif /* _INTRUMENTOR_RULES_H */
+#endif /* _LOAD_RULES_H */
 

@@ -52,15 +52,18 @@
 #define I_PUSHPOP	0x4000	// Istruzione di tipo "push" o di tipo "pop"
 #define I_STACK		0x8000	// Se l'istruzione opera nello stack
 #define I_JUMPIND	0x10000	// Indirect Branch
-
+#define I_CALLIND 0x20000 // [SE] Indirect Call
+#define I_MEMIND	0x40000 // [SE] Indirect memory address load (LEA)
 
 // [FV] Macro per il testing dei flags
 #define IS_MEMRD(X)		((X)->flags & I_MEMRD)
 #define IS_MEMWR(X)		((X)->flags & I_MEMWR)
+#define IS_MEMIND(X)	((X)->flags & I_MEMIND)
 #define IS_CTRL(X)		((X)->flags & I_CTRL)
 #define IS_JUMP(X)		((X)->flags & I_JUMP)
 #define IS_JUMPIND(X)		((X)->flags & I_JUMPIND)
 #define IS_CALL(X)		((X)->flags & I_CALL)
+#define IS_CALLIND(X)		((X)->flags & I_CALLIND)
 #define IS_RET(X)		((X)->flags & I_RET)
 #define IS_CONDITIONAL(X)	((X)->flags & I_CONDITIONAL)
 #define IS_STRING(X)		((X)->flags & I_STRING)
@@ -77,10 +80,12 @@
 // Strings to load macros from the configuration file
 #define I_MEMRD_S	"I_MEMRD"
 #define I_MEMWR_S	"I_MEMWR"
+#define I_MEMIND_S "I_MEMIND"
 #define I_CTRL_S	"I_CTRL"
 #define I_JUMP_S	"I_JUMP"
 #define I_JUMPIND_S	"I_JUMPIND"
 #define I_CALL_S	"I_CALL"
+#define I_CALLIND_S	"I_CALLIND"
 #define I_RET_S		"I_RET"
 #define I_CONDITIONAL_S	"I_CONDITIONAL"
 #define I_STRING_S	"I_STRING"
@@ -98,22 +103,4 @@
 #define UNRECOG_INSN	0
 #define X86_INSN	7
 
-
-typedef struct instruction {
-	unsigned long		flags;
-	unsigned long long	orig_addr;
-	unsigned long long	new_addr;
-	unsigned int		size;
-	unsigned int		opcode_size;	// [DC] To keep trace of the opcode size
-	union {
-		insn_info_x86		x86;
-	} i;
-	//void *reference;			// May represent a reference to either a relocation symbol or an instruction (jump)
-	struct instruction *jumpto;
-	struct _symbol *reference;
-	struct _symbol *pointedby;
-	struct instruction *prev;	// Instructions are organized in a chain
-	struct instruction *next;
-} insn_info;
-
-#endif /* _INSTRUCTIONS_H */
+#endif /* _INSTRUCTION_H */

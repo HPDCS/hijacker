@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<hijacker:Rules xmlns:hijacker="http://www.dis.uniroma1.it/~hpdcs/">
+
+  <hijacker:Executable entryPoint="foo" suffix="monitor">
+
+    <hijacker:Inject file="../tracer.c" />
+
+    <hijacker:Preset name="vptracker" function="myfunc" convention="stdcall">
+      <hijacker:Param name="threshold" value="0.5" />
+    </hijacker:Preset>
+
+    <hijacker:Instruction type="I_MEMWR">
+      <hijacker:AddCall where="before" function="writefunc" arguments="target" convention="stdcall" />
+    </hijacker:Instruction>
+
+    <hijacker:Instruction type="I_MEMRD">
+      <hijacker:AddCall where="before" function="readfunc" arguments="target" convention="stdcall" />
+    </hijacker:Instruction>
+
+  </hijacker:Executable>
+
+</hijacker:Rules>

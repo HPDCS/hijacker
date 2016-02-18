@@ -52,12 +52,12 @@
 
 
 
-  #include <windows.h>
+	#include <windows.h>
 
-  #warning Windows was never tested!!!!
+	#warning Windows was never tested!!!!
 
 
-  #define compile(what, ...) do {\
+	#define compile(what, ...) do {\
 	PROCESS_INFORMATION pif;\
 	STARTUPINFO si;\
 	ZeroMemory(&si, sizeof(si));\
@@ -79,13 +79,13 @@
 
 
 
-  #include <unistd.h>
-  #include <stdlib.h>
-  #include <sys/wait.h>
-  #include <errno.h>
+	#include <unistd.h>
+	#include <stdlib.h>
+	#include <sys/wait.h>
+	#include <errno.h>
 
-  /// Compile source with several parameters
-  #define compile(what, ...) do {\
+	/// Compile source with several parameters
+	#define compile(what, ...) do {\
 	int status;\
 	if(fork() != 0) {\
 				wait(&status);\
@@ -100,7 +100,7 @@
 	} while(0)
 
 
-  #define link(what, ...) do {\
+	#define link(what, ...) do {\
 	int status;\
 	if(fork() != 0) {\
 				wait(&status);\
@@ -115,7 +115,7 @@
 	} while(0)
 
 
-  #define execute(what, ...) do {\
+	#define execute(what, ...) do {\
 	int status;\
 	if(fork() != 0) {\
 				wait(&status);\
@@ -133,7 +133,7 @@
 
 #else
 
-  #error Unable to determine a viable support for launching external programs
+	#error Unable to determine a viable support for launching external programs
 
 #endif
 

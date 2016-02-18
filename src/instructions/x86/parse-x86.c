@@ -32,12 +32,12 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include <prints.h>
-#include <stdbool.h>
-#include <instructions/instruction.h>
+#include <instruction.h>
 
-#include "x86.h"
+#include <x86/x86.h>
 
 /* Prototipi delle funzioni */
 
@@ -369,7 +369,7 @@ insn one_byte_opcode_table[] = {
   /* 8C */
   { "mov", { ADDR_E, ADDR_S, ADDR_0 }, { OP_W, OP_W, OP_0 }, NULL, I_MEMWR },
   /* 8D */
-  { "lea", { ADDR_G, ADDR_M, ADDR_0 }, { OP_V, OP_0, OP_0 }, NULL, 0 },
+  { "lea", { ADDR_G, ADDR_M, ADDR_0 }, { OP_V, OP_0, OP_0 }, NULL, I_MEMIND },
   /* 8E */
   { "mov", { ADDR_S, ADDR_E, ADDR_0 }, { OP_W, OP_W, OP_0 }, NULL, I_MEMRD },
   /* 8F */
@@ -3401,7 +3401,7 @@ void grp_5(struct disassembly_state *state) { /* opcode FF */
 			break;
 		case 0x02:
 		case 0x03:
-			state->instrument->flags = I_CALL;
+			state->instrument->flags = I_CALLIND | I_CALL;
 			break;
 		case 0x04:
 		case 0x05:
@@ -4261,6 +4261,9 @@ void format_addr_g (struct disassembly_state *state, enum addr_method addr, enum
 			fprintf(stderr, "%s: %d: Unexpected operand %d\n", __FILE__, __LINE__, op);
 			break;
 	}
+
+  // [SE] Hack terribile per ottenere il codice del registro destinazione
+  state->instrument->reg_dest = reg_field;
 }
 
 /* format_addr_i
@@ -4332,6 +4335,10 @@ void format_addr_i (struct disassembly_state *state, enum addr_method addr, enum
 	}
 
 	// A questo punto immed_data contiene i dati immediati dell'istruzione
+  // [SE] Populating immed_* fields
+  state->instrument->immed_offset = state->immed_offset = state->pos;
+  state->instrument->immed_size = state->immed_size = immed_size;
+  state->instrument->immed = immed_data;
 
 	state->pos += immed_size; // Salta i dati immediati appena gestiti
 }
@@ -5219,6 +5226,11 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 		// operando per vedere se l'istruzione accede in memoria!
 		format_addr_op(&state, state.addr[k], state.op[k]);
 		state.read_dest = true;
+
+    // [SE] Hack terribile per capire se un registro è usato come destinazione
+    if (k == 0 && state.addr[k] == ADDR_G) {
+      state.instrument->dest_is_reg = true;
+    }
 	}
 
 	// Copia i byte dell'istruzione
@@ -5238,6 +5250,12 @@ void x86_disassemble_instruction (unsigned char *text, unsigned long *pos, insn_
 	// Copia i byte dell'opcode
 	memcpy(state.instrument->opcode, state.opcode, 2);
 
+  // [SE] Copia i rimanenti campi
+  state.instrument->rex = state.rex;
+  state.instrument->modrm = state.modrm;
+  state.instrument->sib = state.sib;
+  state.instrument->sse_prefix = state.sse_prefix;
+  memcpy(state.instrument->prefix, state.prefix, 4);
 
 	state.instrument->insn_size = (state.pos - *pos);
 	*pos = state.pos;
