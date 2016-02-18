@@ -39,9 +39,11 @@
 
 
 // Size of a single entry in the TLS buffer
-#define BUFFER_ENTRY_SIZE (1<<4)
+#define BUFFER_ENTRY_SIZE (1<<4 + 1<<3)
+// Size of a single field in an entry of the TLS buffer
+#define BUFFER_FIELD_SIZE (1<<3)
 // Maximum length for the name of the TLS buffer symbol
-#define BUFFER_NAME_LEN   (1<<5)
+#define BUFFER_NAME_LEN   (1<<6)
 
 // Experimental score triple to derive the
 // instrumentation score of a single access
@@ -69,14 +71,14 @@ inline static bool smt_is_relevant(insn_info *instr) {
   bool is_relevant;
 
   insn_info_x86 *target_x86;
-  symbol *sym;
+  // symbol *sym;
 
   if (instr == NULL) {
     return false;
   }
 
   target_x86 = &instr->i.x86;
-  sym = instr->reference;
+  // sym = instr->reference;
 
   if (use_stack == false) {
     if (target_x86->has_base_register == true && target_x86->breg == 5) {
@@ -98,11 +100,11 @@ inline static bool smt_is_relevant(insn_info *instr) {
 }
 
 static void smt_tls_init(void) {
-  section *sec;
+  symbol *sym;
   void *tbss_payload;
   unsigned int tbss_size;
 
-  unsigned int count, disp;
+  unsigned int disp;
 
   char *buffer_name;
 
@@ -113,24 +115,20 @@ static void smt_tls_init(void) {
   tbss_size = BUFFER_ENTRY_SIZE * tls_buffer_size;
   disp = 0;
 
-  // Counting the total number of sections and looking for .tbss, if exists
-  for (sec = PROGRAM(sections), count = 0; sec; sec = sec->next, ++count) {
-    if (tbss_sec == NULL && sec->name && !strcmp((const char *)sec->name, ".tbss")) {
-      tbss_sec = sec;
-    }
-    else if (tbss_sec == NULL && sec->index && !strcmp((const char *) sec_name(sec->index), ".tbss")) {
-      tbss_sec = sec;
-    }
-  }
+  sym = find_symbol_by_name(".tbss");
+  // tbss_sec = find_symbol_by_name(".tbss")->sec;
 
-  if (tbss_sec == NULL) {
+  if (sym == NULL) {
     // If the section hasn't been found, it's time to create it
     hnotice(3, "Creating a new .tbss section\n");
 
     tbss_payload = calloc(tbss_size, 1);
 
-    tbss_sec = add_section(SECTION_TLS, count, tbss_payload, NULL);
-    tbss_sym = create_symbol_node(".tbss", SYMBOL_SECTION, SYMBOL_LOCAL, 0);
+    tbss_sec = section_create(".tbss", SECTION_TLS, tbss_payload);
+
+    section_append(tbss_sec, &PROGRAM(sections)[0]);
+
+    tbss_sym = tbss_sec->sym;
 
     // Now install a new ELF header...
     hdr = calloc(sizeof(Section_Hdr), 1);
@@ -159,7 +157,7 @@ static void smt_tls_init(void) {
 
   } else {
     // Otherwise, let's hook to the existing section
-    tbss_sym = find_symbol(".tbss");
+    tbss_sym = find_symbol_by_name(".tbss");
 
     hnotice(3, "Existing .tbss section found of size %u bytes\n", tbss_sym->size);
 
@@ -191,14 +189,12 @@ static void smt_tls_init(void) {
 
   // A different buffer symbol is created for each version
   buffer_name = malloc(BUFFER_NAME_LEN);
-  strcpy(buffer_name, "__smtracer_buffer_");
-  sprintf(buffer_name + strlen("__smtracer_buffer_"), "%d", PROGRAM(version));
+  sprintf(buffer_name, "__smtracer_buffer_%d", PROGRAM(version));
 
-  tls_buffer_sym = create_symbol_node(buffer_name, SYMBOL_TLS, SYMBOL_LOCAL,
+  tls_buffer_sym = symbol_create(buffer_name, SYMBOL_TLS, SYMBOL_LOCAL, tbss_sec,
     BUFFER_ENTRY_SIZE * tls_buffer_size);
 
-  tls_buffer_sym->sec = tbss_sec;
-  tls_buffer_sym->position = disp;
+  tls_buffer_sym->offset = disp;
   tls_buffer_sym->secnum = tbss_sec->index;
 }
 
@@ -251,7 +247,7 @@ static void smt_compute_cycles(void) {
 
   ll_init(&headers);
 
-  for (func = PROGRAM(code); func; func = func->next) {
+  for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
     graph_visit visit = {
       .payload   = &headers,
       .policy    = VISIT_DEPTH,
@@ -308,7 +304,7 @@ static void smt_compute_cycles(void) {
   unsigned int hottest;
   linked_list queue = { NULL, NULL };
 
-  for (func = PROGRAM(code); func; func = func->next) {
+  for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
     if (func->calledfrom.first == NULL) {
       ll_push(&queue, func);
     }
@@ -448,7 +444,7 @@ void smt_init(void) {
   for (func = PROGRAM(code); func; func = func->next) {
     count = 0;
 
-    for (instr = func->insn; instr; instr = instr->next) {
+    for (instr = func->begin_insn; instr; instr = instr->next) {
       count += smt_is_relevant(instr);
     }
 
@@ -611,7 +607,7 @@ static void smt_resolve_address(smt_access *access) {
 
       insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
-      ref = instruction_rela_node(sym, current, RELOCATE_RELATIVE_32);
+      ref = symbol_instr_rela_create(sym, current, RELOC_PCREL_32);
       // ref->relocation.addend = sym->relocation.addend;
     }
 
@@ -622,7 +618,7 @@ static void smt_resolve_address(smt_access *access) {
 
       insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
-      ref = instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_32);
+      ref = symbol_instr_rela_create(sym, current, RELOC_ABS_32);
       // ref->relocation.addend = sym->relocation.addend;
 
       if (sym->relocation.type == R_X86_64_32S) {
@@ -637,7 +633,7 @@ static void smt_resolve_address(smt_access *access) {
 
       insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
-      ref = instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_64);
+      ref = symbol_instr_rela_create(sym, current, RELOC_ABS_64);
       // ref->relocation.addend = sym->relocation.addend;
     }
 
@@ -679,7 +675,7 @@ static void smt_resolve_address(smt_access *access) {
         }
       }
 
-      ref = instruction_rela_node(sym, current, RELOCATE_TLS_RELATIVE_32);
+      ref = symbol_instr_rela_create(sym, current, RELOC_TLSREL_32);
       // ref->relocation.addend = sym->relocation.addend;
     }
 
@@ -701,7 +697,7 @@ static void smt_resolve_address(smt_access *access) {
       //   insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
       // }
 
-      // instruction_rela_node(sym, current, RELOCATE_ABSOLUTE_64);
+      // symbol_instr_rela_create(sym, current, RELOC_ABS_64);
     }
 
   }
@@ -723,13 +719,13 @@ static void smt_instrument_access(block *blk, smt_access *access) {
       0x56
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &first);
+    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
     // If the instrumented instruction is the target of a jump, let's update
     // the virtual reference
     // if (pivot == block_find(pivot)->begin && !pivot->virtual) {
     if (!ll_empty(&pivot->targetof) && !pivot->virtual) {
-      set_virtual_reference(pivot, first);
+      set_virtual_reference(pivot, current);
     }
   }
 
@@ -764,7 +760,7 @@ static void smt_instrument_access(block *blk, smt_access *access) {
 
   // Store chunk address in TLS buffer
   // ---------------------------------
-  // MOV %rsi, %fs:disp+index*BUFFER_ENTRY_SIZE
+  // MOV %rsi, %fs:disp+(index*BUFFER_ENTRY_SIZE)
 
   {
     unsigned char instr[9] = {
@@ -773,22 +769,21 @@ static void smt_instrument_access(block *blk, smt_access *access) {
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
-    ref = instruction_rela_node(tls_buffer_sym, current, RELOCATE_TLS_RELATIVE_32);
+    ref = symbol_instr_rela_create(tls_buffer_sym, current, RELOC_TLSREL_32);
     ref->relocation.addend = access->index * BUFFER_ENTRY_SIZE;
   }
 
-  // Increment block id + access counter in TLS buffer
-  // -------------------------------------------------
-  // MOVQ (blk->id << 16 | access->counter), %rsi
-  // ADD %rsi, %fs:disp+index*BUFFER_ENTRY_SIZE+BUFFER_ENTRY_SIZE/2
+  // Increment access counter in TLS buffer
+  // --------------------------------------
+  // MOVQ access->counter, %rsi
+  // ADD %rsi, %fs:disp+(index*BUFFER_ENTRY_SIZE)+BUFFER_FIELD_SIZE
 
   {
     unsigned char instr[7] = {
       0x48, 0xc7, 0xc6, 0x00, 0x00, 0x00, 0x00
     };
 
-    // *(uint32_t *)(instr + 3) = access->counter;
-    *(uint32_t *)(instr + 3) = blk->id << 16 | access->counter;
+    *(uint32_t *)(instr + 3) = access->counter;
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
   }
@@ -800,8 +795,34 @@ static void smt_instrument_access(block *blk, smt_access *access) {
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
-    ref = instruction_rela_node(tls_buffer_sym, current, RELOCATE_TLS_RELATIVE_32);
-    ref->relocation.addend = access->index * BUFFER_ENTRY_SIZE + BUFFER_ENTRY_SIZE / 2;
+    ref = symbol_instr_rela_create(tls_buffer_sym, current, RELOC_TLSREL_32);
+    ref->relocation.addend = access->index * BUFFER_ENTRY_SIZE + BUFFER_FIELD_SIZE;
+  }
+
+  // Store block ID in the TLS buffer
+  // --------------------------------
+  // MOVQ blk->id, %rsi
+  // MOV %rsi, %fs:disp+(index*BUFFER_ENTRY_SIZE)+BUFFER_FIELD_SIZE*2
+
+  {
+    unsigned char instr[7] = {
+      0x48, 0xc7, 0xc6, 0x00, 0x00, 0x00, 0x00
+    };
+
+    *(uint32_t *)(instr + 3) = blk->id;
+
+    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+  }
+
+  {
+    unsigned char instr[9] = {
+      0x64, 0x48, 0x89, 0x34, 0x25, 0x00, 0x00, 0x00, 0x00
+    };
+
+    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+
+    ref = symbol_instr_rela_create(tls_buffer_sym, current, RELOC_TLSREL_32);
+    ref->relocation.addend = access->index * BUFFER_ENTRY_SIZE + BUFFER_FIELD_SIZE * 2;
   }
 
   // Restore old register values
@@ -842,7 +863,7 @@ static size_t smt_instrument_block(block *blk) {
   ninstr = ceil(overhead * smt->ncandidates);
   cinstr = 0;
 
-  hnotice(3, "Instrumentable candidates: %u; Total candidates: %u; Total: %u\n",
+  hnotice(3, "Instrumentable candidates: %lu; Total candidates: %lu; Total: %lu\n",
     ninstr, smt->ncandidates, smt->ntotal);
 
   // Keep instrumenting until there's no more space left
@@ -850,6 +871,7 @@ static size_t smt_instrument_block(block *blk) {
   while(cinstr < ninstr) {
     highest = NULL;
 
+    // Find the next access to instrument according to its score
     for (access = smt->candidates; access; access = access->next) {
 
       if (highest == NULL && access->instrumented == false) {
@@ -865,6 +887,7 @@ static size_t smt_instrument_block(block *blk) {
           highest = access;
         }
       }
+
     }
 
     if (highest == NULL) {
@@ -874,10 +897,11 @@ static size_t smt_instrument_block(block *blk) {
       break;
     }
 
+    // Instrument the access
     smt_instrument_access(blk, highest);
 
-    hnotice(3, "Instrumented access '%s' at <%#08llx>\n",
-      highest->insn->i.x86.mnemonic, highest->insn->orig_addr);
+    hnotice(3, "Instrumented access '%s' at <%#08llx> (cinstr = %lu)\n",
+      highest->insn->i.x86.mnemonic, highest->insn->orig_addr, cinstr);
 
     highest->instrumented = true;
     highest->index = index;
@@ -929,7 +953,7 @@ inline static bool smt_same_ireg(smt_access *target, smt_access *current) {
 }
 
 inline static size_t smt_absdiff_imm(smt_access *target, smt_access *current) {
-  return abs(target->insn->i.x86.disp - target->insn->i.x86.disp);
+  return abs(target->insn->i.x86.disp - current->insn->i.x86.disp);
 }
 
 inline static size_t smt_absdiff_sym(smt_access *target, smt_access *current) {
@@ -946,8 +970,8 @@ inline static size_t smt_absdiff_sym(smt_access *target, smt_access *current) {
 
   if (target_sec == current_sec) {
     // if (target_sym != current_sym) {
-      distance = target_sym->position + target_sym->relocation.addend;
-      distance -= current_sym->position + current_sym->relocation.addend;
+      distance = target_sym->offset + target_sym->relocation.addend;
+      distance -= current_sym->offset + current_sym->relocation.addend;
 
       return abs(distance);
     // } else {
@@ -1176,7 +1200,7 @@ static void smt_call_routine(unsigned int total, symbol *callfunc, insn_info *pi
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
-    instruction_rela_node(tls_buffer_sym, current, RELOCATE_TLS_RELATIVE_32);
+    symbol_instr_rela_create(tls_buffer_sym, current, RELOC_TLSREL_32);
   }
 
   // Store total number of tracked accesses
@@ -1204,7 +1228,7 @@ static void smt_call_routine(unsigned int total, symbol *callfunc, insn_info *pi
 
   //   insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
 
-  //   instruction_rela_node(callfunc, current, RELOCATE_ABSOLUTE_64);
+  //   symbol_instr_rela_create(callfunc, current, RELOC_ABS_64);
   // }
 
   // Call user-defined routine
@@ -1226,7 +1250,7 @@ static void smt_call_routine(unsigned int total, symbol *callfunc, insn_info *pi
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
-    instruction_rela_node(callfunc, current, RELOCATE_RELATIVE_32);
+    symbol_instr_rela_create(callfunc, current, RELOC_PCREL_32);
   }
 
   // Restore old register values
@@ -1397,7 +1421,7 @@ static bool smt_check_equivalence(smt_access *target, smt_access *current) {
 
 static bool smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
   smt_data *smt;
-  smt_access *target, *current, *prev, *found;
+  smt_access *target, *current, *prev;
 
   smt = blk->smtracer;
 
@@ -1533,7 +1557,7 @@ static size_t smt_trace_func(function *func, symbol *callfunc) {
   // in which calls to this function are placed are referred
   // to as `flushpoints`
 
-  for (instr = func->insn; instr; instr = instr->next) {
+  for (instr = func->begin_insn; instr; instr = instr->next) {
 
     if (smt_is_flushpoint(instr, func)) {
       hnotice(3, "Found flushpoint '%s' at <%#08llx>\n",
@@ -1552,6 +1576,8 @@ static size_t smt_trace_func(function *func, symbol *callfunc) {
 }
 
 size_t smt_run(char *name, param **params, size_t numparams) {
+  section *sec, *text;
+
   symbol *callfunc;
   function *func;
 
@@ -1568,7 +1594,18 @@ size_t smt_run(char *name, param **params, size_t numparams) {
   use_stack = (numparams == 4) && !strcmp(params[3]->value, "true");
 
   // A weak symbol is created that represents the user-defined function
-  callfunc = create_symbol_node(name, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
+  for (text = NULL, sec = PROGRAM(sections)[PROGRAM(version)]; sec; sec = sec->next) {
+    if (sec->type == SECTION_CODE) {
+      text = sec;
+      break;
+    }
+  }
+
+  if (text == NULL) {
+    hinternal();
+  }
+
+  callfunc = symbol_create(name, SYMBOL_UNDEF, SYMBOL_GLOBAL, text, 0);
 
   // We now iterate on all basic blocks to instrument the appropriate accesses
   count = 0;
