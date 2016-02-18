@@ -28,15 +28,14 @@
 #include <libgen.h>
 
 #include <executable.h>
-#include <elf/reverse-elf.h>
-#include <elf/handle-elf.h>
 #include <hijacker.h>
 #include <prints.h>
 #include <compile.h>
+#include <load-rules.h>
+#include <apply-rules.h>
 
-#include "insert_insn.h"
-#include "rules.h"
-#include "apply-rules.h"
+#include <elf/reverse-elf.h>
+#include <elf/handle-elf.h>
 
 /**
  * The Inject tag simply identifies a file that has to be compiled togeter
@@ -71,11 +70,11 @@ static void apply_rule_link (char *filename) {
 	if(!file_exists(filename)) {
 		herror(true, "The XML rules file has specified a file that does not exists!\n");
 	}
-	
+
 	// Just compile the given module's source.
 	// The resulting object file will be linked in the final stage.
 	compile(filename, "-c", "-o", "current.o");
-	
+
 	if(file_exists("incremental.o")) {
 		link("-r", "incremental.o", "current.o", "-o", "__incremental.o");
 		unlink("current.o");
@@ -94,7 +93,7 @@ static void apply_rule_link (char *filename) {
  *
  * @param filename Pointer to the file string name
  */
-static void apply_rule_inject (char *filename, insn_info *target, int where) {
+static void apply_rule_inject (char *filename, insn_info *target, insn_insert_mode where) {
 	FILE *fp;
 	int fsize;
 	unsigned char *fcontent;
@@ -154,6 +153,41 @@ static void apply_rule_inject (char *filename, insn_info *target, int where) {
 	hsuccess();
 }
 
+
+static size_t apply_rule_preset(Executable *exec, Preset *tagPreset, preset *pr) {
+	int tag;
+	size_t count;
+
+	Param *tagParam;
+	param **params, *par;
+
+	if (pr->initialized[PROGRAM(version)] == false) {
+		pr->init_func();
+		pr->initialized[PROGRAM(version)] = true;
+	}
+
+	hnotice(3, "Running preset '%s' with params:", tagPreset->name);
+
+	params = malloc(sizeof(param *) * tagPreset->nParam);
+
+	for(tag = 0; tag < tagPreset->nParam; ++tag) {;
+		tagParam = tagPreset->param[tag];
+
+		par = malloc(sizeof(param));
+		par->name = tagParam->name;
+		par->value = tagParam->value;
+
+		printf(" %s = %s", par->name, par->value);
+
+		params[tag] = par;
+	}
+
+	printf("\n");
+
+	count = pr->apply_func(tagPreset->function, params, tagPreset->nParam);
+
+	return count;
+}
 
 /**
  * Creates and adds to the text section a new CALL instruction to the
@@ -218,18 +252,7 @@ static int apply_rule_instruction(Executable *exec, Instruction *tagInstruction,
 
 	(void)exec;
 
-	// Since the current function will be instrumented
-	// we must to create a new function descriptor by cloinig
-	// the current one.
-/*	if(func->symbol->version != PROGRAM(version)) {
-		// If the version of the symbol is zero, then
-		// the function is not yet an instrumented clone
-		// and we do clone it
-		sprintf(name, "%s-%s", func->name, exec->suffix);
-		func = clone_function_descriptor(func, name);
-	}*/
-
-	insn = func->insn;
+	insn = func->begin_insn;
 	count = 0;
 
 	hnotice(2, "Entering Instruction scope; searching for instruction of type %d\n", tagInstruction->flags);
@@ -334,7 +357,7 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
 
 			// Iterates all over the Instruction sub-tags
 			for(tag = 0; tag < tagFunction->nInstructions; tag++) {
-				// Retrive the next instruction tag and process it
+				// Retrieve the next instruction tag and process it
 				hnotice(2, "Instruction tag met, applying the rule\n");
 				tagInstruction = tagFunction->instructions[tag];
 				hnotice(3, "Looking for the instruction with flags %x\n", tagInstruction->flags);
@@ -344,7 +367,7 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
 			// Check if a Call tag has been specified
 			if(tagFunction->call) {
 				tagCall = tagFunction->call;
-				apply_rule_addcall(tagCall, func->insn);
+				apply_rule_addcall(tagCall, func->begin_insn);
 			}
 
 		}
@@ -360,11 +383,50 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
 }
 
 
+static void hijack_main(unsigned char *entry_point) {
+	// Find the current main function
+	symbol *sym_main, *sym;
+	function *main;
+	unsigned char code[1] = {0x90};
+	unsigned char code2[1] = {0xc3};
+	unsigned char code2bis[1] = {0xc9};
+	unsigned char code3[4] = {0x48, 0x89, 0xe5, 0x55};
+
+	sym_main = find_symbol_by_name("main");
+
+	if (sym_main == NULL) {
+		hinternal();
+	}
+
+	// Change the name of the original entry program's point
+	sym_main->name = sym_main->func->name = "original_main";
+
+	// Change all relocations toward the main symbol (if any)
+	for (sym = PROGRAM(symbols); sym; sym = sym->next) {
+		if (str_equal(sym->name, "main")) {
+			sym->name = "original_main";
+		}
+	}
+
+	// Creates a new stub function that acts as the new main
+	main = function_create_from_bytes("main", code, sizeof(code));
+
+	// Adds the jump to the new entry point
+	insert_instructions_at(main->begin_insn, code2, sizeof(code2), INSERT_AFTER, &(main->begin_insn));	
+	insert_instructions_at(main->begin_insn, code2bis, sizeof(code2), INSERT_BEFORE, &(main->begin_insn));	
+	add_call_instruction(main->begin_insn, "dump", INSERT_BEFORE, &(main->begin_insn));
+	add_call_instruction(main->begin_insn, entry_point, INSERT_BEFORE, &(main->begin_insn));
+	insert_instructions_at(main->begin_insn, code3, sizeof(code3), INSERT_BEFORE, &(main->begin_insn));	
+
+}
+
+
 /**
  * Given a rule, applies it by calling the correspondent function
  */
 void apply_rules(void) {
 	function *func;
+	preset *preset;
 
 	int tag;
 	int version;
@@ -372,13 +434,17 @@ void apply_rules(void) {
 
 	char *module;
 	Executable *exec;
+	Preset *tagPreset;
 	Instruction *tagInstruction;
 	Function *tagFunction;
 
-	hprint("Start applying rules...\n");
+	hprint("Start applying rules...\n\n");
+
+	unsigned char *entry_point;
 
 	// Create a temporary directory to place object files;
 	execute("mkdir", "-p", TEMP_PATH);
+
 
 	// Iterates all over executable versions
 	for (version = 0; version < config.nExecutables; version++) {
@@ -387,7 +453,7 @@ void apply_rules(void) {
 		// Reset the counter of the overall instrumented instructions
 		instrumented = 0;
 
-		// Get the new vesion executable's rules
+		// Get the new version executable's rules
 		exec = config.rules[version];
 
 		// Clone the intermediate binary representation
@@ -397,16 +463,31 @@ void apply_rules(void) {
 
 		// Iterates all over the XML inject tag in the Executable
 		for (tag = 0; tag < exec->nInjects; tag++) {
-			// Retrive the next inject tag and process it
-			hnotice(2, "Instruction tag met, applying the rule\n");
+			// Retrieve the next inject tag and process it
+			hnotice(2, "Inject tag met, applying the rule\n");
 			module = (char *)exec->injectFiles[tag];
 			hnotice(3, "Looking for the instruction with flags '%s'\n", module);
 			apply_rule_link(module);
 		}
 
+		// Iterates all over the XML Preset tag in the Executable
+		for (tag = 0; tag < exec->nPresets; tag++) {
+			// Retrieve the next instruction tag and process it
+			hnotice(2, "Preset tag met, applying the rule\n");
+			tagPreset = exec->presets[tag];
+			hnotice(3, "Looking for the preset with name %s\n", tagPreset->name);
+			preset = preset_find(tagPreset->name);
+
+			if (preset == NULL) {
+				herror(true, "Unable to find preset with name %s\n", tagPreset->name);
+			} else {
+				instrumented += apply_rule_preset(exec, tagPreset, preset);
+			}
+		}
+
 		// Iterates all over the instructions in the Executable XML tag
 		for (tag = 0; tag < exec->nInstructions; tag++) {
-			// Retrive the next instruction tag and process it
+			// Retrieve the next instruction tag and process it
 			hnotice(2, "Instruction tag met, applying the rule\n");
 			tagInstruction = exec->instructions[tag];
 			hnotice(3, "Looking for the instruction with flags %x\n", tagInstruction->flags);
@@ -425,6 +506,19 @@ void apply_rules(void) {
 			hnotice(3, "Looking for the function '%s'\n", tagFunction->name);
 			instrumented += apply_rule_function(exec, tagFunction);
 		}
+
+		// Check for a new entry point to be selected, if any
+		if(exec->entryPoint != NULL) {
+			hnotice(1, "A new entry point has been detected to function'%s'\n", exec->entryPoint);
+			hijack_main(exec->entryPoint);
+		}
+
+		// if (version != 0 && instrumented) {
+			// [SE] If some actual instrumentation has been carried out, first update
+			// instruction addresses and then recompute jump displacements
+			update_instruction_addresses(version);
+			update_jump_displacements(version);
+		// }
 
 		hnotice(1, "Instrumentation of executable version %d terminated: %d instructions have been instrumented\n",
 			version, instrumented);

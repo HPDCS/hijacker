@@ -27,8 +27,8 @@
 #include <executable.h>
 #include <prints.h>
 
-#include "x86.h"
-#include "emit-x86.h"
+#include <x86/x86.h>
+#include <x86/emit-x86.h>
 #include <elf/emit-elf.h>
 
 
@@ -41,7 +41,7 @@ long write_x86_code(function *func, section *text, section *relocation) {
 	int displ;
 
 	ptr = text->ptr;
-	instr = func->insn;
+	instr = func->begin_insn;
 
 	while(instr != NULL) {
 		x86 = &instr->i.x86;
@@ -53,7 +53,7 @@ long write_x86_code(function *func, section *text, section *relocation) {
 			displ = 0;
 			if(x86->disp != 0)
 				displ = x86->disp_size;
-				
+
 			offset = instr->new_addr + x86->opcode_size + displ;
 			sym->relocation.offset = offset;
 

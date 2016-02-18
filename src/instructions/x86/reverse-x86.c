@@ -32,11 +32,10 @@
 #include <executable.h>
 #include <instruction.h>
 #include <trampoline.h>
-#include <insert_insn.h>
-#include <elf/handle-elf.h>
 
-#include "x86.h"
-#include "reverse-x86.h"
+#include <elf/handle-elf.h>
+#include <x86/x86.h>
+#include <x86/reverse-x86.h>
 
 
 void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
@@ -44,10 +43,11 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	insn_info *instr;
 	insn_entry *entry;
 	symbol *sym;
-	int size;
+	unsigned int size;
 	int num;
 	int idx;
-	int value;
+
+	unsigned char flags; // [SE]
 
 	// Retrieve information to fill the structure
 	// from the instruction descriptor get the x86 instrucion one
@@ -65,7 +65,6 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	// fill the structure
 	entry->size = x86->span;
 	entry->offset = (signed) x86->disp;
-	//entry->flags = x86->flags;
 	entry->base = x86->breg;
 	entry->idx = x86->ireg;
 	entry->scala = x86->scale;
@@ -86,33 +85,57 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	//hdump(0, "entry:", entry, 24);
 	//printf("disp=%llx, disp_size=%d\n", x86->disp, x86->disp_size);
 	//printf("insn '%s' at <%#08llx>\n", x86->mnemonic, instr->new_addr);
-	
+
 	hnotice(4, "Push trampoline structure into stack before the target MOV...\n");
 	size = sizeof(insn_entry);	// size of the structure
 	num = size / 4;				// number of the mov instructions needed to copy all the struture fields
 
+	// [SE] This is a guard added to make sure that Hijacker never writes on the Red Zone,
+	// a safe area on the stack on which leaf functions can operate without explicitly
+	// allocating space (i.e., without moving the top of the stack).
+	// The guard makes sure that the displacement from the current stack pointer is of at least
+	// 128 bytes, which is the maximum size of the Red Zone as mandated by the System V X86-64 ABI.
+	size = (size < 128) ? 128 : size;
+
 	// Creates bytes array of the main instructions needed to manage
 	// the stack in order to save trampoline's structure
-	unsigned char sub[4] = {0x48, 0x83, 0xec, (char) size};
-	unsigned char add[4] = {0x48, 0x83, 0xc4, (char) size};
+	// unsigned char sub[4] = {0x48, 0x83, 0xec, (char) size};
+	// unsigned char add[4] = {0x48, 0x83, 0xc4, (char) size};
+	unsigned char sub[7] = {0x48, 0x81, 0xec, 0x00, 0x00, 0x00, 0x00}; // [SE]
+	unsigned char add[7] = {0x48, 0x81, 0xc4, 0x00, 0x00, 0x00, 0x00}; // [SE]
 	unsigned char call[5] = {0xe8, 0x00, 0x00, 0x00, 0x00};
 	unsigned char mov[8] = {0xc7, 0x44, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00};
 	unsigned char pushfw[2] = {0x66, 0x9c};
 	unsigned char popfw[2] = {0x66, 0x9d};
 
+	*(unsigned int *)(sub + 3) = size;
+	*(unsigned int *)(add + 3) = size;
+
 	// Before to do anything we must to preserver EFLAGS register
 	insert_instructions_at(target, pushfw, sizeof(pushfw), INSERT_BEFORE, &instr);
 
-	// add the SUB instruction in order to create a sufficent stack window for the structure
+	// [SE] For the sake of correctness, any JUMP instruction toward `target` should now
+	// point to the first instruction of the trampoline's preamble.
+	// Note that since preambles are added one below another, it is sufficient to update
+	// the virtual reference only once, when the first trampoline's preamble is installed.
+	// Indeed, such preamble will have the lowest virtual address of all the ones that
+	// will be later installed.
+	if (!target->virtual) {
+		set_virtual_reference(target, instr);
+	}
+
+	// add the SUB instruction in order to create a sufficient stack window for the structure
 	insert_instructions_at(instr, sub, sizeof(sub), INSERT_AFTER, &instr);
 
 	// iterates all over the mov needed
 	for (idx = 0; idx < num; idx++) {
 		bzero((mov + 3), 5);
 
-		mov[3] = idx * sizeof(int);							// displacement from the new stack pointer
-		memcpy(&value, (((char *) entry) + idx * sizeof(int)), sizeof(int));	// retrieve the next chunk of 4 bytes
-		memcpy((mov + 4), &value, sizeof(int));				// embed the immediate into the instruction
+		// displacement from the new stack pointer
+		mov[3] = idx * sizeof(int);
+
+		// retrieve the next chunk of 4 bytes and embed the immediate into the instruction
+		*(unsigned int *)(mov + 4) = *((int *)entry + idx);
 
 		// create and add the new instruction to the rest of code
 		insert_instructions_at(instr, mov, sizeof(mov), INSERT_AFTER, &instr);
@@ -125,16 +148,15 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	// point where the offset will be placed in the structure
 	if(target->reference != NULL) {
 		hnotice(4, "A RELA node has been found to this instruction; we have to duplicate the RELA to the entry's offset\n");
-		
 		sym = target->reference;
-		instruction_rela_node(sym, instr->prev->prev->prev, RELOCATE_ABSOLUTE_32);
+		symbol_instr_rela_create(sym, instr->prev->prev->prev, RELOC_ABS_32);
 	}
 
 	// Adds the pointer to the function that the trampoline module has to call at runtime
 	// The idea is to generalize the calling method, the aforementioned
 	// symbol will be properly relocated to whichever function the user has
 	// specified in the rules files in the AddCall tag's 'function' field
-	
+
 	// Now, we have either the function symbol to be called and the stack filled up;
 	// the only thing that remains to do is to adds a relocation entry from the last
 	// long-word of the pushed entry towards the new function symbol.
@@ -142,9 +164,9 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	// in order to make the correct relocation we have to look for its predecessor (twice)
 	// which (should) be the last MOV that should pushes the calling address on the stack
 	hnotice(4, "Push the function pointer to '%s' in the trampoline structure\n", func);
-	
+
 	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
-	instruction_rela_node(sym, instr->prev, RELOCATE_ABSOLUTE_64);
+	symbol_instr_rela_create(sym, instr->prev, RELOC_ABS_64);
 
 
 	hnotice(4, "Adds the call to the trampoline hijacker library function\n");
@@ -154,7 +176,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 
 	// Checks and creates the symbol name that will be the target of the call
 	sym = create_symbol_node((unsigned char *)"trampoline", SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
-	instruction_rela_node(sym, instr, RELOCATE_RELATIVE_32);
+	symbol_instr_rela_create(sym, instr, RELOC_PCREL_32);
 
 	// in order to align the stack pointer we need to insert an ADD instruction
 	// to compensate the SUB used to make room for the structure
