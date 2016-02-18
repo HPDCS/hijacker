@@ -73,6 +73,9 @@ typedef struct insn_info_x86 {
   unsigned char sib;		// Byte SIB o 0x00
   unsigned char sse_prefix;	// Terzo byte dell'istruzione SSE/SSE2
   unsigned char prefix[4];	// Prefissi all'istruzione o 0x00
+
+  bool dest_is_reg;   // [SE] Indica se la destinazione è un registro
+  unsigned char reg_dest;   // [SE] Codice del registro destinazione (se esiste)
 } insn_info_x86;
 
 #endif /* _INSTRUCTION_X86_H */

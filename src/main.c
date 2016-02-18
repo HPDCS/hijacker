@@ -38,7 +38,7 @@
 #include <rules/apply-rules.h>
 
 // List of registered presets
-#include <vptracker/vptracker.h>
+#include <smtracer/smtracer.h>
 
 
 /// Global configuration
@@ -64,12 +64,16 @@ static void display_usage(char **argv) {
 static void process_configuration(char **argv) {
 
 	// If verbose is not set, this line will not print
-	hnotice(1, "Verbose mode active\n");
+	hprint("Verbose mode active\n");
 
 	// Early check on input file
 	if(config.input == NULL) {
 		display_usage(argv);
 		herror(true, "Input file must be specified\n");
+	}
+	else if(!file_exists(config.input)) {
+		display_usage(argv);
+		herror(true, "Unable to find the requested input file\n");
 	}
 
 	// Early check on configuration file
@@ -77,9 +81,14 @@ static void process_configuration(char **argv) {
 		display_usage(argv);
 		herror(true, "Configuration-rules file must be specified\n");
 	}
+	else if(!file_exists(config.rules_file)) {
+		display_usage(argv);
+		herror(true, "Unable to find the requested configuration-rules file\n");
+	}
+
 
 	// Load the configuration file
-	hnotice(1, "Loading configuration file '%s'... \n", config.rules_file);
+	hprint("Loading configuration file '%s'... \n", config.rules_file);
 	config.nExecutables = parseRuleFile(config.rules_file, &config.rules);
 
 	hsuccess();
@@ -142,11 +151,11 @@ static bool parse_cmd_line(int argc, char **argv) {
 
 
 
-static void register_presets() {
-	hnotice(1, "Registering presets\n");
+static void register_presets(void) {
+	hprint("Registering presets\n");
 
-	// So far vptracker is the only available preset
-	preset_register("vptracker", vpt_init, vpt_track);
+	// So far smtracer is the only available preset
+	preset_register(PRESET_SMTRACER, smt_init, smt_run);
 
 	hsuccess();
 }

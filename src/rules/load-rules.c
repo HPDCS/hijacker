@@ -242,6 +242,9 @@ static unsigned int parseInstructionFlags(xmlChar *str) {
 	char *token;
 	int flags = 0;
 
+	if (str == NULL)
+		return;
+
 	// Make a temporary copy
 	source = (char *)malloc(strlen((char *)str) + 1);
 	strcpy(source, (char *)str);
@@ -298,6 +301,7 @@ static Instruction *parseInstruction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr 
 	// Get the instruction's attributes
 	if (cur != NULL) {
 		ret->flags = parseInstructionFlags(xmlGetProp(cur, (const xmlChar *)"type"));
+		ret->skipFlags = parseInstructionFlags(xmlGetProp(cur, (const xmlChar *)"skip"));
 		ret->before = xmlGetProp(cur, (const xmlChar *)"injectBefore");
 		ret->after = xmlGetProp(cur, (const xmlChar *)"injectAfter");
 		ret->replace = xmlGetProp(cur, (const xmlChar *)"replace");
@@ -542,11 +546,6 @@ static int parseExecutable(char *filename, Executable ***rules) {
 int parseRuleFile(char *f, Executable ***rules) {
 	int size;
 	register int i;
-
-	// Early check on file existence to avoid ugly error messages
-	if(!file_exists(f)) {
-		return -1;
-	}
 
 	// Do not generate nodes for formatting spaces
 	LIBXML_TEST_VERSION xmlKeepBlanksDefault(0);
