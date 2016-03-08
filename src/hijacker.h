@@ -19,62 +19,52 @@
 * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *
 * @file hijacker.h
-* @brief Main symbols
-* @author Alessandro Pellegrini
+* @brief Main types and qualifiers
+* @author Simone Economo
 */
 
 #pragma once
 #ifndef _HIJACKER_H
 #define _HIJACKER_H
 
+
+// Enhanced C data types are included pro-actively
 #include <stdbool.h>
-
-#include <presets/presets.h>
-#include <rules/load-rules.h>
-#include <executables/executable.h>
-
-typedef struct _configuration {
-	int		verbose;
-	char		*rules_file;
-	Executable	**rules;
-	int		nExecutables;
-	char	  	*input;
-	char		*output;
-	char		*inject_path;
-	executable_info	program;
-  preset *presets;
-} configuration;
+#include <stddef.h>
+#include <stdint.h>
 
 
-/// Easily access program flags
-#define PROGRAM(field) (config.program.field)
+/************************************************************
+*   Function qualifiers
+************************************************************/
 
-#define SYMBOLS PROGRAM(v_symbols)[PROGRAM(version)]
-#define CODE PROGRAM(v_code)[PROGRAM(version)]
+/// A function which is inlined only when optimizations
+/// are requested prior to compilation.
+/// Rule of thumb: use a weak_inline function when you want
+/// a regular C inline function.
+#define weak_inline inline
 
 
-/// Default output name
-#define DEFAULT_OUT_NAME	"hijacked.o"
+/// A function which is always inlined regardless of the
+/// presence of compiling optimization flags.
+/// Rule of thumb: use a strong_inline function when you
+/// are tempted to use a parametrized macro.
+#define strong_inline inline __attribute__((always_inline))
 
 
-// This is an OS-dependent way to check if a file exists
-#if defined(WIN32) || defined(WIN64)
-  #include <windows.h>
-  #define file_exists(f) (GetFileAttributes((f)) != INVALID_FILE_ATTRIBUTES)
-#elif defined(__unix)
-  #include <unistd.h>
-  #define file_exists(f) (access((f), F_OK) != -1)
-#else
-  // This is not exactly safe, but we are not given anything better...
-  #include <stdio.h>
-  #define file_exists(f) ({\
-			   FILE * file = fopen((f),"r+");\
-			   fclose(file);\
-			   file != NULL;\
-			 })
-#endif
+/************************************************************
+*   Primitive data types
+************************************************************/
 
-extern configuration config;
+/// Everything which represents a positive displacement
+/// from the beginning of a parent container
+typedef size_t addr_t;
+
+
+/// Either a positive or a negative displacement from
+/// the current position
+typedef ptrdiff_t off_t;
+
 
 #endif /* _HIJACKER_H */
 

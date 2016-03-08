@@ -19,78 +19,79 @@
 * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *
 * @file utils.c
-* @brief Utility functions and data structures
+* @brief Utility functions
 * @author Davide Cingolani
-* @author Simone Economo
-* @date April 17, 2014
 */
 
 #include <stdio.h>
 #include <stdlib.h>
+
 #include <utils.h>
 #include <prints.h>
 
 /**
- * Perform a hexdump of data.
- * Stores into a preallocated buffer, pointed to by the 'dump' argument,
- * the hexadecimal dump of the 'len' bytes found starting from 'addr' pointer.
+ * Perform an hexadecimal dump of data of a given number of bytes,
+ * starting from an initial address in memory.
  *
- * @param addr Pointer to the data buffer to dump
- *
- * @param len Number of byte to read
+ * @param data Pointer to the data buffer to dump.
+ * @param len Number of byte to read.
  */
-void hexdump (void *addr, int len) {
-	int i;
-	int count;
+void hexdump(void *data, size_t len) {
 	unsigned char buff[17];
-	unsigned char *pc = (unsigned char*)addr;
+	unsigned char *pc;
+	int i;
 
-	if (len <= 0) {
-		return;
+	pc = (unsigned char *) addr;
+
+	printf("       Address                     Hexadecimal values                      Printable     \n" );
+	printf("   ----------------  ------------------------------------------------  ------------------\n" );
+
+	// Check whether `len` is a multiple of 16 and in the negative
+	// case adjust its value
+	if (len % 16 != 0 && len > 16) {
+		len = ((len / 16) + 1) * 16;
 	}
+	// else if (len < 16) {
+	// 	len = 16;
+	// }
 
-	printf ("       Address                     Hexadecimal values                      Printable     \n" );
-	printf ("   ----------------  ------------------------------------------------  ------------------\n" );
-
-	// Process every byte in the data.
-	if (len % 16 != 0 && len > 16)
-		count = ((len / 16) + 1) * 16;
-	else
-		count = len;
-
-	for (i = 0; i < count; i++) {
+	// Process every byte in the data
+	for (i = 0; i < len; i++) {
 
 		// Multiple of 8 means mid-line (add a mid-space)
 		if ((i % 8) == 0) {
-			if (i != 0)
+			if (i != 0) {
 				printf(" ");
+			}
 		}
 
 		if (i < len) {
-			// Multiple of 16 means new line (with line offset).
+			// Multiple of 16 means new line (with line offset)
 			if ((i % 16) == 0) {
-				// Just don't print ASCII for the zeroth line.
-				if (i != 0)
-					printf (" |%s|\n", buff);
+				// Just don't print ASCII for the zeroth line
+				if (i != 0) {
+					printf(" |%s|\n", buff);
+				}
 
 				// Output the offset.
-				printf ("   (%5d) %08x ", i, i);
+				printf("   (%5d) %08x ", i, i);
 			}
 
-			// Now the hex code for the specific character.
-			printf (" %02x", pc[i]);
+			// Now the hex code for the specific character
+			printf(" %02x", pc[i]);
 
-			// And store a printable ASCII character for later.
-			if ((pc[i] < 0x20) || (pc[i] > 0x7e))
+			// And store a printable ASCII character for later
+			if ((pc[i] < 0x20) || (pc[i] > 0x7e)) {
 				buff[i % 16] = '.';
-			else
+			} else {
 				buff[i % 16] = pc[i];
+			}
+
 			buff[(i % 16) + 1] = '\0';
 		}
 
-		// Pad out last line if not exactly 16 characters.
+		// Pad out last line if not exactly 16 characters
 		else {
-
 			// Add a three-char long space for the missing character in the second column.
 			printf("   ");
 
@@ -101,118 +102,5 @@ void hexdump (void *addr, int len) {
 	}
 
 	// And print the final ASCII bit.
-	printf ("  |%s|\n", buff);
-}
-
-inline void ll_init(linked_list *list) {
-	list->first = list->last = NULL;
-}
-
-void ll_move(linked_list *from, linked_list *to) {
-	to->first = from->first;
-	from->first = NULL;
-	to->last = from->last;
-	from->last = NULL;
-}
-
-inline bool ll_empty(linked_list *list) {
-	return (list->first ? false : true);
-}
-
-void ll_push(linked_list *list, void *elem) {
-	ll_node *node;
-
-	node = calloc(sizeof(ll_node), 1);
-	node->elem = elem;
-
-	if (ll_empty(list)) {
-		list->first = list->last = node;
-	}
-	else if (list->first == list->last) {
-		list->last = list->first->next = node;
-		node->prev = list->first;
-	}
-	else {
-		list->last->next = node;
-		node->prev = list->last;
-		list->last = node;
-	}
-}
-
-void ll_push_first(linked_list *list, void *elem) {
-	ll_node *node;
-
-	node = calloc(sizeof(ll_node), 1);
-	node->elem = elem;
-
-	if (ll_empty(list)) {
-		list->first = list->last = node;
-	}
-	else if (list->first == list->last) {
-		list->first = list->last->prev = node;
-		node->next = list->last;
-	}
-	else {
-		list->first->prev = node;
-		node->next = list->first;
-		list->first = node;
-	}
-}
-
-void *ll_pop(linked_list *list) {
-	ll_node *node;
-	void *elem;
-
-	if (!ll_empty(list)) {
-		if (list->first == list->last) {
-			node = list->last;
-			list->first = list->last = NULL;
-		}
-		else if (list->first->next == list->last) {
-			node = list->last;
-			list->first->next = NULL;
-			list->last = list->first;
-		}
-		else {
-			node = list->last;
-			list->last->prev->next = NULL;
-			list->last = list->last->prev;
-		}
-	}
-
-	if (node) {
-		elem = node->elem;
-		free(node);
-	}
-
-	return elem;
-}
-
-void *ll_pop_first(linked_list *list) {
-	ll_node *node;
-	void *elem;
-
-	if (!ll_empty(list)) {
-		if (list->first == list->last) {
-			node = list->first;
-			list->first = list->last = NULL;
-		}
-		else if (list->first->next == list->last) {
-			node = list->first;
-			list->last->prev = NULL;
-			list->first = list->last;
-		}
-		else {
-			node = list->first;
-			list->first->next->prev = NULL;
-			list->first = list->first->next;
-		}
-	}
-
-	if (node) {
-		elem = node->elem;
-		free(node);
-	}
-
-	return elem;
+	printf("  |%s|\n", buff);
 }

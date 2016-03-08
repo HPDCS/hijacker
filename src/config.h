@@ -18,26 +18,41 @@
 * hijacker; if not, write to the Free Software Foundation, Inc.,
 * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *
-* @file options.h
-* @brief Command-line options definitions
+* @file config.h
+* @brief Main configuration symbols
 * @author Alessandro Pellegrini
 */
 
 #pragma once
-#ifndef _OPTIONS_H
-#define _OPTIONS_H
+#ifndef _CONFIG_H
+#define _CONFIG_H
 
-#include <getopt.h>
+#include <presets/presets.h>
+#include <rules/load-rules.h>
+#include <executables/executable.h>
 
+typedef struct configuration {
+	int               verbose;
+	char             *rules_file;
+	Executable      **rules;
+	int               nExecutables;
+	char             *input;
+	char             *output;
+	char             *inject_path;
+	executable_info   program;
+	preset           *presets;
+} configuration;
 
-static struct option long_options[] = {
-	{"config",	required_argument,	0, 'c'},
-	{"path",	required_argument,	0, 'p'},
-	{"verbose",	optional_argument,	0, 'v'},
-	{"input",	required_argument,	0, 'i'},
-	{"output",	required_argument,	0, 'o'},
-	{0,		0,			0, 0}
-};
+extern configuration config;
 
+/// Easy access to program flags
+#define PROGRAM(field) (config.program.field)
 
-#endif /* _OPTIONS_H */
+/// Easy access to symbols and code
+#define SYMBOLS PROGRAM(v_symbols)[PROGRAM(version)]
+#define CODE PROGRAM(v_code)[PROGRAM(version)]
+
+/// Default output name
+#define DEFAULT_OUT_NAME  "hijacked.o"
+
+#endif /* _HIJACKER_H */
