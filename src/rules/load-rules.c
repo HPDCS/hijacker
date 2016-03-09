@@ -73,7 +73,7 @@ static void traverseFunction(Function *f, int level) {
 	}
 }
 
-static void traverseTree(Executable *e) {
+static void traverseTree(Version *e) {
 	int i;
 
 	hnotice(3, "--Entry Point: '%s'\n", e->entryPoint);
@@ -396,7 +396,7 @@ static Function *parseFunction(/*xmlDocPtr doc, */xmlNsPtr ns, xmlNodePtr cur) {
 
 static int parseExecutable(char *filename, Executable ***rules) {
 
-	int nExecutables = 0;
+	int nVersions = 0;
 
 	xmlDocPtr doc;
 	xmlNsPtr ns;
@@ -450,7 +450,7 @@ static int parseExecutable(char *filename, Executable ***rules) {
 
 	// First version is reserved just to save the original copy;
 	// it will not be instrumented at all
-	(*rules)[nExecutables++] = exec = (Executable *) malloc(sizeof(Executable));
+	(*rules)[nVersions++] = exec = (Executable *) malloc(sizeof(Executable));
 	bzero(exec, sizeof(Executable));
 
 	/*
@@ -474,7 +474,7 @@ static int parseExecutable(char *filename, Executable ***rules) {
 		}
 
 		// Get memory for the current set of instrumentation rules
-		(*rules)[nExecutables++] = exec = (Executable *) malloc(sizeof(Executable));
+		(*rules)[nVersions++] = exec = (Executable *) malloc(sizeof(Executable));
 		bzero(exec, sizeof(Executable));
 
 		// Get and store the executable's attributes, if any
@@ -531,19 +531,19 @@ static int parseExecutable(char *filename, Executable ***rules) {
 	xmlFreeDoc(doc);
 
 	// Check if some executable node has been met
-	if (!nExecutables) {
+	if (!nVersions) {
 		herror(false, "Document of the wrong type, was '%s', Executable expected\n", execNode->name);
 	//	xmlFreeDoc(doc);
 		return -1;
 	}
 
-	// nExecutables is used as offset so far
-	return nExecutables;
+	// nVersions is used as offset so far
+	return nVersions;
 }
 
 
 
-int parseRuleFile(char *f, Executable ***rules) {
+int parseRuleFile(const char *f, Executable ***rules) {
 	int size;
 	register int i;
 

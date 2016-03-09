@@ -18,14 +18,14 @@
 * hijacker; if not, write to the Free Software Foundation, Inc.,
 * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *
-* @file hijacker.h
+* @file init.h
 * @brief Main types and qualifiers
 * @author Simone Economo
 */
 
 #pragma once
-#ifndef _HIJACKER_H
-#define _HIJACKER_H
+#ifndef _INIT_H
+#define _INIT_H
 
 
 // Enhanced C data types are included pro-actively
@@ -66,5 +66,5 @@ typedef size_t addr_t;
 typedef ptrdiff_t off_t;
 
 
-#endif /* _HIJACKER_H */
+#endif /* _INIT_H */
 

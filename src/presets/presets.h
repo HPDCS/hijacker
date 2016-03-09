@@ -27,7 +27,7 @@
 #ifndef _PRESETS_H
 #define _PRESETS_H
 
-#include <executable.h>
+#include <ibr.h>
 
 typedef struct preset preset;
 typedef struct param param;

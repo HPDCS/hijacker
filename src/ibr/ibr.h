@@ -29,7 +29,7 @@
 #ifndef _IBR_H
 #define _IBR_H
 
-#include <hijacker.h>
+#include <init.h>
 #include <structs.h>
 
 
@@ -81,9 +81,6 @@ struct object {
 };
 
 
-extern obj_t *object;
-
-
 struct version {
 	size_t number;                  /// The version number
 	const char *name;               /// The name of this version
@@ -101,7 +98,7 @@ struct version {
 };
 
 
-exec_t *executable_load(const char *path);
+obj_t *executable_load(const char *path);
 
 
 void executable_write(const char *path);

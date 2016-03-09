@@ -123,7 +123,7 @@ typedef struct Executable {
 } Executable;
 
 
-int parseRuleFile(char *f, Executable ***rules);
+int parseRuleFile(const char *f, Executable ***rules);
 
 #endif /* _LOAD_RULES_H */
 

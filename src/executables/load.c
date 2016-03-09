@@ -99,7 +99,7 @@ static void create_map(void) {
 
 
 
-void load_program(char *path) {
+void load_program(const char *path) {
 
 	hprint("Loading '%s'...\n", path);
 

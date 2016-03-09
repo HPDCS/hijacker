@@ -30,7 +30,7 @@
 #include <executable.h>
 #include <hijacker.h>
 #include <prints.h>
-#include <compile.h>
+// #include <compile.h>
 #include <load-rules.h>
 #include <apply-rules.h>
 
@@ -412,11 +412,11 @@ static void hijack_main(unsigned char *entry_point) {
 	main = function_create_from_bytes("main", code, sizeof(code));
 
 	// Adds the jump to the new entry point
-	insert_instructions_at(main->begin_insn, code2, sizeof(code2), INSERT_AFTER, &(main->begin_insn));	
-	insert_instructions_at(main->begin_insn, code2bis, sizeof(code2), INSERT_BEFORE, &(main->begin_insn));	
+	insert_instructions_at(main->begin_insn, code2, sizeof(code2), INSERT_AFTER, &(main->begin_insn));
+	insert_instructions_at(main->begin_insn, code2bis, sizeof(code2), INSERT_BEFORE, &(main->begin_insn));
 	add_call_instruction(main->begin_insn, "dump", INSERT_BEFORE, &(main->begin_insn));
 	add_call_instruction(main->begin_insn, entry_point, INSERT_BEFORE, &(main->begin_insn));
-	insert_instructions_at(main->begin_insn, code3, sizeof(code3), INSERT_BEFORE, &(main->begin_insn));	
+	insert_instructions_at(main->begin_insn, code3, sizeof(code3), INSERT_BEFORE, &(main->begin_insn));
 
 }
 
@@ -447,14 +447,14 @@ void apply_rules(void) {
 
 
 	// Iterates all over executable versions
-	for (version = 0; version < config.nExecutables; version++) {
+	for (version = 0; version < config.nVersions; version++) {
 		hnotice(1, "Executable version %d\n", version);
 
 		// Reset the counter of the overall instrumented instructions
 		instrumented = 0;
 
 		// Get the new version executable's rules
-		exec = config.rules[version];
+		exec = config.versions[version];
 
 		// Clone the intermediate binary representation
 		// Version 0 is reserved to the original plain copy of the application,

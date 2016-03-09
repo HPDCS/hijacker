@@ -26,14 +26,15 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <getopt.h>
 #include <string.h>
+#include <getopt.h>
 
-
-#include <hijacker.h>
-#include <options.h>
-#include <prints.h>
-#include <compile.h>
+#include <init.h>
+#include <utils.h>
+#include <config.h>
+// #include <options.h>
+// #include <prints.h>
+// #include <compile.h>
 #include <rules/load-rules.h>
 #include <rules/apply-rules.h>
 
@@ -41,12 +42,26 @@
 #include <smtracer/smtracer.h>
 
 
-/// Global configuration
+/// Global configuration object
 configuration config;
 
-/// Information and memory map of the object being processed
+
+// An option array which drives the recognition of command-line
+// arguments through the 'getopt' library.
+static struct option long_options[] = {
+	{"config"  , required_argument, 0, 'c'},
+	{"path"    , required_argument, 0, 'p'},
+	{"verbose" , optional_argument, 0, 'v'},
+	{"input"   , required_argument, 0, 'i'},
+	{"output"  , required_argument, 0, 'o'},
+	{0         , 0                , 0,  0 }
+};
 
 
+/**
+ * Displays the command-line help text. This function is invoked
+ * whenever Hijacker fails to recognize command-line arguments.
+ */
 static void display_usage(char **argv) {
 	printf("%s [OPTIONS]\n\n", argv[0]);
 	printf("REQUIRED OPTIONS:\n");
@@ -59,19 +74,20 @@ static void display_usage(char **argv) {
 }
 
 
-
-
+/**
+ * Processes the passed configuration file and finalizes the
+ * global configuration object.
+ */
 static void process_configuration(char **argv) {
-
 	// If verbose is not set, this line will not print
 	hprint("Verbose mode active\n");
 
 	// Early check on input file
-	if(config.input == NULL) {
+	if(config.input_file == NULL) {
 		display_usage(argv);
 		herror(true, "Input file must be specified\n");
 	}
-	else if(!file_exists(config.input)) {
+	else if(!file_exists(config.input_file)) {
 		display_usage(argv);
 		herror(true, "Unable to find the requested input file\n");
 	}
@@ -86,51 +102,66 @@ static void process_configuration(char **argv) {
 		herror(true, "Unable to find the requested configuration-rules file\n");
 	}
 
+	// Early check on output file
+	if(config.output_file == NULL) {
+		display_usage(argv);
+		herror(true, "Output file must be specified\n");
+	}
 
 	// Load the configuration file
 	hprint("Loading configuration file '%s'... \n", config.rules_file);
-	config.nExecutables = parseRuleFile(config.rules_file, &config.rules);
+	config.nVersions = parseRuleFile(config.rules_file, &config.versions);
 
 	hsuccess();
 }
 
 
-
-
+/**
+ * Parses the command-line arguments according to the previously
+ * defined option array and populates the global configuration
+ * object accordingly.
+ */
 static bool parse_cmd_line(int argc, char **argv) {
 	int c;
 	int option_index;
 
-			if(argc < 3) {
+	if(argc < 3) {
 		display_usage(argv);
 		return false;
-			}
+	}
 
 	while ((c = getopt_long(argc, argv, "c:p:vi:o:", long_options, &option_index)) != -1) {
 
 		switch (c) {
-
-			case 'c':	// config
+			// config
+			case 'c':
 				config.rules_file = optarg;
 				break;
 
-			case 'p':	// path
+			// path
+			case 'p':
 				config.inject_path = optarg;
 				break;
 
-			case 'v':	// verbose
-				if (optarg)
-					config.verbose = atoi(optarg);	// --verbose=level
-				else
-					config.verbose++;	// -v , --verbose
+			// verbose
+			case 'v':
+				if (optarg) {
+					// --verbose=level
+					config.verbose = atoi(optarg);
+				} else {
+					// -v , --verbose
+					config.verbose++;
+				}
 				break;
 
-			case 'i':	// input
-				config.input = optarg;
+			// input
+			case 'i':
+				config.input_file = optarg;
 				break;
 
-			case 'o':	// output
-				config.output = optarg;
+			// output
+			case 'o':
+				config.output_file = optarg;
 				break;
 
 			case 0:
@@ -141,26 +172,26 @@ static bool parse_cmd_line(int argc, char **argv) {
 		}
 	}
 
-	if(!config.output) {
-		config.output = "final.o";
+	if(!config.output_file) {
+		config.output_file = "final.o";
 	}
 
 	return true;
 }
 
 
-
-
+/**
+ * Registers all the available presets so that they can be later
+ * used while applying rules.
+ */
 static void register_presets(void) {
-	hprint("Registering presets\n");
+	hprint("Registering presets...\n");
 
-	// So far smtracer is the only available preset
+	// So far `smtracer` is the only available preset
 	preset_register(PRESET_SMTRACER, smt_init, smt_run);
 
 	hsuccess();
 }
-
-
 
 
 /**
@@ -175,9 +206,9 @@ static void link_modules(void) {
 
 	// Step 2: link other injected modules
 	if(file_exists("incremental.o")) {
-		link("__temp_libhijacked.o", "-r", "-L", LIBDIR, "incremental.o", "-o", config.output);
+		link("__temp_libhijacked.o", "-r", "-L", LIBDIR, "incremental.o", "-o", config.output_file);
 	} else {
-		rename("__temp_libhijacked.o", config.output);
+		rename("__temp_libhijacked.o", config.output_file);
 	}
 
 	unlink("__temp.o");
@@ -188,7 +219,6 @@ static void link_modules(void) {
 
 
 int main(int argc, char **argv) {
-
 	// Welcome! :)
 	hhijacker();
 
@@ -204,7 +234,7 @@ int main(int argc, char **argv) {
 	register_presets();
 
 	// Load executable and build a map in memory
-	load_program(config.input);
+	load_program(config.input_file);
 
 	// Process executable
 	apply_rules();
@@ -215,7 +245,7 @@ int main(int argc, char **argv) {
 	// Finalize the output file by linking the module
 	link_modules();
 
-	hprint("File ELF written in '%s'\n", config.output);
+	hprint("File ELF written in '%s'\n", config.output_file);
 
 	exit(EXIT_SUCCESS);
 }

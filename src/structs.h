@@ -23,6 +23,12 @@
 * @author Simone Economo
 */
 
+#pragma once
+#ifndef _STRUCTS_H
+#define _STRUCTS_H
+
+#include <utils.h>
+
 
 /************************************************************
 *   Doubly-linked list
@@ -121,7 +127,7 @@ typedef struct {
 /// `payload` is a pointed to additional user data which is
 /// transparently passed from one visit to another to perform
 /// any desired side-effect.
-typedef char (*bbs_tree_compare_func)(void *a, void *b, void *payload);
+typedef char (*bst_compare_func)(void *a, void *b, void *payload);
 
 
 /// Complex object which affects the behavior of a search.
@@ -260,3 +266,6 @@ graph_edge_t *graph_connect(graph_node_t *pivot, void *elem);
  * Performs a complete traversal of the graph.
  */
 void graph_visit(graph_t *graph, graph_visit_kernel *kernel);
+
+
+#endif /* _STRUCTS_H_ */

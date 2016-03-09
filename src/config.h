@@ -27,20 +27,25 @@
 #ifndef _CONFIG_H
 #define _CONFIG_H
 
+#include <ibr.h>
+
 #include <presets/presets.h>
 #include <rules/load-rules.h>
 #include <executables/executable.h>
 
+
 typedef struct configuration {
-	int               verbose;
-	char             *rules_file;
-	Executable      **rules;
-	int               nExecutables;
-	char             *input;
-	char             *output;
-	char             *inject_path;
-	executable_info   program;
-	preset           *presets;
+	unsigned int verbose;
+	const char *rules_file;
+	const char *input_file;
+	const char *output_file;
+	const char *inject_path;
+
+	obj_t program;
+	preset *presets;
+
+	Executable **versions;
+	unsigned int nVersions;
 } configuration;
 
 extern configuration config;
@@ -49,8 +54,8 @@ extern configuration config;
 #define PROGRAM(field) (config.program.field)
 
 /// Easy access to symbols and code
-#define SYMBOLS PROGRAM(v_symbols)[PROGRAM(version)]
-#define CODE PROGRAM(v_code)[PROGRAM(version)]
+// #define SYMBOLS PROGRAM(v_symbols)[PROGRAM(version)]
+// #define CODE PROGRAM(v_code)[PROGRAM(version)]
 
 /// Default output name
 #define DEFAULT_OUT_NAME  "hijacked.o"

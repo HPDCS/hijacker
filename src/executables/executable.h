@@ -59,7 +59,7 @@ typedef struct _executable {
 
 
 
-extern void load_program(char *path);
+extern void load_program(const char *path);
 extern void output_object_file(char *pathname);
 
 #endif /* _EXECUTABLE_H */
