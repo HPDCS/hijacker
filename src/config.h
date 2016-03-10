@@ -34,23 +34,27 @@
 #include <executables/executable.h>
 
 
+/// A configuration object for the current hijacking session.
 typedef struct configuration {
-	unsigned int verbose;
-	const char *rules_file;
-	const char *input_file;
-	const char *output_file;
-	const char *inject_path;
+	unsigned int verbose;     /// Requested verbosity level for debug prints
+	const char *rules_file;   /// Path to the configuration file to be parsed
+	const char *input_file;   /// Path to the input file to be loaded
+	const char *output_file;  /// Path to the output file to be written
+	const char *inject_path;  /// Path in which injected files will be found
 
-	obj_t program;
-	preset *presets;
+	obj_t program;            /// Object file which is hijacked
+	preset *presets;          /// List of registered presets
 
-	Executable **versions;
-	unsigned int nVersions;
+	Executable **versions;    /// List of version rules to be applied
+	size_t nVersions;         /// Number of version rules
 } configuration;
 
+
+/// Global configuration object
 extern configuration config;
 
-/// Easy access to program flags
+
+/// Easy access to program fields
 #define PROGRAM(field) (config.program.field)
 
 /// Easy access to symbols and code
@@ -59,5 +63,6 @@ extern configuration config;
 
 /// Default output name
 #define DEFAULT_OUT_NAME  "hijacked.o"
+
 
 #endif /* _HIJACKER_H */
