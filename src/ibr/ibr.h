@@ -40,7 +40,7 @@ typedef struct symbol      sym_t;
 typedef struct relocation  rel_t;
 typedef struct function    fun_t;
 typedef struct block       blk_t;
-typedef struct instruction ins_t;
+typedef struct instruction isn_t;
 
 
 /************************************************************
@@ -57,8 +57,8 @@ typedef enum {
 typedef enum {
 	IA32,
 	AMD64,
-	ARM,
-	ARM64
+	// ARM,
+	// ARM64
 } isa_family_t;
 
 
@@ -67,7 +67,7 @@ typedef enum {
 
 struct object {
 	obj_format_t format;            /// The object file format type (e.g. ELF)
-	isa_family_t family;            /// The ISA language of the machine code (e.g. x86-64)
+	isa_family_t arch;              /// The ISA language of the machine code (e.g. x86-64)
 
 	list_t /* <sec_t> */ sections;  /// All sections in the program
 	list_t /* <sym_t> */ symbols;   /// All symbols in the program
@@ -205,13 +205,13 @@ struct relocation {
 	struct {                        /// Relocation found...
 		sec_t *section;               /// ...in this section
 		addr_t offset;                /// ...at this offset
-		ins_t *instr;                 /// ...(in this instruction)
+		isn_t *instr;                 /// ...(in this instruction)
 	} in;
 
 	struct {                        /// Relocation referring...
 		sym_t *symbol;                /// ...to this symbol
 		off_t addend;                 /// ...at this displacement
-		ins_t *instr;                 /// ...(to this instruction)
+		isn_t *instr;                 /// ...(to this instruction)
 	} to;
 };
 
@@ -291,7 +291,7 @@ typedef enum {
 struct block {
 	blk_type_t type;                /// LOOP HEADER, LOOP FOOTER, etc...
 
-	list_t /* <ins_t> */ instr;     /// The code that make up this block, in terms
+	list_t /* <isn_t> */ instr;     /// The code that make up this block, in terms
 	                                /// of instructions
 
 	// Presets-related fields
@@ -305,31 +305,43 @@ struct block {
 typedef enum {
 	INSERT_BEFORE,
 	INSERT_AFTER,
-} ins_insert_mode_t;
+} isn_insert_mode_t;
 
 
 struct instruction {
-	unsigned long flags;            /// MEMORY, ALGEBRIC, LOGIC, STACK, etc...
-
 	addr_t offset;                  /// The offset from the beginning of the section
 	                                /// at which this instruction can be found
-	size_t size;                    /// The size of this instruction
 
-	                                //  Other fields... see libasm!
+	/// Architecture-independent information
+	unsigned char mnemonic[32];     /// Textual representation of the instruction
+	unsigned char instruction[32];  /// Raw bytes of the instruction
+	unsigned long long flags;       /// MEMORY, ALGEBRIC, LOGIC, STACK, etc...
+	unsigned int length;            /// Length in bytes
 
-	struct {                        /// Jumptable for this instruction
+	/// Architecture-specific information
+	union {
+		// isn_info_specific_x86 x86;
+		// isn_info_specific_arm arm;
+	} arch;
+
+	// IBR-level fields
+	struct {                        /// Jump-table for this instruction
 		size_t fanout;                /// Number of detected targets
-		list_t /* <ins_t> */ instr;   /// List of target instructions
+		list_t /* <isn_t> */ instr;   /// List of target instructions
 	} to;
 
-	struct {                        /// Inverse jumptable for this instruction
-		list_t /* <ins_t> */ instr;   /// List of instructions that jump to this instruction
+	struct {                        /// Inverse jump-table for this instruction
+		list_t /* <isn_t> */ instr;   /// List of instructions that jump to this instruction
 	} from;
 
 	union {                         /// Relocations associated to this instruction...
 		list_t /* <rel_t> */ source;  /// ...when the instruction owns the relocation
 		list_t /* <rel_t> */ dest;    /// ...when the relocation refers to the instruction
 	} rel;
+
+	// An instruction chain is maintained for each object file version
+	isn_t *prev;                    /// Previous instruction in the chain
+	isn_t *next;                    /// Next instruction in the chain
 };
 
 
@@ -345,16 +357,16 @@ fun_t *function_find_byname(const char *name);
 fun_t *function_find_byblock(blk_t *block);
 
 
-fun_t *function_find_byinstr(ins_t *instr);
+fun_t *function_find_byinstr(isn_t *instr);
 
 
-blk_t *block_find_byinstr(ins_t *instr);
+blk_t *block_find_byinstr(isn_t *instr);
 
 
-ins_t *instr_insert(const char *mnemonic, ins_t *pivot, ins_insert_mode_t where);
+isn_t *instr_insert(const char *mnemonic, isn_t *pivot, isn_insert_mode_t where);
 
 
-void instr_remove(ins_t *instr);
+void instr_remove(isn_t *instr);
 
 
 #endif /* _IBR_H */

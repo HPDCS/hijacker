@@ -43,6 +43,142 @@
 #define MAX_LOOKBEHIND		10 // [SE] Used while reverse-parsing instruction to resolve jump tables
 
 
+/**
+ * Fills up instruction meta-data (both architecture-independent
+ * and architecture-specific) according to the instruction mnemonic
+ * string and the target ISA. Notice that the instruction descriptor
+ * must be already allocated by the caller function, hence a side-
+ * effect is performed on it.
+ *
+ * @param instr    Pointer to the instruction descriptor to fill-up.
+ * @param mnemonic Textual representation of the instruction.
+ * @param isa      Target architecture.
+ *
+ * @return         True if the mnemonic represents a valid instruction
+ *                 in the target ISA, false otherwise.
+ */
+static bool instr_assemble(isn_t *instr, isa_family_t isa,
+                           const char *mnemonic) {
+	// TODO: To implement
+	return true;
+}
+
+
+/**
+ * Fills up instruction meta-data (both architecture-independent
+ * and architecture-specific) according to the instruction's raw
+ * bytes and the target ISA. Notice that the instruction descriptor
+ * must be already allocated by the caller function, hence a side-
+ * effect is performed on it.
+ *
+ * Observe that this function doesn't require to specify a length
+ * for the raw bytes sequence. In fact, it is able to determine
+ * the length of the instruction to disassemble provided that a
+ * disassembly engine is available for the target architecture.
+ * As a result, the number of bytes effectively consumed by the
+ * engine is provided as output. This is especially useful when
+ * the target ISA is a CISC architecture.
+ *
+ * @param instr Pointer to the instruction descriptor to fill-up.
+ * @param bytes Raw bytes of the instruction.
+ * @param isa   Target architecture.
+ *
+ * @return      The number of bytes that are effectively consumed
+ *              from the beginning of the bytes sequence, or 0 if
+ *              the sequence is not valid in the target ISA.
+ */
+static size_t instr_disassemble(isn_t *instr, isa_family_t isa,
+                                const unsigned char *bytes) {
+	// TODO: To implement
+	return 42; // The best integer placeholder ever!
+}
+
+/**
+ * Inserts a new instruction into the instruction chain, relative
+ * to the position of another, already-existing instruction.
+ *
+ * Observe that this function allocates a new instruction descriptor
+ * in dynamic memory.
+ *
+ * @param  mnemonic Textual representation of the instruction.
+ * @param  pivot    Pointer to the instruction descriptor used as
+ *                  reference for the insertion.
+ * @param  where    Where the instruction will be inserted, relative
+ *                  to the pivot.
+ *
+ * @return          Pointer to the newly-created instruction descriptor.
+ */
+isn_t *instr_insert(const char *mnemonic, isn_t *pivot, ins_insert_mode_t where) {
+	isn_t *instr;
+
+	if (mnemonic == NULL || pivot == NULL) {
+		hinternal();
+	}
+
+	// Makes room for a new instruction descriptor
+	instr = hcalloc(sizeof(isn_t));
+
+	// Assembles the instruction into the descriptor passed as input
+	if (instr_assemble(instr, mnemonic, config.program.arch) == false) {
+		// We require the mnemonic to map to a valid instruction
+		hinternal();
+	}
+
+	// Inserts the descriptor into the instruction chain, according
+	// to the desired insertion mode
+	if (where == INSERT_AFTER) {
+		instr->next = pivot->next;
+
+		if (pivot->next != NULL) {
+			pivot->next->prev = instr;
+		}
+
+		instr->prev = pivot;
+		pivot->next = instr;
+	}
+	else if (where == INSERT_BEFORE) {
+		instr->prev = pivot->prev;
+
+		if (pivot->prev != NULL) {
+			pivot->prev->next = instr;
+		}
+
+		instr->next = pivot;
+		pivot->prev = instr;
+	}
+
+	return instr;
+}
+
+
+/**
+ * Removes an existing instruction descriptor from the chain.
+ *
+ * Observe that this function deallocates the passed instruction
+ * descriptor, therefore it will be no longer invalid upon returning
+ * from this function.
+ *
+ * @param instr Pointer to the instruction descriptor to remove.
+ */
+void instr_remove(isn_t *instr) {
+	if (instr == NULL) {
+		// FIXME: In principle, we could just return from the function
+		hinternal();
+	}
+
+	// Removes the descriptor from the chain
+	if (instr->prev != NULL) {
+		instr->prev->next = instr->next;
+	}
+
+	if (instr->next != NULL) {
+		instr->next->prev = instr->prev;
+	}
+
+	// Deallocates the descriptor, which is now no longer valid
+	free(instr);
+}
+
 
 /**
  * Seeks the instruction descriptor associated with a given instruction address
