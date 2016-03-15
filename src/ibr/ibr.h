@@ -69,10 +69,6 @@ struct object {
 	obj_format_t format;            /// The object file format type (e.g. ELF)
 	isa_family_t arch;              /// The ISA language of the machine code (e.g. x86-64)
 
-	list_t /* <sec_t> */ sections;  /// All sections in the program
-	list_t /* <sym_t> */ symbols;   /// All symbols in the program
-	list_t /* <rel_t> */ relocs;    /// All symbol references in the program
-
 	ver_t *versions[MAX_VERSIONS];  /// One entry for each instrumented version
 	                                /// of the object file
 
@@ -82,19 +78,23 @@ struct object {
 
 
 struct version {
-	size_t number;                  /// The version number
 	const char *name;               /// The name of this version
 
-	list_t /* <sec_t> */ sections;  /// All sections specific for this version
-	list_t /* <sym_t> */ symbols;   /// All symbols specific for this version
-	list_t /* <rel_t> */ relocs;    /// All symbol references specific for this version
-	list_t /* <fun_t> */ funcs;     /// The code that make up this version
-	list_t /* <blk_t> */ blocks;    /// The code that make up this version, in terms
-	                                /// of basic blocks
+	size_t number;                  /// The version number
+
+	sec_t *sections;                /// All sections specific for this version
+	sym_t *symbols;                 /// All symbols specific for this version
+	rel_t *relocs;                  /// All symbol references specific for this version
+
+	fun_t *functions;               /// The functions that make up this version's code
+	blk_t *blocks;                  /// The blocks that make up this version's code
+	isn_t *instrs;                  /// The instructions that make up this version's code
 
 	graph_t /* <fun_t> */ fcg;      /// The Function Call Graph of this version
 
-	ver_t *next;
+	// An instruction chain is maintained for each object file version
+	ver_t *next;                    /// Previous version in the chain
+	ver_t *prev;                    /// Next version in the chain
 };
 
 
@@ -111,7 +111,7 @@ ver_t *version_switch(unsigned int number);
 
 
 /************************************************************
-*   Sections, symbols and references
+*   Sections, symbols and relocations
 ************************************************************/
 
 // FIXME: Incomplete list
@@ -130,8 +130,7 @@ extern const char *sec_type_str[];
 
 
 struct section {
-	const char *name;               /// The name of this section (possibly not needed
-	                                /// as it can be recovered from symbol->name)
+	sym_t *symbol;                  /// The symbol representing this section
 
 	sec_type_t type;                /// DATA, CODE, RELOC, DEBUG, etc...
 	unsigned long flags;            /// ALLOC, LOAD, READ, WRITE, etc...
@@ -140,7 +139,9 @@ struct section {
 	size_t size;                    /// The size of this section (possibly not needed
 	                                /// as it can be recovered from symbol->size)
 
-	sym_t *symbol;                  /// The symbol representing this section
+	// An instruction chain is maintained for each object file version
+	sec_t *next;                    /// Previous section in the chain
+	sec_t *prev;                    /// Next section in the chain
 };
 
 
@@ -182,6 +183,10 @@ struct symbol {
 	sec_t *sec;                     /// The section that contains this symbol
 	addr_t offset;                  /// The offset from the beginning of the section
 	                                /// at which the symbol contents can be found
+
+	// An instruction chain is maintained for each object file version
+	sym_t *next;                    /// Previous symbol in the chain
+	sym_t *prev;                    /// Next symbol in the chain
 };
 
 
@@ -213,6 +218,10 @@ struct relocation {
 		off_t addend;                 /// ...at this displacement
 		isn_t *instr;                 /// ...(to this instruction)
 	} to;
+
+	// An instruction chain is maintained for each object file version
+	rel_t *next;                    /// Previous relocation in the chain
+	rel_t *prev;                    /// Next relocation in the chain
 };
 
 
@@ -239,16 +248,16 @@ sym_t *symbol_find_byname(const char *name);
 ************************************************************/
 
 struct function {
-	const char *name;               /// The name of this function (possibly not needed
-	                                /// as it can be recovered from symbol->name)
-
-	// fun_type_t type;                /// Anything useful here?
+	sym_t *symbol;                  /// The symbol representing this function
 
 	graph_t /* <blk_t> */ cfg;      /// The CFG of this function
-	list_t /* <blk_t> */ blocks;    /// The code that make up this function, in terms
-	                                /// of basic blocks
 
-	sym_t *symbol;                  /// The symbol representing this function
+	blk_t *begin_block;             /// The first block of this function
+	blk_t *end_block;               /// The last block of this function
+
+	// A function chain is maintained for each object file version
+	fun_t *prev;                    /// Previous function in the chain
+	fun_t *next;                    /// Next function in the chain
 };
 
 
@@ -291,14 +300,18 @@ typedef enum {
 struct block {
 	blk_type_t type;                /// LOOP HEADER, LOOP FOOTER, etc...
 
-	list_t /* <isn_t> */ instr;     /// The code that make up this block, in terms
-	                                /// of instructions
+	blk_t *begin_instr;             /// The first instruction of this block
+	blk_t *end_instr;               /// The last instruction of this block
 
 	// Presets-related fields
 	void *smtracer;
 
 	size_t size;                    /// The size of this block in bytes
 	size_t length;                  /// The number of instructions that make up this block
+
+	// An instruction chain is maintained for each object file version
+	blk_t *next;                    /// Previous block in the chain
+	blk_t *prev;                    /// Next block in the chain
 };
 
 

@@ -28,28 +28,22 @@
 #define _INIT_H
 
 
-// Enhanced C data types are included pro-actively
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
-
 /************************************************************
 *   Function qualifiers
 ************************************************************/
-
-/// A function which is inlined only when optimizations
-/// are requested prior to compilation.
-/// Rule of thumb: use a weak_inline function when you want
-/// a regular C inline function.
-#define weak_inline inline
-
 
 /// A function which is always inlined regardless of the
 /// presence of compiling optimization flags.
 /// Rule of thumb: use a strong_inline function when you
 /// are tempted to use a parametrized macro.
 #define strong_inline inline __attribute__((always_inline))
+
+
+/// A function which is inlined only when optimizations
+/// are requested prior to compilation.
+/// Rule of thumb: use a weak_inline function when you want
+/// a regular C inline function.
+#define weak_inline inline
 
 
 /************************************************************
