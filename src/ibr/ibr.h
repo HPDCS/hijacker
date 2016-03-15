@@ -71,8 +71,8 @@ struct object {
 
 	ver_t *versions[MAX_VERSIONS];  /// One entry for each instrumented version
 	                                /// of the object file
+	ver_t *cversion;                /// The current object file version
 
-	size_t cversion;                /// The current version number
 	size_t nversion;                /// The total number of existing versions
 };
 
@@ -313,6 +313,12 @@ struct block {
 	blk_t *next;                    /// Previous block in the chain
 	blk_t *prev;                    /// Next block in the chain
 };
+
+
+typedef enum {
+	INSTR_MNEMONIC,
+	INSTR_RAWBYTES,
+} isn_input_type_t;
 
 
 typedef enum {

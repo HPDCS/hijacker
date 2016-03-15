@@ -28,6 +28,7 @@
 #ifndef _UTILS_H_
 #define _UTILS_H_
 
+#include <stdbool.h>
 #include <stdlib.h>
 
 #include <init.h>

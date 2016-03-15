@@ -19,12 +19,11 @@
 * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *
 * @file instruction.c
-* @brief Module to handle instructions in the Intermediate Representation
+* @brief Module to handle instructions in the IBR
 * @author Davide Cingolani
 * @author Alessandro Pellegrini
 * @author Roberto Vitali
 * @author Simone Economo
-* @date July 11, 2014
 */
 
 #include <stdlib.h>
@@ -50,17 +49,18 @@
  * must be already allocated by the caller function, hence a side-
  * effect is performed on it.
  *
- * @param instr    Pointer to the instruction descriptor to fill-up.
- * @param mnemonic Textual representation of the instruction.
- * @param isa      Target architecture.
+ * @param  instr    Pointer to the instruction descriptor to fill.
+ * @param  isa      Target architecture.
+ * @param  mnemonic Textual representation of the instruction.
  *
- * @return         True if the mnemonic represents a valid instruction
- *                 in the target ISA, false otherwise.
+ * @return          The number of characters that are effectively
+ *                  consumed from the beginning of the string, or 0
+ *                  if the string is not valid in the target ISA.
  */
-static bool instr_assemble(isn_t *instr, isa_family_t isa,
-                           const char *mnemonic) {
+static size_t instr_assemble(isn_t *instr, isa_family_t isa,
+                             const char *mnemonic) {
 	// TODO: To implement
-	return true;
+	return 42; // The best integer placeholder ever!
 }
 
 
@@ -75,17 +75,17 @@ static bool instr_assemble(isn_t *instr, isa_family_t isa,
  * for the raw bytes sequence. In fact, it is able to determine
  * the length of the instruction to disassemble provided that a
  * disassembly engine is available for the target architecture.
- * As a result, the number of bytes effectively consumed by the
- * engine is provided as output. This is especially useful when
- * the target ISA is a CISC architecture.
+ * The number of bytes effectively consumed by the engine is
+ * provided as output. This is especially useful when the target
+ * ISA represents a CISC architecture.
  *
- * @param instr Pointer to the instruction descriptor to fill-up.
- * @param bytes Raw bytes of the instruction.
- * @param isa   Target architecture.
+ * @param  instr Pointer to the instruction descriptor to fill.
+ * @param  isa   Target architecture.
+ * @param  bytes Raw bytes of the instruction.
  *
- * @return      The number of bytes that are effectively consumed
- *              from the beginning of the bytes sequence, or 0 if
- *              the sequence is not valid in the target ISA.
+ * @return       The number of bytes that are effectively consumed
+ *               from the beginning of the bytes sequence, or 0 if
+ *               the sequence is not valid in the target ISA.
  */
 static size_t instr_disassemble(isn_t *instr, isa_family_t isa,
                                 const unsigned char *bytes) {
@@ -94,38 +94,122 @@ static size_t instr_disassemble(isn_t *instr, isa_family_t isa,
 }
 
 /**
- * Inserts a new instruction into the instruction chain, relative
- * to the position of another, already-existing instruction.
+ * Inserts one or more instructions into the instruction chain
+ * relative to the position of another, already-existing instruction.
  *
  * Observe that this function allocates a new instruction descriptor
  * in dynamic memory.
  *
- * @param  mnemonic Textual representation of the instruction.
- * @param  pivot    Pointer to the instruction descriptor used as
- *                  reference for the insertion.
- * @param  where    Where the instruction will be inserted, relative
- *                  to the pivot.
+ * @param  input Pointer to the input representation of the
+ *               instruction.
+ * @param  type  Type of the input representation (i.e., mnemonic
+ *               string or raw byte sequence).
+ * @param  pivot Pointer to the instruction descriptor used as
+ *               reference for the insertion.
+ * @param  where Where the instruction will be inserted, relative
+ *               to the pivot (i.e., before or after the pivot).
  *
- * @return          Pointer to the newly-created instruction descriptor.
+ * @return       Pointer to the new pivot: if inserted before the
+ *               old pivot, the new pivot is the first instruction
+ *               from the input; else, it is the last instruction.
+ *               If the input representation is an empty sequence
+ *               of instructions, NULL is returned.
  */
-isn_t *instr_insert(const char *mnemonic, isn_t *pivot, ins_insert_mode_t where) {
-	isn_t *instr;
+isn_t *instr_insert(const unsigned char *input, isn_input_type_t type,
+                    isn_t *pivot, ins_insert_mode_t where) {
+	isn_t *instr, *prev;
+	size_t consumed;
 
-	if (mnemonic == NULL || pivot == NULL) {
+	if (input == NULL || pivot == NULL) {
 		hinternal();
 	}
 
-	// Makes room for a new instruction descriptor
+	// If we wish to insert before the pivot, the first instruction
+	// is inserted backwards and the remaining instructions forwards.
+	// If we wish to insert after the pivot, we simply decouple
+	// the first forward insertion from the other ones
+	pivot = instr_insert_single(&input, type, pivot, where);
+
+	// Insert the remaining instructions into the chain, always using
+	// the `INSERT_AFTER` policy
+	prev = instr = pivot;
+
+	while (instr != NULL) {
+		prev = instr;
+		instr = instr_insert_single(&input, type, instr, INSERT_AFTER);
+	}
+
+	// At this point, `prev` points to the last valid instruction
+	// which has been inserted. If the first insertion has failed,
+	// it will be NULL
+	if (where == INSERT_AFTER) {
+		pivot = prev;
+	}
+
+	return pivot;
+}
+
+
+/**
+ * Inserts a single instruction into the instruction chain relative
+ * to the position of another, already-existing instruction.
+ *
+ * Observe that this function performs a single insertion at a
+ * time, one per each invocation. It is used as a building block
+ * for its public counterpart, `instr_insert`, which allows to
+ * insert many instructions at once in the chain.
+ *
+ * To simplify the logic of `instr_insert`, this function performs
+ * a side-effect on its first argument. Specifically, the pointer
+ * to the input representation will advance of a number of bytes
+ * which is equivalent to those that were consumed in the latest
+ * invocation. As a result, upon multiple calls to this function,
+ * the first argument will always point to the next instruction
+ * to parse, or to the end of the sequence if there is no other
+ * instruction to insert.
+ *
+ * @param  input Double pointer to the input representation of the
+ *               instruction.
+ * @param  type  Type of the input representation (i.e., mnemonic
+ *               string or raw byte sequence).
+ * @param  pivot Pointer to the instruction descriptor used as
+ *               reference for the insertion.
+ * @param  where Where the instruction will be inserted, relative
+ *               to the pivot (i.e., before or after the pivot).
+ *
+ * @return       Pointer to the newly-inserted instruction, or
+ *               NULL if the input representation is an empty
+ *               sequence of instructions.
+ */
+static ins_t *instr_insert_single(const unsigned char **input, isn_input_type_t type,
+                                  isn_t *pivot, ins_insert_mode_t where) {
+	size_t consumed;
+	ins_t *instr;
+
+	// Make room for a new instruction descriptor
 	instr = hcalloc(sizeof(isn_t));
 
-	// Assembles the instruction into the descriptor passed as input
-	if (instr_assemble(instr, mnemonic, config.program.arch) == false) {
-		// We require the mnemonic to map to a valid instruction
-		hinternal();
+	// Fill up the instruction descriptor in the appropriate manner
+	if (type == INSTR_MNEMONIC) {
+		consumed = instr_assemble(instr,
+			config.program.arch, (const char *) *input);
+	}
+	else if (type == INSTR_RAWBYTES) {
+		consumed = instr_disassemble(instr,
+			config.program.arch, *input);
 	}
 
-	// Inserts the descriptor into the instruction chain, according
+	if (consumed == 0) {
+		free(instr);
+		return NULL;
+	}
+
+	// Update the input pointer according to the consumed bytes
+	*input += consumed;
+
+	// Insert the descriptor into the instruction chain, according
 	// to the desired insertion mode
+
 	if (where == INSERT_AFTER) {
 		instr->next = pivot->next;
 
@@ -136,16 +220,22 @@ isn_t *instr_insert(const char *mnemonic, isn_t *pivot, ins_insert_mode_t where)
 		instr->prev = pivot;
 		pivot->next = instr;
 	}
+
 	else if (where == INSERT_BEFORE) {
 		instr->prev = pivot->prev;
 
 		if (pivot->prev != NULL) {
 			pivot->prev->next = instr;
+		} else {
+			// Update the first instruction in the version chain
+			config.program.cversion->instrs = instr;
 		}
 
 		instr->next = pivot;
 		pivot->prev = instr;
 	}
+
+	// TODO: Handle the case of block boundaries.
 
 	return instr;
 }
@@ -166,16 +256,22 @@ void instr_remove(isn_t *instr) {
 		hinternal();
 	}
 
-	// Removes the descriptor from the chain
+	// Remove the descriptor from the chain
+
 	if (instr->prev != NULL) {
 		instr->prev->next = instr->next;
+	} else {
+		// Update the first instruction in the version chain
+		config.program.cversion->instrs = instr->next;
 	}
 
 	if (instr->next != NULL) {
 		instr->next->prev = instr->prev;
 	}
 
-	// Deallocates the descriptor, which is now no longer valid
+	// TODO: Handle the case of block boundaries.
+
+	// Deallocate the descriptor, which is no longer valid
 	free(instr);
 }
 
