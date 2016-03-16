@@ -169,13 +169,15 @@ struct symbol {
 	void *payload;                  /// Symbol contents
 	size_t size;                    /// The size of this symbol
 
-	union {                         /// What the symbol represents...
+	/// What the symbol represents...
+	union {
 		fun_t *function;              /// ...a function
 		sec_t *section;               /// ...a section
 		                              /// ...anything else?
 	} is;
 
-	union {                         /// Relocations associated to this symbol...
+	/// Relocations associated to this symbol...
+	union {
 		list_t /* <rel_t> */ source;  /// ...when the symbol owns the relocation
 		list_t /* <rel_t> */ dest;    /// ...when the relocation refers to the symbol
 	} rel;
@@ -207,13 +209,15 @@ extern const char *rel_type_str[];
 struct relocation {
 	rel_type_t type;                /// ABSOLUTE, RELATIVE, etc...
 
-	struct {                        /// Relocation found...
+	/// Relocation found...
+	struct {
 		sec_t *section;               /// ...in this section
 		addr_t offset;                /// ...at this offset
 		isn_t *instr;                 /// ...(in this instruction)
 	} in;
 
-	struct {                        /// Relocation referring...
+	/// Relocation referring...
+	struct {
 		sym_t *symbol;                /// ...to this symbol
 		off_t addend;                 /// ...at this displacement
 		isn_t *instr;                 /// ...(to this instruction)
@@ -300,8 +304,8 @@ typedef enum {
 struct block {
 	blk_type_t type;                /// LOOP HEADER, LOOP FOOTER, etc...
 
-	blk_t *begin_instr;             /// The first instruction of this block
-	blk_t *end_instr;               /// The last instruction of this block
+	isn_t *begin_instr;             /// The first instruction of this block
+	isn_t *end_instr;               /// The last instruction of this block
 
 	// Presets-related fields
 	void *smtracer;
@@ -343,17 +347,19 @@ struct instruction {
 		// isn_info_specific_arm arm;
 	} arch;
 
-	// IBR-level fields
-	struct {                        /// Jump-table for this instruction
+	/// Jump-table for this instruction
+	struct {
 		size_t fanout;                /// Number of detected targets
 		list_t /* <isn_t> */ instr;   /// List of target instructions
 	} to;
 
-	struct {                        /// Inverse jump-table for this instruction
+	/// Inverse jump-table for this instruction
+	struct {
 		list_t /* <isn_t> */ instr;   /// List of instructions that jump to this instruction
 	} from;
 
-	union {                         /// Relocations associated to this instruction...
+	/// Relocations associated to this instruction...
+	union {
 		list_t /* <rel_t> */ source;  /// ...when the instruction owns the relocation
 		list_t /* <rel_t> */ dest;    /// ...when the relocation refers to the instruction
 	} rel;

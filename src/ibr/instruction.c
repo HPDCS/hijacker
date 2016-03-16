@@ -126,22 +126,23 @@ isn_t *instr_insert(const unsigned char *input, isn_input_type_t type,
 
 	// If we wish to insert before the pivot, the first instruction
 	// is inserted backwards and the remaining instructions forwards.
-	// If we wish to insert after the pivot, we simply decouple
-	// the first forward insertion from the other ones
+	// If we want to insert after, we simply decouple the first
+	// forward insertion from the other ones.
+	// This is done to simplify the remaining logic of this function.
 	pivot = instr_insert_single(&input, type, pivot, where);
 
-	// Insert the remaining instructions into the chain, always using
-	// the `INSERT_AFTER` policy
-	prev = instr = pivot;
+	// Insert the remaining instructions into the chain (notice that
+	// the `INSERT_AFTER` policy is enforced at this point)
+	prev = NULL;
+	instr = pivot;
 
 	while (instr != NULL) {
 		prev = instr;
 		instr = instr_insert_single(&input, type, instr, INSERT_AFTER);
 	}
 
-	// At this point, `prev` points to the last valid instruction
-	// which has been inserted. If the first insertion has failed,
-	// it will be NULL
+	// By now, `prev` points to the latest inserted instruction, or
+	// it is NULL if the first insertion has failed
 	if (where == INSERT_AFTER) {
 		pivot = prev;
 	}
@@ -242,22 +243,54 @@ static ins_t *instr_insert_single(const unsigned char **input, isn_input_type_t 
 
 
 /**
- * Removes an existing instruction descriptor from the chain.
+ * Removes a range of instruction descriptors from the chain.
+ *
+ * It can be used to remove a single instruction, provided that
+ * range delimiters point to the same instruction descriptor.
  *
  * Observe that this function deallocates the passed instruction
- * descriptor, therefore it will be no longer invalid upon returning
- * from this function.
+ * descriptors, therefore they will be no longer valid upon
+ * returning from this function.
  *
- * @param instr Pointer to the instruction descriptor to remove.
+ * @param from Pointer to the first instruction descriptor in
+ *             the range to remove.
+ * @param to   Pointer to the last instruction descriptor in
+ *             the range to remove.
  */
-void instr_remove(isn_t *instr) {
-	if (instr == NULL) {
+void instr_remove(isn_t *from, ins_t *to) {
+	isn_t *instr, *to_next, *next;
+
+	if (from == NULL || to == NULL) {
 		// FIXME: In principle, we could just return from the function
 		hinternal();
 	}
 
-	// Remove the descriptor from the chain
+	// TODO: Check that `to` comes after `from`
 
+	// Pointers to next instructions need to be saved prior to
+	// removing the current instructions, otherwise we reference
+	// freed memory!
+	to_next = to->next;
+	instr = from;
+
+	while (instr != to_next) {
+		next = instr->next;
+		instr_remove_single(instr);
+		instr = next;
+	}
+}
+
+
+/**
+ * Removes a single instruction from the instruction chain.
+ *
+ * Observe that this function is used as a building block for its
+ * public counterpart, `instr_remove`, which allows to remove many
+ * instructions at once from the chain.
+ *
+ * @param instr Pointer to the instruction descriptor to remove.
+ */
+static void instr_remove_single(isn_t *instr) {
 	if (instr->prev != NULL) {
 		instr->prev->next = instr->next;
 	} else {
@@ -273,6 +306,39 @@ void instr_remove(isn_t *instr) {
 
 	// Deallocate the descriptor, which is no longer valid
 	free(instr);
+}
+
+
+/**
+ * Replaces one or more existing instructions in the chain with
+ * one or more instructions.
+ *
+ * @param  input Pointer to the input representation of the
+ *               instruction.
+ * @param  type  Type of the input representation (i.e., mnemonic
+ *               string or raw byte sequence).
+ * @param  from  Pointer to the first instruction descriptor in
+ *               the range to remove.
+ * @param  to    Pointer to the last instruction descriptor in
+ *               the range to remove.
+ * @param  last  Double pointer to the last inserted instruction.
+ * @return       Pointer to the first instruction from the input.
+ *               If the input representation is an empty sequence
+ *               of instructions, NULL is returned.
+ */
+ins_t *instr_replace(const unsigned char *input, isn_input_type_t type,
+                     instr *from, instr *to, instr **last) {
+	ins_t *instr;
+
+	instr = instr_insert(input, type, from, INSERT_BEFORE);
+
+	if (last != NULL) {
+		*last = from->prev;
+	}
+
+	instr_remove(from, to);
+
+	return instr;
 }
 
 
