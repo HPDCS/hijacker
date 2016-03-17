@@ -20,9 +20,6 @@
 *
 * @file instruction.c
 * @brief Module to handle instructions in the IBR
-* @author Davide Cingolani
-* @author Alessandro Pellegrini
-* @author Roberto Vitali
 * @author Simone Economo
 */
 
@@ -116,7 +113,7 @@ static size_t instr_disassemble(isn_t *instr, isa_family_t isa,
  *               of instructions, NULL is returned.
  */
 isn_t *instr_insert(const unsigned char *input, isn_input_type_t type,
-                    isn_t *pivot, ins_insert_mode_t where) {
+                    isn_t *pivot, isn_insert_mode_t where) {
 	isn_t *instr, *prev;
 	size_t consumed;
 
@@ -182,10 +179,10 @@ isn_t *instr_insert(const unsigned char *input, isn_input_type_t type,
  *               NULL if the input representation is an empty
  *               sequence of instructions.
  */
-static ins_t *instr_insert_single(const unsigned char **input, isn_input_type_t type,
-                                  isn_t *pivot, ins_insert_mode_t where) {
+static isn_t *instr_insert_single(const unsigned char **input, isn_input_type_t type,
+                                  isn_t *pivot, isn_insert_mode_t where) {
 	size_t consumed;
-	ins_t *instr;
+	isn_t *instr, **first, **last;
 
 	// Make room for a new instruction descriptor
 	instr = hcalloc(sizeof(isn_t));
@@ -210,12 +207,16 @@ static ins_t *instr_insert_single(const unsigned char **input, isn_input_type_t 
 
 	// Insert the descriptor into the instruction chain, according
 	// to the desired insertion mode
+	first = &VERSION(instructions).first;
+	last = &VERSION(instructions).last;
 
 	if (where == INSERT_AFTER) {
 		instr->next = pivot->next;
 
 		if (pivot->next != NULL) {
 			pivot->next->prev = instr;
+		} else {
+			*last = instr;
 		}
 
 		instr->prev = pivot;
@@ -228,8 +229,7 @@ static ins_t *instr_insert_single(const unsigned char **input, isn_input_type_t 
 		if (pivot->prev != NULL) {
 			pivot->prev->next = instr;
 		} else {
-			// Update the first instruction in the version chain
-			config.program.cversion->instrs = instr;
+			*first = instr;
 		}
 
 		instr->next = pivot;
@@ -257,7 +257,7 @@ static ins_t *instr_insert_single(const unsigned char **input, isn_input_type_t 
  * @param to   Pointer to the last instruction descriptor in
  *             the range to remove.
  */
-void instr_remove(isn_t *from, ins_t *to) {
+void instr_remove(isn_t *from, isn_t *to) {
 	isn_t *instr, *to_next, *next;
 
 	if (from == NULL || to == NULL) {
@@ -291,18 +291,23 @@ void instr_remove(isn_t *from, ins_t *to) {
  * @param instr Pointer to the instruction descriptor to remove.
  */
 static void instr_remove_single(isn_t *instr) {
+	first = &VERSION(instructions).first;
+	last = &VERSION(instructions).last;
+
 	if (instr->prev != NULL) {
 		instr->prev->next = instr->next;
 	} else {
-		// Update the first instruction in the version chain
-		config.program.cversion->instrs = instr->next;
+		*first = instr->next;
 	}
 
 	if (instr->next != NULL) {
 		instr->next->prev = instr->prev;
+	} else {
+		*last = instr->prev;
 	}
 
-	// TODO: Handle the case of block boundaries.
+	// TODO: Handle the case of block boundaries
+	// TODO: Remove all relocations referring to this instruction
 
 	// Deallocate the descriptor, which is no longer valid
 	free(instr);
@@ -326,9 +331,9 @@ static void instr_remove_single(isn_t *instr) {
  *               If the input representation is an empty sequence
  *               of instructions, NULL is returned.
  */
-ins_t *instr_replace(const unsigned char *input, isn_input_type_t type,
+isn_t *instr_replace(const unsigned char *input, isn_input_type_t type,
                      instr *from, instr *to, instr **last) {
-	ins_t *instr;
+	isn_t *instr;
 
 	instr = instr_insert(input, type, from, INSERT_BEFORE);
 

@@ -69,33 +69,77 @@ struct object {
 	obj_format_t format;            /// The object file format type (e.g. ELF)
 	isa_family_t arch;              /// The ISA language of the machine code (e.g. x86-64)
 
-	ver_t *versions[MAX_VERSIONS];  /// One entry for each instrumented version
-	                                /// of the object file
+	ver_t *versions[MAX_VERSIONS];  /// Array of object file versions
 	ver_t *cversion;                /// The current object file version
-
 	size_t nversion;                /// The total number of existing versions
 };
 
 
 struct version {
+	unsigned long number;           /// The version number ID
 	const char *name;               /// The name of this version
 
-	size_t number;                  /// The version number
+	struct {                        /// All sections specific for this version
+		sec_t *first;
+		sec_t *last;
+	} sections;
 
-	sec_t *sections;                /// All sections specific for this version
-	sym_t *symbols;                 /// All symbols specific for this version
-	rel_t *relocs;                  /// All symbol references specific for this version
+	struct {                        /// All symbols specific for this version
+		sym_t *first;
+		sym_t *last;
+	} symbols;
 
-	fun_t *functions;               /// The functions that make up this version's code
-	blk_t *blocks;                  /// The blocks that make up this version's code
-	isn_t *instrs;                  /// The instructions that make up this version's code
+	struct {                        /// All relocs specific for this version
+		rel_t *first;
+		rel_t *last;
+	} relocs;
+
+	struct {                        /// The functions that make up this version's code
+		fun_t *first;
+		fun_t *last;
+	} functions;
+
+	struct {                        /// The blocks that make up this version's code
+		blk_t *first;
+		blk_t *last;
+	} blocks;
+
+	struct {                        /// The instructions that make up this version's code
+		isn_t *first;
+		isn_t *last;
+	} instructions;
 
 	graph_t /* <fun_t> */ fcg;      /// The Function Call Graph of this version
-
-	// An instruction chain is maintained for each object file version
-	ver_t *next;                    /// Previous version in the chain
-	ver_t *prev;                    /// Next version in the chain
 };
+
+
+#define foreach_version(version, number) \
+	for (number = 0, version = PROGRAM(versions)[number]; \
+	     number < PROGRAM(nversion); number += 1)
+
+
+#define foreach_section(section) \
+	for (section = VERSION(sections).first; section; section = section->next)
+
+
+#define foreach_symbol(symbol) \
+	for (symbol = VERSION(symbols).first; symbol; symbol = symbol->next)
+
+
+#define foreach_reloc(reloc) \
+	for (reloc = VERSION(relocs).first; reloc; reloc = reloc->next)
+
+
+#define foreach_function(function) \
+	for (function = VERSION(functions).first; function; function = function->next)
+
+
+#define foreach_block(block) \
+	for (block = VERSION(blocks).first; block; block = block->next)
+
+
+#define foreach_instr(instr) \
+	for (instr = VERSION(instructions).first; instr; instr = instr->next)
 
 
 obj_t *executable_load(const char *path);
@@ -104,10 +148,10 @@ obj_t *executable_load(const char *path);
 void executable_write(const char *path);
 
 
-ver_t *version_create(void);
+ver_t *version_create(const char *name);
 
 
-ver_t *version_switch(unsigned int number);
+ver_t *version_switch(unsigned long number);
 
 
 /************************************************************
@@ -136,8 +180,6 @@ struct section {
 	unsigned long flags;            /// ALLOC, LOAD, READ, WRITE, etc...
 
 	void *payload;                  /// Section contents
-	size_t size;                    /// The size of this section (possibly not needed
-	                                /// as it can be recovered from symbol->size)
 
 	// An instruction chain is maintained for each object file version
 	sec_t *next;                    /// Previous section in the chain
@@ -161,6 +203,7 @@ extern const char *sym_type_str[];
 
 
 struct symbol {
+	unsigned long id;               /// The unique id of this symbol
 	const char *name;               /// The name of this symbol
 
 	sym_type_t type;                /// FUNCTION, OBJECT, etc...
@@ -169,15 +212,12 @@ struct symbol {
 	void *payload;                  /// Symbol contents
 	size_t size;                    /// The size of this symbol
 
-	/// What the symbol represents...
-	union {
+	union {                         /// What the symbol represents...
 		fun_t *function;              /// ...a function
 		sec_t *section;               /// ...a section
-		                              /// ...anything else?
 	} is;
 
-	/// Relocations associated to this symbol...
-	union {
+	union {                         /// Relocations associated to this symbol...
 		list_t /* <rel_t> */ source;  /// ...when the symbol owns the relocation
 		list_t /* <rel_t> */ dest;    /// ...when the relocation refers to the symbol
 	} rel;
@@ -209,15 +249,13 @@ extern const char *rel_type_str[];
 struct relocation {
 	rel_type_t type;                /// ABSOLUTE, RELATIVE, etc...
 
-	/// Relocation found...
-	struct {
+	struct {                        /// Relocation found...
 		sec_t *section;               /// ...in this section
 		addr_t offset;                /// ...at this offset
 		isn_t *instr;                 /// ...(in this instruction)
 	} in;
 
-	/// Relocation referring...
-	struct {
+	struct {                        /// Relocation referring...
 		sym_t *symbol;                /// ...to this symbol
 		off_t addend;                 /// ...at this displacement
 		isn_t *instr;                 /// ...(to this instruction)
@@ -229,22 +267,41 @@ struct relocation {
 };
 
 
-sec_t *section_create(const char *name, sec_type_t type, unsigned long flags);
+sec_t *section_insert(const char *name, sec_type_t type,
+                      unsigned long flags, void *payload);
 
 
-sec_t *section_find(sec_t *match);
+void section_remove(sec_t *section);
 
 
-sec_t *section_find_byname(const char *name);
+// sec_t *section_find(sec_t *match);
 
 
-sym_t *symbol_create(const char *name, sym_type_t type, unsigned long flags);
+// sec_t *section_find_byname(const char *name);
 
 
-sym_t *symbol_find(sym_t *match);
+sym_t *symbol_insert(const char *name, sym_type_t type,
+                     unsigned long flags, void *payload);
 
 
-sym_t *symbol_find_byname(const char *name);
+void symbol_remove(sym_t *symbol);
+
+
+// sym_t *symbol_find(sym_t *match);
+
+
+// sym_t *symbol_find_byname(const char *name);
+
+
+rel_t *reloc_create(rel_type_t type, sec_t *section, addr_t offset,
+                    sym_t *symbol, off_t addend);
+
+
+rel_t *reloc_isn_to_sym(rel_type_t type, isn_t *instr,
+                        sym_t *symbol, off_t addend);
+
+rel_t *reloc_sec_to_isn(rel_type_t type, sec_t *section, addr_t offset,
+                        isn_t *instr);
 
 
 /************************************************************
@@ -310,7 +367,6 @@ struct block {
 	// Presets-related fields
 	void *smtracer;
 
-	size_t size;                    /// The size of this block in bytes
 	size_t length;                  /// The number of instructions that make up this block
 
 	// An instruction chain is maintained for each object file version
@@ -335,31 +391,28 @@ struct instruction {
 	addr_t offset;                  /// The offset from the beginning of the section
 	                                /// at which this instruction can be found
 
-	/// Architecture-independent information
+	// Architecture-independent information
 	unsigned char mnemonic[32];     /// Textual representation of the instruction
 	unsigned char instruction[32];  /// Raw bytes of the instruction
 	unsigned long long flags;       /// MEMORY, ALGEBRIC, LOGIC, STACK, etc...
 	unsigned int length;            /// Length in bytes
 
-	/// Architecture-specific information
-	union {
+	union {                         /// Architecture-specific information
 		// isn_info_specific_x86 x86;
 		// isn_info_specific_arm arm;
 	} arch;
 
-	/// Jump-table for this instruction
-	struct {
-		size_t fanout;                /// Number of detected targets
-		list_t /* <isn_t> */ instr;   /// List of target instructions
+	struct {                        /// Jump-table for this instruction
+		size_t fanout;                /// Number of detected destinations
+		list_t /* <isn_t> */ instr;   /// List of detected destination instructions
 	} to;
 
-	/// Inverse jump-table for this instruction
-	struct {
-		list_t /* <isn_t> */ instr;   /// List of instructions that jump to this instruction
+	struct {                        /// Inverse jump-table for this instruction
+		size_t fanin;                 /// Number of detected sources
+		list_t /* <isn_t> */ instr;   /// List of detected source instructions
 	} from;
 
-	/// Relocations associated to this instruction...
-	union {
+	union {                         /// Relocations associated to this instruction...
 		list_t /* <rel_t> */ source;  /// ...when the instruction owns the relocation
 		list_t /* <rel_t> */ dest;    /// ...when the relocation refers to the instruction
 	} rel;
@@ -370,28 +423,50 @@ struct instruction {
 };
 
 
-fun_t *function_create(const char *name);
+#define foreach_function_block(function, block) \
+	for (block = function->begin_block; \
+	     block != function->end_block->next; \
+	     block = block->next)
 
 
-fun_t *function_find(fun_t *match);
+#define foreach_function_instr(function, instr) \
+	for (instr = function->begin_block->begin_instr; \
+	     instr != function->end_block->end->instr->next; \
+	     instr = instr->next)
 
 
-fun_t *function_find_byname(const char *name);
+#define foreach_block_instr(block, instr) \
+	for (instr = block->begin_instr; \
+	     instr != block->end_instr->next; \
+	     instr = instr->next)
 
 
-fun_t *function_find_byblock(blk_t *block);
+fun_t *function_create(const char *name, isn_t *begin, isn_t *end);
 
 
-fun_t *function_find_byinstr(isn_t *instr);
+void function_remove(fun_t *function);
 
 
-blk_t *block_find_byinstr(isn_t *instr);
+// fun_t *function_find(fun_t *match);
 
 
-isn_t *instr_insert(const char *mnemonic, isn_t *pivot, isn_insert_mode_t where);
+// fun_t *function_find_byname(const char *name);
 
 
-void instr_remove(isn_t *instr);
+// fun_t *function_find_byblock(blk_t *block);
+
+
+// fun_t *function_find_byinstr(isn_t *instr);
+
+
+// blk_t *block_find_byinstr(isn_t *instr);
+
+
+isn_t *instr_insert(const unsigned char *input, isn_input_type_t type,
+                    isn_t *pivot, isn_insert_mode_t where);
+
+
+void instr_remove(isn_t *from, isn_t *to);
 
 
 #endif /* _IBR_H */

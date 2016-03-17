@@ -19,9 +19,8 @@
 * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *
 * @file block.c
-* @brief Structures and functions to handle basic blocks
+* @brief Module to handle basic blocks in the IBR
 * @author Simone Economo
-* @date June 18, 2015
 */
 
 #include <prints.h>

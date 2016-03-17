@@ -57,12 +57,11 @@ extern configuration config;
 /// Easy access to program fields
 #define PROGRAM(field) (config.program.field)
 
-/// Easy access to symbols and code
-// #define SYMBOLS PROGRAM(v_symbols)[PROGRAM(version)]
-// #define CODE PROGRAM(v_code)[PROGRAM(version)]
+/// Easy access to current version fields
+#define VERSION(field) (PROGRAM(cversion)->field)
 
 /// Default output name
-#define DEFAULT_OUT_NAME  "hijacked.o"
+#define DEFAULT_OUT_NAME "hijacked.o"
 
 
-#endif /* _HIJACKER_H */
+#endif /* _CONFIG_H */

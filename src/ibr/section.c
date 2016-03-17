@@ -19,11 +19,8 @@
 * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *
 * @file section.c
-* @brief Module to handle sections in the Intermediate Representation
-* @author Alessandro Pellegrini
-* @author Davide Cingolani
+* @brief Module to handle sections in the IBR
 * @author Simone Economo
-* @date July 13, 2015
 */
 
 #include <string.h>
@@ -33,9 +30,91 @@
 #include <ibr.h>
 
 
-const char *section_type_str[] = {
+const char *sec_type_str[] = {
 	"NULL", "CODE", "SYMBOLS", "NAMES", "RELOC", "TLS", "RAW"
 };
+
+
+sec_t *section_insert(const char *name, sec_type_t type,
+                      unsigned long flags, void *payload) {
+	sec_t *section, **first, **last;
+	sym_t *symbol;
+
+	static unsigned int id = 0;
+
+	if (name == NULL) {
+		hinternal();
+	}
+
+	// Make room for a new section descriptor
+	section = hcalloc(sizeof(sec_t));
+
+	// Fill section descriptor fields
+	section->id = ++id;
+	section->name = name;
+	section->type = type;
+	section->flags = flags;
+	section->payload = payload;
+
+	// Insert the descriptor into the section chain
+	first = &VERSION(sections).first;
+	last = &VERSION(sections).last;
+
+	if (*first == NULL) {
+		// Initialize the list
+		*first = section;
+	}
+	else if (*first != *last) {
+		// Append to the end of the list
+		section->prev = *last;
+		(*last)->next = section;
+	}
+
+	*last = section;
+
+	// TODO: Specify flags
+	symbol = symbol_insert(name, SYMBOL_SECTION, flags);
+
+	section->symbol = symbol;
+	symbol->is.section = section;
+
+	return section;
+}
+
+
+void *section_remove(sec_t *section) {
+	if (section == NULL) {
+		// FIXME: In principle, we could just return from the function
+		hinternal();
+	}
+
+	// Remove the descriptor from the section chain
+	first = &VERSION(sections).first;
+	last = &VERSION(sections).last;
+
+	assert(*first != NULL && *last != NULL);
+
+	if (section->prev != NULL) {
+		section->prev->next = section->next;
+	} else {
+		*first = section->next;
+	}
+
+	if (section->next != NULL) {
+		section->next->prev = section->prev;
+	} else {
+		*last = section->prev;
+	}
+
+	// TODO: Remove the symbol representing this section
+	// TODO: Remove all symbols contained in this section
+	// TODO: Remove all functions contained in this section
+
+	// Deallocate the descriptor, which is no longer valid
+	free(section);
+}
+
+
 
 
 size_t section_id(size_t nextid, bool update) {

@@ -19,10 +19,8 @@
 * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *
 * @file function.c
-* @brief Module to handle functions in the Intermediate Representation
-* @author Davide Cingolani
+* @brief Module to handle functions in the IBR
 * @author Simone Economo
-* @date July 13, 2015
 */
 
 #include <string.h>
@@ -31,6 +29,84 @@
 #include <hijacker.h>
 #include <prints.h>
 #include <ibr.h>
+
+
+fun_t *function_create(const char *name, ins_t *begin, ins_t *end) {
+	fun_t *function, **first, **last;
+
+	if (name == NULL || start == NULL || end == NULL) {
+		hinternal();
+	}
+
+	// NOTE: There might be overlapping between the two functions,
+	// this is okay (although a bit crazy)
+
+	// Make room for a new function descriptor
+	function = hcalloc(sizeof(fun_t));
+
+	// TODO: Create CFG for this function based on the instruction
+	// delimiters
+
+	// TODO: Update FCG for this object file version
+
+	// Insert the descriptor into the function chain
+	first = &VERSION(functions).first;
+	last = &VERSION(functions).last;
+
+	if (*first == NULL) {
+		// Initialize the list
+		*first = function;
+	}
+	else if (*first != *last) {
+		// Append to the end of the list
+		function->prev = *last;
+		(*last)->next = function;
+	}
+
+	*last = function;
+
+	// TODO: Specify flags
+	symbol = symbol_insert(name, SYMBOL_FUNCTION, 0L);
+
+	function->symbol = symbol;
+	symbol->is.function = function;
+
+	return function;
+}
+
+
+void function_remove(fun_t *function) {
+	if (function == NULL) {
+		// FIXME: In principle, we could just return from the function
+		hinternal();
+	}
+
+	// Remove the descriptor from the function chain
+	first = &VERSION(functions).first;
+	last = &VERSION(functions).last;
+
+	assert(*first != NULL && *last != NULL);
+
+	if (function->prev != NULL) {
+		function->prev->next = function->next;
+	} else {
+		*first = function->next;
+	}
+
+	if (function->next != NULL) {
+		function->next->prev = function->prev;
+	} else {
+		*last = function->prev;
+	}
+
+	// TODO: Update FCG for this object file version
+
+	// TODO: Remove the symbol representing this function
+	// TODO: Remove all blocks contained in this function
+
+	// Deallocate the descriptor, which is no longer valid
+	free(function);
+}
 
 
 /**
@@ -286,7 +362,7 @@ function *clone_function_list(function *func, char *suffix) {
 // la funzioe create_function_node()!!!
 /**
  * Create a function starting from an array of raw bytes that represents
- * its instructions. The returned function description will be filled 
+ * its instructions. The returned function description will be filled
  *
  *
  */
@@ -308,17 +384,17 @@ function *create_function(char *name, unsigned char *code, size_t size) {
 
 	// Parse the instruction bytes provided in order to create a chain of
 	// instructions to append to the newly created function
-	
+
 	// This will create the instrucion chain
 	while(pos < size) {
 
 		parse_instruction_bytes(code, &pos, &insn);
-		
+
 		insn->orig_addr += pos;
 		insn->new_addr += pos;
 
 		insn->next = calloc(sizeof(insn_info), 1);
-		
+
 		insn->next->new_addr = insn->new_addr;
 		insn->next->orig_addr = insn->orig_addr;
 		insn = insn->next;

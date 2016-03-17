@@ -19,12 +19,12 @@
 * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *
 * @file symbol.c
-* @brief Module to handle symbols in the Intermediate Representation
-* @author Davide Cingolani
-* @date July 13, 2015
+* @brief Module to handle symbols in the IBR
+* @author Simone Economo
 */
 
 #include <string.h>
+#include <assert.h>
 
 #include <hijacker.h>
 #include <prints.h>
@@ -33,17 +33,85 @@
 #include <elf/parse-elf.h>
 
 
-const char *symbol_type_str[] = {
+const char *sym_type_str[] = {
 	"NULL", "VARIABLE", "FUNCTION", "UNDEF", "SECTION", "FILE", "TLS"
 };
 
-const char *symbol_bind_str[] = {
-	"LOCAL", "GLOBAL", "WEAK"
-};
+// const char *sym_bind_str[] = {
+// 	"LOCAL", "GLOBAL", "WEAK"
+// };
 
-const char *reloc_type_str[] = {
-	"PCREL_32", "PCREL_64", "TLSREL_32", "ABS_32", "ABS_32S", "ABS_64",
-};
+
+sym_t *symbol_insert(const char *name, sym_type_t type,
+                     unsigned long flags, void *payload) {
+	sym_t *symbol, **first, **last;
+
+	static unsigned int id = 0;
+
+	if (name == NULL) {
+		hinternal();
+	}
+
+	// Make room for a new symbol descriptor
+	symbol = hcalloc(sizeof(sym_t));
+
+	// Fill symbol descriptor fields
+	symbol->id = ++id;
+	symbol->name = name;
+	symbol->type = type;
+	symbol->flags = flags;
+	symbol->payload = payload;
+
+	// Insert the descriptor into the symbol chain
+	first = &VERSION(symbols).first;
+	last = &VERSION(symbols).last;
+
+	if (*first == NULL) {
+		// Initialize the list
+		*first = symbol;
+	}
+	else if (*first != *last) {
+		// Append to the end of the list
+		symbol->prev = *last;
+		(*last)->next = symbol;
+	}
+
+	*last = symbol;
+
+	return symbol;
+}
+
+
+void *symbol_remove(sym_t *symbol) {
+	if (symbol == NULL) {
+		// FIXME: In principle, we could just return from the function
+		hinternal();
+	}
+
+	// Remove the descriptor from the symbol chain
+	first = &VERSION(symbols).first;
+	last = &VERSION(symbols).last;
+
+	assert(*first != NULL && *last != NULL);
+
+	if (symbol->prev != NULL) {
+		symbol->prev->next = symbol->next;
+	} else {
+		*first = symbol->next;
+	}
+
+	if (symbol->next != NULL) {
+		symbol->next->prev = symbol->prev;
+	} else {
+		*last = symbol->prev;
+	}
+
+	// TODO: Remove all relocations referring to this symbol
+	// TODO: Remove function/section represented by this symbol
+
+	// Deallocate the descriptor, which is no longer valid
+	free(symbol);
+}
 
 
 size_t symbol_id(size_t nextid, bool update) {
