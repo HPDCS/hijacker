@@ -30,9 +30,60 @@
 
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 #include <init.h>
 // #include <config.h>
+
+
+/************************************************************
+*   Memory allocation utils
+************************************************************/
+
+/**
+ * Allocates non-initialized dynamic memory and checks that
+ * the allocation succeeds.
+ */
+#define hmalloc(size) ({\
+		void *data = malloc(size);\
+		if (!data) {\
+			herror(true, "Out of memory");\
+		}\
+		data;\
+	})
+
+
+/**
+ * Allocates zero-initialized dynamic memory and checks that
+ * the allocation succeeds.
+ */
+#define hcalloc(size) ({\
+		void *data = calloc(size, 1);\
+		if (!data) {\
+			herror(true, "Out of memory");\
+		}\
+		data;\
+	})
+
+
+/**
+ * Re-allocates previously-allocated dynamic memory and checks that
+ * the re-allocation succeeds.
+ */
+#define hrealloc(data, size) ({\
+		data = realloc(data, size);\
+		if (!data) {\
+			herror(true, "Out of memory");\
+		}\
+		data;\
+	})
+
+
+// Poison all original dynamic memory allocation functions so that
+// they cannot be used directly anymore
+#ifdef __GNUC__
+#pragma GCC poison malloc calloc realloc
+#endif
 
 
 /************************************************************
@@ -219,7 +270,7 @@ void hexdump(void *data, size_t len);
  *
  * @return True if the two strings are equal.
  */
-strong_inline bool strequal(const char *str1, const char *str2) {
+__strong_inline__ bool str_equal(const char *str1, const char *str2) {
 	return (strcmp((str1), (str2)) == 0);
 }
 
@@ -232,59 +283,51 @@ strong_inline bool strequal(const char *str1, const char *str2) {
  *
  * @return True if the first string is prefixed by the second.
  */
-strong_inline bool strprefix(const char *str, const char *pre) {
+__strong_inline__ bool str_prefix(const char *str, const char *pre) {
 	return (strncmp((pre), (str), strlen((pre))) == 0);
 }
 
 
-/************************************************************
-*   Memory allocation utils
-************************************************************/
+__weak_inline__ char *str_copy(const char *str) {
+	size_t length;
+	char *copy;
 
-/**
- * Allocates non-initialized dynamic memory and checks that
- * the allocations succeeds.
- */
-#define hmalloc(size) ({\
-		void *data = malloc(size);\
-		if (data == NULL) {\
-			herror(true, "Out of memory");\
-		}\
-		data;\
-	})
+	length = strlen(str) + 1;
+	copy = hcalloc(length);
+
+	memcpy(copy, str, length);
+
+	return copy;
+}
 
 
-/**
- * Allocates zero-initialized dynamic memory and checks that
- * the allocations succeeds.
- */
-#define hcalloc(size) ({\
-		void *data = calloc(size, 1);\
-		if (data == NULL) {\
-			herror(true, "Out of memory");\
-		}\
-		data;\
-	})
+__weak_inline__ char *str_concat(size_t count, ...) {
+	size_t length, pos;
+	char *copy, *str;
 
+	va_list ap;
+	unsigned int i;
 
-/**
- * Re-allocates previously-allocated dynamic memory and checks that
- * the re-allocations succeeds.
- */
-#define hrealloc(data, size) ({\
-		data = realloc(data, size);\
-		if (data == NULL) {\
-			herror(true, "Out of memory");\
-		}\
-		data;\
-	})
+	va_start(ap, count);
+	for (i = 0, length = 0; i < count; ++i, length += strlen(str)) {
+		str = va_arg(ap, char *);
+	}
+	va_end(ap);
 
+	length += 1;
+	copy = hcalloc(length);
 
-// Poison all original dynamic memory allocation functions so that
-// they cannot be used directly anymore
-#ifdef __GNUC__
-#pragma GCC poison malloc calloc realloc
-#endif
+	va_start(ap, count);
+	for (i = 0, pos = 0; i < count; ++i, pos += length) {
+		str = va_arg(ap, char *);
+		length = strlen(str);
+
+		memcpy(copy + pos, str, length);
+	}
+	va_end(ap);
+
+	return copy;
+}
 
 
 /************************************************************
@@ -354,11 +397,13 @@ strong_inline bool strprefix(const char *str, const char *pre) {
 				wait(&status);\
 			} else {\
 				if(execlp("gcc", "gcc", what, __VA_ARGS__, (char *)NULL) == -1) {\
-					herror(true, "Unable to launch the compiler '%s' (error %d: '%s')\n", COMPILER, errno, strerror(errno));\
+					herror(true, "Unable to launch the compiler '%s' (error %d: '%s')\n",\
+						COMPILER, errno, strerror(errno));\
 				}\
 			}\
 			if(status != 0) {\
-				herror(true, "Error compiling '%s' (error %d: '%s')\n", what, status, strerror(status));\
+				herror(true, "Error compiling '%s' (error %d: '%s')\n",\
+					what, status, strerror(status));\
 			}\
 		} while(0)
 
@@ -368,11 +413,13 @@ strong_inline bool strprefix(const char *str, const char *pre) {
 				wait(&status);\
 			} else {\
 				if(execlp("ld", "ld", what, __VA_ARGS__, (char *)NULL) == -1) {\
-					herror(true, "Unable to launch the linker '%s' (error %d: '%s')\n", LINKER, errno, strerror(errno));\
+					herror(true, "Unable to launch the linker '%s' (error %d: '%s')\n",\
+						LINKER, errno, strerror(errno));\
 				}\
 			}\
 			if(status != 0) {\
-				herror(true, "Error linking '%s' (error %d: '%s')\n", what, status, strerror(status));\
+				herror(true, "Error linking '%s' (error %d: '%s')\n",\
+					what, status, strerror(status));\
 			}\
 		} while(0)
 
@@ -386,7 +433,8 @@ strong_inline bool strprefix(const char *str, const char *pre) {
 					}\
 			}\
 			if(status != 0) {\
-				herror(true, "Error executing '%s' (error %d: '%s')\n", what, status, strerror(status));\
+				herror(true, "Error executing '%s' (error %d: '%s')\n",\
+					what, status, strerror(status));\
 			}\
 		} while(0)
 

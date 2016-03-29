@@ -31,374 +31,529 @@
 #include <ibr.h>
 
 
-fun_t *function_create(const char *name, ins_t *begin, ins_t *end) {
-	fun_t *function, **first, **last;
+static weak_inline int compare_common(size_t a_left, size_t a_right,
+                                      size_t b_left, size_t b_right) {
+	if (a_right <= b_left) {
+		return b_left - a_right;
+	}
+	else if (b_right <= a_left) {
+		return b_right - a_left;
+	}
+	else {
+		hinternal();
+	}
+}
 
-	if (name == NULL || start == NULL || end == NULL) {
+
+static int block_compare(blk_t *a, blk_t *b, addr_t *address) {
+	size_t a_left, a_right, b_left, b_right;
+
+	a_left = block_first_instr(a)->offset;
+	a_right = block_last_instr(a)->offset;
+
+	if (!address) {
+		b_left = block_first_instr(b)->offset;
+		b_right = block_last_instr(b)->offset;
+	} else {
+		b_left = b_right = *address;
+	}
+
+	return compare_common(a_left, a_right, b_left, b_right);
+}
+
+
+static int function_compare(fun_t *a, fun_t *b, addr_t *address) {
+	size_t a_left, a_right, b_left, b_right;
+
+	a_left = function_first_instr(a)->offset;
+	a_right = function_last_instr(a)->offset;
+
+	if (!address) {
+		b_left = function_first_instr(b)->offset;
+		b_right = function_last_instr(b)->offset;
+	} else {
+		b_left = b_right = *address;
+	}
+
+	return compare_common(a_left, a_right, b_left, b_right);
+}
+
+
+fun_t *function_insert(const char *name, list_range_t instructions,
+                       sec_t *section, sym_t *symbol) {
+	fun_t *function;
+
+	if (!range_valid(instructions)) {
 		hinternal();
 	}
 
-	// NOTE: There might be overlapping between the two functions,
-	// this is okay (although a bit crazy)
+	// TODO: Handle function aliases and overlapping functions
 
 	// Make room for a new function descriptor
 	function = hcalloc(sizeof(fun_t));
 
-	// TODO: Create CFG for this function based on the instruction
-	// delimiters
-
-	// TODO: Update FCG for this object file version
-
 	// Insert the descriptor into the function chain
-	first = &VERSION(functions).first;
-	last = &VERSION(functions).last;
+	function->node = list_push_last(&__VERSION__(functions), function);
 
-	if (*first == NULL) {
-		// Initialize the list
-		*first = function;
+	// Create a new FCG node
+	function->fcgnode = graph_insert(&__VERSION__(fcg), function, 0L);
+
+	// We maintain a balanced tree of functions for fast lookup
+	// bst_search_kernel kernel = {
+	// 	.payload      = NULL,
+	// 	.compare_func = &function_compare
+	// };
+
+	// bst_insert(&section->index.functions, function, &kernel);
+
+	// If requested, create a new symbol, too
+	if (!symbol) {
+		// TODO: Specify symbol flags to insert
+		// TODO: Name must be valid
+		symbol = symbol_insert(name, SYMBOL_FUNCTION, section, 0L);
 	}
-	else if (*first != *last) {
-		// Append to the end of the list
-		function->prev = *last;
-		(*last)->next = function;
-	}
-
-	*last = function;
-
-	// TODO: Specify flags
-	symbol = symbol_insert(name, SYMBOL_FUNCTION, 0L);
 
 	function->symbol = symbol;
-	symbol->is.function = function;
+	symbol->isa.function = function;
+
+	// TODO: Set symbol size
 
 	return function;
 }
 
 
 void function_remove(fun_t *function) {
-	if (function == NULL) {
-		// FIXME: In principle, we could just return from the function
+	if (!function) {
 		hinternal();
 	}
 
 	// Remove the descriptor from the function chain
-	first = &VERSION(functions).first;
-	last = &VERSION(functions).last;
+	list_remove(&__VERSION__(functions), function->node);
 
-	assert(*first != NULL && *last != NULL);
-
-	if (function->prev != NULL) {
-		function->prev->next = function->next;
-	} else {
-		*first = function->next;
-	}
-
-	if (function->next != NULL) {
-		function->next->prev = function->prev;
-	} else {
-		*last = function->prev;
-	}
-
-	// TODO: Update FCG for this object file version
+	// Remove the FCG node
+	graph_remove(&__VERSION__(fcg), function->fcgnode);
 
 	// TODO: Remove the symbol representing this function
 	// TODO: Remove all blocks contained in this function
+	// TODO: Remove all call instructions to this function
 
 	// Deallocate the descriptor, which is no longer valid
 	free(function);
 }
 
 
-/**
- * Seeks the function descriptor associated with a given instruction descriptor.
- * Put differently, gets the function that contains a given instruction.
- *
- * @param instr Pointer to the instruction descriptor.
- *
- * @return Pointer to the function descriptor found, if any, or <em>NULL</em>.
- *
- * @author Simone Economo
- */
-function *find_func_from_instr(insn_info *instr, insn_address_type type) {
-	function *func, *prev;
+fun_t *function_find_byaddr(addr_t address, sec_t *section) {
+	list_node_t *node;
+	fun_t *function;
 
-	for (func = PROGRAM(v_code)[PROGRAM(version)], prev = NULL; func;
-		   prev = func, func = func->next) {
-		if (type == NEW_ADDR && func->begin_insn->new_addr > instr->new_addr) {
-			return prev;
-		}
-		else if (type == ORIG_ADDR && func->begin_insn->orig_addr > instr->orig_addr) {
-			return prev;
-		}
+	if (!section) {
+		hinternal();
 	}
 
-	// if (!func) {
-	// 	return NULL;
-	// }
+	list_for_each(&section->has.functions, node) {
+		function = node->elem;
 
-	return prev;
+		if (function_first_instr(function)->offset > address) {
+			return prev;
+		}
+
+		prev = function;
+	}
+
+	return NULL;
+
+	// bst_search_kernel kernel = {
+	// 	.payload      = &address,
+	// 	.compare_func = &function_compare
+	// };
+
+	// return bst_search(&section->index.functions, NULL, &kernel);
 }
 
 
-function *find_func_from_addr(unsigned long long addr) {
-	function *func;
+fun_t *function_find_byname(const char *name) {
+	sym_t *symbol;
 
-	for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
-		if (func->begin_insn->orig_addr <= addr
-		 && func->begin_insn->orig_addr + func->symbol->size > addr) {
-			return func;
-		}
+	symbol = symbol_find_byname(name);
+
+	if (symbol) {
+		return symbol->isa.function;
 	}
 
 	return NULL;
 }
 
 
-/**
- * Creates a new function descriptor along with its relative symbol. The newly
- * created function is added to the program's code (at the end) and is associated
- * with a global symbol.
- *
- * @author Davide Cingolani
- *
- * @param name Buffer pointing to the new name of the function.
- * @param code Pointer to the instruction list that make up the body of the function.
- *
- * @return Pointer to the new function descriptor.
- */
-function *function_create_from_insn(char *name, insn_info *code) {
-	function *func, *curr;
-	symbol *sym;
-	insn_info *instr;
-	section *sec;
+static blk_t *block_insert(fun_t *function, list_range_t instructions, blk_t *pivot) {
+	blk_t *block;
 
-	size_t size;
+	// Make room for a new block descriptor
+	block = hcalloc(sizeof(blk_t));
 
-	size = 0;
-	for (instr = code; instr; instr = instr->next) {
-		size += instr->size;
-	}
+	// Fill block descriptor fields
+	block->function = function;
+	block->instructions = instructions;
 
-	func = (function *) calloc(sizeof(function), 1);
+	// Insert the descriptor into the block chain
+	block->node = list_insert(&__VERSION__(blocks), block, pivot, INSERT_AFTER);
 
-	func->name = (char *) malloc(strlen((const char *) name) + 1);
-	strcpy(func->name, name);
+	// Create a new CFG node
+	block->cfgnode = graph_insert(&function->cfg, block, 0L);
 
-	func->begin_insn = code;
+	// We maintain a balanced tree of blocks for fast lookup
+	// TODO: Check that is it correct to do it here...
+	// bst_search_kernel kernel = {
+	// 	.payload      = NULL,
+	// 	.compare_func = &block_compare
+	// };
 
-	for (curr = PROGRAM(v_code)[PROGRAM(version)]; curr->next; curr = curr->next);
+	// bst_insert(&function->index.blocks, right, &kernel);
 
-	sec = curr->symbol->sec;
-	sec->sym->size += size;
-
-	sym = symbol_create(name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, sec, size);
-	func->symbol = sym;
-	sym->func = func;
-
-	func->orig_addr = func->new_addr = (curr->new_addr + curr->symbol->size);
-	func->symbol->offset = func->orig_addr;
-
-	curr->next = func;
-
-	hnotice(4, "New function '%s' created\n", name);
-
-	return func;
-}
-
-// FIXME: unire le funzionalità di parse_instruction_bytes() come catena di istruzioni e
-// la funzioe create_function_node()!!!
-/**
- * Create a function starting from an array of raw bytes that represents
- * its instructions. The returned function description will be filled
- *
- *
- */
-function *function_create_from_bytes(char *name, unsigned char *code, size_t size) {
-	insn_info *insn, *first;
-	function *func;
-	unsigned long long pos;
-
-	first = calloc(sizeof(insn_info), 1);
-	insn = first;
-	pos = 0;
-
-	func = function_create_from_insn(name, first);
-	insn->new_addr = func->new_addr;
-
-	// Parse the instruction bytes provided in order to create a chain of
-	// instructions to append to the newly-created function
-
-	// This will create the instruction chain
-	while(pos < size) {
-		parse_instruction_bytes(code, &pos, &insn);
-
-		insn->orig_addr += pos;
-		insn->new_addr += pos;
-
-		insn->next = calloc(sizeof(insn_info), 1);
-
-		insn->next->new_addr = insn->new_addr;
-		insn->next->orig_addr = insn->orig_addr;
-		insn = insn->next;
-	}
-
-	return func;
-}
-
-/**
- * Computes the size in bytes of a function by summing up the length of all the
- * instruction in its body.
- *
- * @param func Pointer to the function descriptor whose size has to be computed.
- *
- * @return Size in bytes of the passed function.
- */
-// static int get_function_size(function *func) {
-// 	insn_info *insn;
-// 	int size;
-
-// 	if(func == NULL)
-// 		return -1;
-
-// 	insn = func->begin_insn;
-// 	size = 0;
-// 	while(insn) {
-// 		size += insn->size;
-// 		insn = insn->next;
-// 	}
-
-// 	return size;
-// }
-
-
-/**
- * Clones a single function, producing a new function descriptor whose name
- * is the concatenation of the original name and a suffix passed as parameter.
- * The list of instructions that make up its body is cloned as well.
- *
- * @param func Pointer to the function descriptor to clone.
- * @param suffix Buffer pointing to the suffix.
- *
- * @return Pointer to the clone function descriptor.
- */
-function * clone_function (function *func, char *suffix) {
-	function *clone;
-	char *name;
-	int size;
-
-	if (!func) {
-		return NULL;
-	}
-
-	// Allocates memory for the new descriptor
-	clone = (function *) calloc(sizeof(function), 1);
-
-	// Copies the original descriptor to the new one
-	memcpy(clone, func, sizeof(function));
-
-	// Updates the pointer to instruction list
-	clone->begin_insn = clone_instruction_list(func->begin_insn);
-
-	// Reset some fields
-	clone->begin_blk = clone->end_blk = clone->source = NULL;
-	clone->calledfrom.first = clone->calledfrom.last = NULL;
-	clone->callto.first = clone->callto.last = NULL;
-
-	// Compose the function name
-	size = strlen((const char *)func->name) + strlen(suffix) + 2; // one is \0, one is '_'
-	name = malloc(sizeof(char) * size);
-	bzero(name, size);
-	strcpy(name, (const char *)func->name);
-	strcat(name, "_");
-	strcat(name, suffix);
-
-	clone->name = (unsigned char *)name;
-
-	// FIXME: E' realmente necessario?
-	// size = get_function_size(clone);
-	// if (size <= 0) {
-	// 	hinternal();
-	// }
-
-	// Create a new symbol
-	clone->symbol = symbol_create(name, func->symbol->type, func->symbol->bind,
-		func->symbol->sec, size);
-
-	clone->symbol->func = clone;
-
-	// hnotice(4, "Function '%s' (%d bytes) cloned\n", clone->name, clone->symbol->size);
-
-	return clone;
+	return block;
 }
 
 
-/**
- * Clone the whole function list of the internal representation. This is done
- * in order to support multi-versioning of executable and object files.
- * Cloning the function means to clone their instructions as well.
- *
- * @return Pointer to the first function descriptor of the clone list.
- */
-function *clone_function_list(function *func, char *suffix) {
-	function *clone, *head;
-
-	if(!func)
-		return NULL;
-
-	head = clone = clone_function(func, suffix);
-	func = func->next;
-
-	while(func) {
-		clone->next = clone_function(func, suffix);
-		clone = clone->next;
-		func = func->next;
-	}
-
-	return head;
+static void block_remove(fun_t *function, blk_t *block) {
+	// TODO: To implement
 }
 
 
-// FIXME: unire le funzionalità di parse_instruction_bytes() come catena di istruzioni e
-// la funzioe create_function_node()!!!
-/**
- * Create a function starting from an array of raw bytes that represents
- * its instructions. The returned function description will be filled
- *
- *
- */
-function *create_function(char *name, unsigned char *code, size_t size) {
-	insn_info *insn, *first;
-	function *func;
-	unsigned long long pos;
+blk_t *block_find_byaddr(addr_t address, fun_t *function) {
+	list_node_t *node;
+	blk_t *block;
 
-	first = calloc(sizeof(insn_info), 1);
-	if(first == NULL) {
-		abort();
+	if (!function) {
+		hinternal();
 	}
 
-	insn = first;
-	pos = 0;
+	list_for_each(&functions->blocks, node) {
+		block = node->elem;
 
-	func = create_function_node(name, first);
-	insn->new_addr = func->new_addr;
+		if (function_first_instr(block)->offset > address) {
+			return prev;
+		}
 
-	// Parse the instruction bytes provided in order to create a chain of
-	// instructions to append to the newly created function
-
-	// This will create the instrucion chain
-	while(pos < size) {
-
-		parse_instruction_bytes(code, &pos, &insn);
-
-		insn->orig_addr += pos;
-		insn->new_addr += pos;
-
-		insn->next = calloc(sizeof(insn_info), 1);
-
-		insn->next->new_addr = insn->new_addr;
-		insn->next->orig_addr = insn->orig_addr;
-		insn = insn->next;
+		prev = block;
 	}
 
-	return func;
+	return NULL;
+
+	// bst_search_kernel kernel = {
+	// 	.payload      = &address,
+	// 	.compare_func = &block_compare
+	// };
+
+	// return bst_search(&function->index.blocks, NULL, &kernel);
+}
+
+
+static blk_t *block_split(fun_t *function, blk_t *left,
+                          isn_t *breakpoint, blk_split_mode_t mode) {
+	blk_t *right;
+	isn_t *from;
+
+	list_node_t *incoming, *outgoing;
+	graph_edge_t *incoming_edge, *outgoing_edge;
+
+	// If the block is already split at the desired breakpoint
+	// just return it unchanged
+	if (block_first_instr(left) == breakpoint && mode == SPLIT_FIRST) {
+		return left;
+	}
+
+	if (block_last_instr(left) == breakpoint && mode == SPLIT_LAST) {
+		return left;
+	}
+
+	// Compute the new instruction range for the two blocks
+	if (mode == SPLIT_FIRST) {
+		from = breakpoint->node;
+		left->instructions.last = breakpoint->node->prev;
+	}
+	else if (mode == SPLIT_LAST) {
+		from = breakpoint->node->next;
+		left->instructions.last = breakpoint->node;
+	}
+
+	// Create the new right block
+	right = block_insert(function, range(from, left->instructions.last), left);
+
+	// The new block gets all the outgoing connections of the old one
+	list_swap(&left->cfgnode.out, &right->cfgnode.out);
+
+	// The outgoing blocks get their incoming connections updated too
+	// NOTE: It could be done using graph_* functions, though less
+	// efficiently.
+	list_for_each(&right->cfgnode.out, outgoing) {
+		outgoing_edge = outgoing->elem;
+
+		list_for_each(&(outgoing_edge->to->in), incoming) {
+			incoming_edge = incoming->elem;
+
+			if (incoming_edge->from == left) {
+				incoming_edge->from = right;
+			}
+		}
+	}
+
+	return right;
+}
+
+
+static weak_inline void block_link(fun_t *function, blk_t *from, blk_t *to,
+                                   cfg_edge_label label) {
+	if (!from || !to) {
+		hinternal();
+	}
+
+	if (from == to) {
+		return;
+	}
+
+	// Connect the two nodes in the CFG
+	graph_connect(&function->cfg, from->cfgnode, to->cfgnode, label)
+}
+
+
+static weak_inline blk_t *function_update_cfg(fun_t *function, blk_t *block, isn_t *instr) {
+	blk_t *new, *temp, *temp_new;
+	isn_t *target;
+
+	if (instr->to.jumptable.size == 0) {
+		// A jump must have at least one target instruction,
+		// otherwise something is wrong...
+		hinternal();
+	}
+	else if (IS_JUMP(instr) && instr->to.jumptable.size > 1) {
+		// It shouldn't ever happen that a direct jump has
+		// multiple landing sites...
+		hinternal();
+	}
+
+	// Split the block along the jump instruction
+	new = block_split(function, block, instr, SPLIT_LAST);
+
+	// For each target instruction, perform other split operations
+	list_for_each(&(instr->to.jumptable), node) {
+		target = node->elem;
+
+		// Find the block containing the target instruction and
+		// split it along the latter
+		temp = block_find(target);
+		temp_new = block_split(function, temp, target, SPLIT_FIRST);
+
+		// If the instruction *before* the target one is not a jump,
+		// then it is a labeled instruction and there's no flow control
+		// hijacking between the two resulting blocks. For this reason,
+		// they must be explicitly connected.
+		if (!IS_JUMP(target->prev)) {
+			block_link(temp, temp_new, EDGE_FORCED);
+		}
+
+		// Link the current block with the one holding the (possibly
+		// indirect) destination instruction
+		if (IS_JUMPIND(instr)) {
+			block_link(block, temp, EDGE_IND);
+		} else {
+			block_link(block, temp, IS_CONDITIONAL(instr) ? EDGE_THEN : EDGE_GOTO);
+
+			// Conditional jumps can branch into the block next to the
+			// current one, therefore we need to connect them
+			if (IS_CONDITIONAL(instr)) {
+				block_link(block, new, EDGE_ELSE);
+			}
+		}
+	}
+
+	// Return the next block to look at, following the chain of
+	// instructions that make up the function
+	return new;
+}
+
+
+static weak_inline void function_update_fcg(fun_t *function, blk_t *block, isn_t *instr) {
+	sec_t *section;
+	fun_t *callee;
+
+	if (IS_CALL(instr) && instr->to.calltable.size > 1) {
+		// It shouldn't ever happen that a direct call has
+		// multiple landing sites...
+		hinternal();
+	}
+
+	// Split the block along the call instruction
+	new = block_split(function, block, instr, SPLIT_LAST);
+
+	// We don't follow blocks belonging to other functions
+	block_link(block, new, EDGE_CALLRET);
+
+	if (instr->to.calltable.size == 0) {
+		// We skip function declarations that don't have an actual
+		// definition in our relocatable object
+		// TODO: Improve check of local vs. undefined functions
+
+		return;
+	}
+
+	// For each target instruction, update the FCG
+	list_for_each(&(instr->to.calltable), node) {
+		target = node->elem;
+
+		// Find the function containing the target instruction
+		section = function->symbol->section;
+		callee = function_find_byinstr(target, section);
+
+		if (callee) {
+			// We're reaching a local function: connect the two function
+			// nodes in the Function-Call Graph
+			graph_connect(&__VERSION__(fcg), function->fcgnode, callee->fcgnode,
+				IS_CALLIND(instr) ? EDGE_CALL_WEAK : EDGE_CALL_STRONG);
+		}
+	}
+
+	return new;
+}
+
+
+static bool function_complete_cfg_pre(void *elem, void *data) {
+	graph_edge_t *edge = elem;
+
+	// If a node is already visited and is part of the current path,
+	// then we've identified a loop, therefore the nodes at the two
+	// opposite ends of the current edge are respectively the loop
+	// header and loop footer
+	if (edge->to->visited == true && edge->to->active == true) {
+		edge->dir = EDGE_BACK;
+		edge->to->label = BLOCK_LOOP_HEADER;
+		edge->from->label = BLOCK_LOOP_FOOTER;
+	} else {
+		edge->dir = EDGE_NEXT;
+	}
+
+	if (edge->to->visited == false) {
+		// This node becomes part of the current path since we're starting to
+		// explore its successor nodes
+		edge->to->active = true;
+	}
+
+	return true;
+}
+
+
+static bool function_complete_cfg_post(void *elem, void *data) {
+	graph_edge_t *edge = elem;
+
+	// If we're leaving the current node, all paths in which it
+	// participates have been visited, so we remove it from the current path
+	edge->to->active = false;
+
+	return true;
+}
+
+
+void function_parse(fun_t *function, list_range_t instructions) {
+	blk_range_t blocks;
+
+	list_node_t *blk_node, *isn_node;
+
+	blk_t *block;
+	isn_t *instr;
+
+	size_t blk_length, fun_length;
+
+	if (function == NULL || !range_valid(instructions)) {
+		return;
+	}
+
+	// TODO: Handle function aliases and overlapping functions
+	// TODO: We could have a jump to a non-local function
+	// TODO: Perform new visit to the Function-Call Graph?
+
+	// 1. Infer Control-Flow Graph and update Function-Call Graph
+	// ------------------------------------------------------------
+
+	// The first block comprises the entire function, but it will be
+	// progressively split until we obtain basic blocks
+	block = first = block_insert(function, instructions, NULL);
+
+	// Scan the entire instruction chain, looking for breakpoints
+	// that can progressively split blocks into smaller chunks.
+	// Observe that this is a splitting algorithm, since we start
+	// with the biggest block until we obtain maximal basic blocks.
+	// An alternative would have been a merging algorithm which
+	// creates a minimal block for each instructions, then merges
+	// adjacent ones on non-breaking points.
+	list_for_each(&instructions, isn_node) {
+		instr = isn_node->elem;
+
+		if (instr->offset > block->instructions.last->offset) {
+			// We've moved to a block which was already created during
+			// a previous iteration
+			block = block->next;
+
+			// Every instruction of the program must be mapped to its
+			// own block, otherwise we complain
+			if (block == NULL) {
+				hinternal();
+			}
+		}
+
+		// Check for jump breakpoints: if indirect jump, we create
+		// as many links in the Control-Flow Graph as the number of
+		// detected targets; if direct jump, simply link the blocks
+		// containing the jump and its target in the Control-Flow Graph
+		// --------------------------------------------------------
+
+		if (IS_JUMPIND(instr) || IS_JUMP(instr)) {
+			block = function_update_cfg(function, block, instr);
+		}
+
+		// Check for call breakpoints: if indirect call, we create
+		// as many links in the Function-Call Graph as the number of
+		// detected targets; if direct call, simply link the functions
+		// containing the call and its target in the Function-Call Graph
+		// --------------------------------------------------------
+
+		else if (IS_CALLIND(instr) || IS_CALL(instr)) {
+			block = function_update_fcg(function, block, instr);
+		}
+
+		// Reverse linking between blocks and instructions
+		instr->block = block;
+	}
+
+	function->blocks = blk_range(first, block);
+
+	// 2. Infer program loops in the Control-Flow Graph
+	// ------------------------------------------------------------
+
+	graph_visit_kernel kernel = {
+		.payload   = NULL,
+		.policy    = GRAPH_VISIT_DEPTH,
+		.dir       = GRAPH_VISIT_FORWARD,
+		.pre_func  = function_complete_cfg_pre,
+		.post_func = function_complete_cfg_post
+	};
+
+	graph_visit(&__VERSION__(cfg), &kernel);
+
+	// 3. Compute function and block lengths
+	// ------------------------------------------------------------
+
+	fun_length = 0;
+
+	list_for_each(&function->blocks, blk_node) {
+		block = blk_node->elem;
+		blk_length = 0;
+
+		list_for_each(&block->instructions, isn_node) {
+			instr = ins_node->elem;
+			blk_length += 1;
+		}
+
+		block->length = blk_length;
+		fun_length += 1;
+	}
+
+	function->length = fun_length;
 }

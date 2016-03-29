@@ -32,7 +32,6 @@
 
 /************************************************************
 *   Doubly-linked list
-*   TODO: To be possibly replaced with generics
 ************************************************************/
 
 typedef struct list_node {
@@ -42,29 +41,145 @@ typedef struct list_node {
 } list_node_t;
 
 
-typedef struct list {
-	size_t size;
+typedef struct list_range {
 	list_node_t *first;
 	list_node_t *last;
+} list_range_t;
+
+
+typedef struct list {
+	list_node_t *first;
+	list_node_t *last;
+	size_t size;
 } list_t;
 
 
-strong_inline void list_swap(list_t *from, list_t *to) {
+typedef enum {
+	INSERT_BEFORE,
+	INSERT_AFTER
+} list_insert_mode;
+
+
+__blind__ list_node_t *list_insert(list_t *list, void *elem, list_node_t *pivot,
+                                   list_insert_mode mode);
+
+
+__blind__ void *list_remove(list_t *list, list_node_t *node);
+
+
+__blind__ void *list_remove_range(list_t *list, list_range_t range);
+
+
+list_node_t *list_find(list_t *list, void *elem);
+
+
+/// Can be used for both lists and ranges since these types
+/// have the same byte-level signature prefix
+#define list_for_each(list, node)\
+	for (node = list->first;\
+	     node && list->last && node != list->last->next;\
+	     node = node->next)
+
+
+__strong_inline__ list_range_t range(list_node_t *from, list_node_t *to) {
+	// if (from == NULL || to == NULL) {
+	// 	hinternal();
+	// }
+
+	list_range_t range = {from, to};
+	return range;
+}
+
+
+__strong_inline__ bool range_valid(list_range_t range) {
+	return (range.first && range.last);
+}
+
+
+__strong_inline__ void *list_first(list_t *list) {
+	if (!list) {
+		hinternal();
+	}
+
+	return (list->first) ? list->first->elem : NULL;
+}
+
+
+__strong_inline__ void *list_last(list_t *list) {
+	if (!list) {
+		hinternal();
+	}
+
+	return (list->last) ? list->last->elem : NULL;
+}
+
+
+__weak_inline__ void list_swap(list_t *from, list_t *to) {
+	size_t temp;
+
+	if (!from || !to) {
+		hinternal();
+	}
+
+	if (from == to) {
+		return;
+	}
+
+	temp = to->size;
+	to->size = from->size;
+	from->size = temp;
+
 	to->first = from->first;
 	from->first = NULL;
+
 	to->last = from->last;
 	from->last = NULL;
 }
 
 
-strong_inline bool list_empty(list_t *list) {
-	return (list->first ? false : true);
+__strong_inline__ bool list_empty(list_t *list) {
+	if (!list) {
+		hinternal();
+	}
+
+	return (list->size == 0);
 }
 
-void list_push(list_t *list, void *elem);
-void list_push_first(list_t *list, void *elem);
-void *list_pop(list_t *list);
-void *list_pop_first(list_t *list);
+
+__strong_inline__ list_node_t *list_push_first(list_t *list, void *elem) {
+	if (!list) {
+		hinternal();
+	}
+
+	return list_insert(list, elem, list->first, INSERT_BEFORE);
+}
+
+
+__strong_inline__ list_node_t *list_push_last(list_t *list, void *elem) {
+	if (!list) {
+		hinternal();
+	}
+
+	return list_insert(list, elem, list->last, INSERT_AFTER);
+}
+
+
+__strong_inline__ void *list_pop_first(list_t *list) {
+	if (!list) {
+		hinternal();
+	}
+
+	return list_remove(list, list->first);
+}
+
+
+__strong_inline__ void *list_pop_last(list_t *list) {
+	if (!list) {
+		hinternal();
+	}
+
+	return list_remove(list, list->last);
+}
 
 
 /************************************************************
@@ -140,7 +255,7 @@ typedef struct {
 /**
  * Creates a new tree.
  */
-strong_inline bst_t *bst_create(void) {
+__strong_inline__ bst_t *bst_create(void) {
 	bst_t *bst;
 
 	bst = hcalloc(sizeof(bst_t));
@@ -163,7 +278,7 @@ bst_node_t *bst_insert(bst_t *tree, void *elem, bst_search_kernel *kernel);
 /**
  * Performs a complete traversal of the tree.
  */
-void bst_visit(bst_t *tree, bst_visit_kernel *kernel);
+void bst_visit(bst_node_t *node, bst_visit_kernel *kernel);
 
 
 /************************************************************
@@ -242,7 +357,7 @@ typedef struct {
 
 
 /// Creates a new graph
-strong_inline graph_t *graph_create(void) {
+__strong_inline__ graph_t *graph_create(void) {
 	graph_t *graph;
 
 	graph = hcalloc(sizeof(graph_t));
@@ -259,7 +374,14 @@ graph_node_t *graph_insert(graph_t *graph, void *elem, unsigned long label);
 /**
  * Connects two nodes in the graph.
  */
-graph_edge_t *graph_connect(graph_node_t *pivot, void *elem);
+graph_edge_t *graph_connect(graph_t *graph, graph_node_t *from,
+                            graph_node_t *to, unsigned long label);
+
+
+__blind__ void *graph_remove(graph_t *graph, graph_node_t *node);
+
+
+__blind__ void graph_disconnect(graph_t *graph, graph_node_t *from, graph_node_t *to);
 
 
 /**

@@ -30,81 +30,47 @@
 #include <ibr.h>
 
 
-const char *sec_type_str[] = {
-	"NULL", "CODE", "SYMBOLS", "NAMES", "RELOC", "TLS", "RAW"
-};
-
-
-sec_t *section_insert(const char *name, sec_type_t type,
-                      unsigned long flags, void *payload) {
-	sec_t *section, **first, **last;
+sec_t *section_insert(const char *name, unsigned long type, unsigned long flags,
+                      void *payload, sym_t *symbol) {
+	sec_t *section;
 	sym_t *symbol;
 
 	static unsigned int id = 0;
-
-	if (name == NULL) {
-		hinternal();
-	}
 
 	// Make room for a new section descriptor
 	section = hcalloc(sizeof(sec_t));
 
 	// Fill section descriptor fields
 	section->id = ++id;
-	section->name = name;
 	section->type = type;
 	section->flags = flags;
-	section->payload = payload;
 
 	// Insert the descriptor into the section chain
-	first = &VERSION(sections).first;
-	last = &VERSION(sections).last;
+	section->node = list_push_last(&__VERSION__(sections), section);
 
-	if (*first == NULL) {
-		// Initialize the list
-		*first = section;
+	// If requested, create a new symbol, too
+	if (!symbol) {
+		// TODO: Specify symbol flags to insert
+		// TODO: Name must be valid
+		symbol = symbol_insert(name, SYMBOL_SECTION, 0L, section, payload);
 	}
-	else if (*first != *last) {
-		// Append to the end of the list
-		section->prev = *last;
-		(*last)->next = section;
-	}
-
-	*last = section;
-
-	// TODO: Specify flags
-	symbol = symbol_insert(name, SYMBOL_SECTION, flags);
 
 	section->symbol = symbol;
-	symbol->is.section = section;
+	symbol->isa.section = section;
+
+	// TODO: Set section symbol size
 
 	return section;
 }
 
 
 void *section_remove(sec_t *section) {
-	if (section == NULL) {
-		// FIXME: In principle, we could just return from the function
+	if (!section) {
 		hinternal();
 	}
 
 	// Remove the descriptor from the section chain
-	first = &VERSION(sections).first;
-	last = &VERSION(sections).last;
-
-	assert(*first != NULL && *last != NULL);
-
-	if (section->prev != NULL) {
-		section->prev->next = section->next;
-	} else {
-		*first = section->next;
-	}
-
-	if (section->next != NULL) {
-		section->next->prev = section->prev;
-	} else {
-		*last = section->prev;
-	}
+	list_remove(&__VERSION__(sections), section->node);
 
 	// TODO: Remove the symbol representing this section
 	// TODO: Remove all symbols contained in this section
@@ -115,159 +81,117 @@ void *section_remove(sec_t *section) {
 }
 
 
+sec_t *section_find_byname(const char *name) {
+	sym_t *symbol;
 
+	symbol = symbol_find_byname(name);
 
-size_t section_id(size_t nextid, bool update) {
-	static size_t id = 0;
-
-	if (nextid > id && update == true) {
-		id = nextid;
+	if (symbol) {
+		return symbol->isa.section;
 	}
 
-	return (update == true ? id : id++);
+	return NULL;
 }
 
 
-section *section_create(char *name, section_type type, void *payload) {
-	section *sec;
+static void section_code_parse(sec_t *section) {
+	isn_range_t instructions;
 
-	sec = (section *) calloc(sizeof(section), 1);
+	fun_t *function, *first;
+	isn_t *instr, *prev;
 
-	sec->name = (char *) malloc(strlen((const char *) name) + 1);
-	strcpy(sec->name, name);
+	list_node_t *node;
+	sym_t *symbol;
 
-	sec->type = type;
-	sec->payload = payload;
-	sec->index = section_id(0, false);
+	// TODO: Link jump instructions!
+	// TODO: Parse relocations!
 
-	sec->sym = symbol_create(name, SYMBOL_SECTION, SYMBOL_LOCAL, sec, 0);
+	// All the instructions contained in the section are parsed
+	// at once thanks to our awesome API for instructions insertion!
+	instructions = instr_insert(section->symbol->bytes, INSTR_RAWBYTES, NULL, INSERT_BEFORE);
 
-	section_append(sec, &PROGRAM(sections)[PROGRAM(version)]);
+	// We start a synchronous traversal of function symbols in
+	// this section and previously-parsed instructions, in order
+	// to create a range of functions that this section contains.
+	instr = prev = instructions.first;
 
-	hnotice(3, "New %s section '%s' (%d) has been created from scratch\n",
-		section_type_str[sec->type], sec->name, sec->index);
+	list_for_each(&__VERSION(symbols)__, node) {
+		// NOTE: Symbols are inserted in the order of their offsets
+		// This way, we can maintain a single function pointer which
+		// is guaranteed to contain the next breakpoint.
+		symbol = node->elem;
 
-	return sec;
+		if (symbol->type == SYMBOL_FUNCTION && symbol->section == section) {
+			// We apply an iterative region splitting algorithm which
+			// creates functions based on instruction breakpoints.
+			// Such breakpoints are retrieved by retrieving the
+			// instruction located at the current symbol's offset.
+
+			if (function == NULL) {
+				// If we've reached the end of the section, but another
+				// symbol has been found, then something must have gone
+				// horribly wrong...
+				hinternal();
+			}
+
+			// We keep navigating the instruction range until we find
+			// an instruction whose offset matches with the offset of
+			// the function symbol. In that case, the instruction
+			// becomes the first instruction of the function referred
+			// by the symbol.
+			while (instr && instr->offset <= symbol->offset) {
+				instr = instr->next;
+			}
+
+			if (!instr || instr->offset != symbol->offset) {
+				// An instruction which matches with the offset criterion
+				// must be found, otherwise we cannot proceed
+				hinternal();
+			}
+
+			// Create the new function and update the previous
+			// instruction pointer
+			function = function_insert(symbol->name, range(prev, instr));
+
+
+			prev = instr->next;
+		}
+	}
+
+	section->has.functions = range(first, function);
 }
 
-section *section_create_from_ELF(size_t index, section_type type) {
-	section *sec;
 
-	sec = (section *) calloc(sizeof(section), 1);
-
-	sec->name = sec_name(index);
-	sec->type = type;
-	sec->payload = sec_content(index);
-
-	// TODO: Check for special section index values!
-	sec->index = section_id(index, true);
-
-	sec->offset = sec_field(index, sh_offset);
-	sec->header = sec_header(index);
-
-	// NOTE: We don't create any symbol, since we expect it to be
-	// done in a separate step
-
-	section_append(sec, &PROGRAM(sections)[PROGRAM(version)]);
-
-	hnotice(3, "New %s section '%s' (%d) has been created from ELF\n",
-		section_type_str[sec->type], sec->name, sec->index);
-
-	return sec;
+static void section_data_parse(sec_t *section) {
+	// TODO: To implement
 }
 
-/**
- * Creates and links a new section descriptor, representing a symbol with a given
- * type, index in the symbol table and payload.
- *
- * @param type Integer constant which represents the type of the section.
- * @param secndx Integer representing the index number of the section in the
- * symbol table included in the executable file.
- * @param first Pointer to a list of sections to which append the new one.
- */
-void section_append(section *sec, section **head) {
-	section *curr;
 
-	if (head == NULL) {
+static void section_debug_parse(sec_t *section) {
+	// TODO: Not implemented...eventually will be! :-)
+}
+
+
+void section_parse(sec_t *section) {
+	if (!section) {
 		hinternal();
 	}
 
-	if (*head == NULL) {
-		*head = sec;
-	} else {
-		curr = *head;
+	switch (type) {
+		case SECTION_RAW:
+		case SECTION_TLS:
+			section->has.symbols = section_data_parse(section);
+			break;
 
-		while (curr->next) {
-			curr = curr->next;
-		}
+		case SECTION_RELOC:
+			section->has.relocs = section_reloc_parse(section);
+			break;
 
-		curr->next = sec;
+		case SECTION_CODE:
+			section->has.functions = section_code_parse(section);
+			break;
+
+		default:
+			hinternal();
 	}
-}
-
-
-/**
- * Looks for the section with the index specified.
- *
- * @return Returns the pointer to the section found, if any, NULL otherwise.
- */
-inline section *find_section(unsigned int index) {
-	section *sec;
-
-	for (sec = PROGRAM(sections)[PROGRAM(version)]; sec; sec = sec->next) {
-		if (sec->index == index) {
-			return sec;
-		}
-	}
-
-	return NULL;
-}
-
-
-section *find_section_by_name(unsigned char *name) {
-	section *sec;
-
-	for (sec = PROGRAM(sections)[PROGRAM(version)]; sec; sec = sec->next) {
-		if (str_equal(sec->name, name)) {
-			return sec;
-		}
-	}
-
-	return NULL;
-}
-
-section *section_clone(section *sec, char *suffix) {
-	section *clone;
-	char *name;
-
-	size_t length;
-
-	if (sec == NULL) {
-		return NULL;
-	}
-
-	// Allocates memory for the new descriptor
-	clone = (section *) calloc(sizeof(section), 1);
-
-	// Copies the original descriptor to the new one
-	memcpy(clone, sec, sizeof(section));
-
-	// Reset some fields
-	clone->index = section_id(0, false);
-	clone->next = NULL;
-
-	// Compose the function name
-	length = strlen((const char *)sec->name) + strlen(suffix) + 2; // one is \0, one is '_'
-	name = malloc(sizeof(char) * length);
-	bzero(name, length);
-	strcpy(name, (const char *)sec->name);
-	strcat(name, ".");
-	strcat(name, suffix);
-
-	clone->name = (unsigned char *)name;
-
-	// Create a new symbol
-	clone->sym = symbol_create(name, SYMBOL_SECTION, SYMBOL_LOCAL, clone, sec->sym->size);
-
-	return clone;
 }

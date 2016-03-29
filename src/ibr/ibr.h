@@ -44,7 +44,7 @@ typedef struct instruction isn_t;
 
 
 /************************************************************
-*   Executable and executable versions
+*   Object file and object file versions
 ************************************************************/
 
 typedef enum {
@@ -55,8 +55,8 @@ typedef enum {
 
 
 typedef enum {
-	IA32,
-	AMD64,
+	X86,
+	X86_64,
 	// ARM,
 	// ARM64
 } isa_family_t;
@@ -69,9 +69,9 @@ struct object {
 	obj_format_t format;            /// The object file format type (e.g. ELF)
 	isa_family_t arch;              /// The ISA language of the machine code (e.g. x86-64)
 
+	ver_t *version;                 /// The current object file version
 	ver_t *versions[MAX_VERSIONS];  /// Array of object file versions
-	ver_t *cversion;                /// The current object file version
-	size_t nversion;                /// The total number of existing versions
+	size_t nversions;               /// The total number of existing versions
 };
 
 
@@ -79,67 +79,20 @@ struct version {
 	unsigned long number;           /// The version number ID
 	const char *name;               /// The name of this version
 
-	struct {                        /// All sections specific for this version
-		sec_t *first;
-		sec_t *last;
-	} sections;
+	list_t sections;                /// All sections specific for this version
+	list_t symbols;                 /// All symbols specific for this version
+	list_t relocs;                  /// All relocations specific for this version
+	list_t functions;               /// The functions that make up this version's code
+	list_t blocks;                  /// The blocks that make up this version's code
+	list_t instructions;            /// The instructions that make up this version's code
 
-	struct {                        /// All symbols specific for this version
-		sym_t *first;
-		sym_t *last;
-	} symbols;
-
-	struct {                        /// All relocs specific for this version
-		rel_t *first;
-		rel_t *last;
-	} relocs;
-
-	struct {                        /// The functions that make up this version's code
-		fun_t *first;
-		fun_t *last;
-	} functions;
-
-	struct {                        /// The blocks that make up this version's code
-		blk_t *first;
-		blk_t *last;
-	} blocks;
-
-	struct {                        /// The instructions that make up this version's code
-		isn_t *first;
-		isn_t *last;
-	} instructions;
-
-	graph_t /* <fun_t> */ fcg;      /// The Function Call Graph of this version
+	graph_t fcg;                    /// The Function Call Graph of this version
 };
 
 
-#define foreach_version(version, number) \
-	for (number = 0, version = PROGRAM(versions)[number]; \
-	     number < PROGRAM(nversion); number += 1)
-
-
-#define foreach_section(section) \
-	for (section = VERSION(sections).first; section; section = section->next)
-
-
-#define foreach_symbol(symbol) \
-	for (symbol = VERSION(symbols).first; symbol; symbol = symbol->next)
-
-
-#define foreach_reloc(reloc) \
-	for (reloc = VERSION(relocs).first; reloc; reloc = reloc->next)
-
-
-#define foreach_function(function) \
-	for (function = VERSION(functions).first; function; function = function->next)
-
-
-#define foreach_block(block) \
-	for (block = VERSION(blocks).first; block; block = block->next)
-
-
-#define foreach_instr(instr) \
-	for (instr = VERSION(instructions).first; instr; instr = instr->next)
+#define foreach_version(version, number)\
+	for (number = 0, version = __PROGRAM__(versions)[number];\
+	     number < __PROGRAM__(nversions); number += 1)
 
 
 obj_t *executable_load(const char *path);
@@ -155,99 +108,95 @@ ver_t *version_switch(unsigned long number);
 
 
 /************************************************************
-*   Sections, symbols and relocations
+*   Low-level IBR: Sections, symbols and relocations
 ************************************************************/
 
-// FIXME: Incomplete list
-typedef enum {
-	SECTION_NULL,
-	SECTION_CODE,
-	SECTION_SYMBOLS,
-	SECTION_NAMES,
-	SECTION_RELOC,
-	SECTION_TLS,
-	SECTION_RAW
-} sec_type_t;
-
-
-extern const char *sec_type_str[];
+// typedef enum {
+// 	SECTION_NULL,
+// 	SECTION_CODE,
+// 	SECTION_SYMBOLS,
+// 	SECTION_NAMES,
+// 	SECTION_RELOC,
+// 	SECTION_TLS,
+// 	SECTION_RAW
+// } sec_type_t;
 
 
 struct section {
 	sym_t *symbol;                  /// The symbol representing this section
 
-	sec_type_t type;                /// DATA, CODE, RELOC, DEBUG, etc...
+	unsigned long type;             /// DATA, CODE, RELOC, DEBUG, etc...
 	unsigned long flags;            /// ALLOC, LOAD, READ, WRITE, etc...
 
-	void *payload;                  /// Section contents
+	// FIXME: In principle, this could as well be a struct
+	union {                         /// What the section contains...
+		list_range_t symbols;         /// ...a list of addressable symbols
+		list_range_t relocs;          /// ...a list of relocations
+		list_range_t functions;       /// ...a list of functions
+	} has;
 
-	// An instruction chain is maintained for each object file version
-	sec_t *next;                    /// Previous section in the chain
-	sec_t *prev;                    /// Next section in the chain
+	list_t relocs;                  /// List of relocations that apply to this section
+
+	// union {                        /// Balanced search tree index of...
+	// 	bst_t symbols;                /// ...symbols
+	// 	bst_t relocs;                 /// ...relocations
+	// 	bst_t functions;              /// ...blocks
+	// } index;
+
+	list_node_t *node;              /// Associated node in the per-version section list
 };
 
 
-// FIXME: Incomplete list
-typedef enum {
-	SYMBOL_NULL,
-	SYMBOL_VARIABLE,
-	SYMBOL_FUNCTION,
-	SYMBOL_UNDEF,
-	SYMBOL_SECTION,
-	SYMBOL_FILE,
-	SYMBOL_TLS
-} sym_type_t;
-
-
-extern const char *sym_type_str[];
+// typedef enum {
+// 	SYMBOL_NULL,
+// 	SYMBOL_VARIABLE,
+// 	SYMBOL_FUNCTION,
+// 	SYMBOL_UNDEF,
+// 	SYMBOL_SECTION,
+// 	SYMBOL_FILE,
+// 	SYMBOL_TLS
+// } sym_type_t;
 
 
 struct symbol {
 	unsigned long id;               /// The unique id of this symbol
 	const char *name;               /// The name of this symbol
 
-	sym_type_t type;                /// FUNCTION, OBJECT, etc...
+	unsigned long type;             /// FUNCTION, OBJECT, etc...
 	unsigned long flags;            /// LOCAL, GLOBAL, WEAK, etc...
 
-	void *payload;                  /// Symbol contents
-	size_t size;                    /// The size of this symbol
+	// TODO: Could be a displacement from the pointer of section->payload!
+	unsigned char *bytes;           /// Raw symbol payload
+	size_t size;                    /// The size of this symbol in bytes
+
+	sec_t *section;                 /// The section that contains this symbol
+	addr_t offset;                  /// The offset from the beginning of the section
+	                                /// at which the symbol contents can be found
 
 	union {                         /// What the symbol represents...
 		fun_t *function;              /// ...a function
 		sec_t *section;               /// ...a section
-	} is;
+		// dat_t *data;                  /// ...some data
+	} isa;
 
-	union {                         /// Relocations associated to this symbol...
-		list_t /* <rel_t> */ source;  /// ...when the symbol owns the relocation
-		list_t /* <rel_t> */ dest;    /// ...when the relocation refers to the symbol
-	} rel;
+	list_range_t *relocs;           /// List of relocations that refer to this symbol
 
-	sec_t *sec;                     /// The section that contains this symbol
-	addr_t offset;                  /// The offset from the beginning of the section
-	                                /// at which the symbol contents can be found
-
-	// An instruction chain is maintained for each object file version
-	sym_t *next;                    /// Previous symbol in the chain
-	sym_t *prev;                    /// Next symbol in the chain
+	list_node_t *node;              /// Associated node in the per-version symbol list
 };
 
 
-// FIXME: Incomplete list
-typedef enum {
-	RELOC_PCREL_32,
-	RELOC_PCREL_64,
-	RELOC_TLSREL_32,
-	RELOC_ABS_32,
-	RELOC_ABS_32S,
-	RELOC_ABS_64,
-} rel_type_t;
-
-
-extern const char *rel_type_str[];
+// typedef enum {
+// 	RELOC_PCREL_32,
+// 	RELOC_PCREL_64,
+// 	RELOC_TLSREL_32,
+// 	RELOC_ABS_32,
+// 	RELOC_ABS_32S,
+// 	RELOC_ABS_64,
+// } rel_type_t;
 
 
 struct relocation {
-	rel_type_t type;                /// ABSOLUTE, RELATIVE, etc...
+	unsigned long type;             /// ABSOLUTE, RELATIVE, etc...
 
 	struct {                        /// Relocation found...
 		sec_t *section;               /// ...in this section
@@ -261,78 +210,86 @@ struct relocation {
 		isn_t *instr;                 /// ...(to this instruction)
 	} to;
 
-	// An instruction chain is maintained for each object file version
-	rel_t *next;                    /// Previous relocation in the chain
-	rel_t *prev;                    /// Next relocation in the chain
+	list_node_t *node;
 };
 
 
-sec_t *section_insert(const char *name, sec_type_t type,
-                      unsigned long flags, void *payload);
+sec_t *section_insert(const char *name, unsigned long type, unsigned long flags,
+                      void *payload, sym_t *symbol);
 
 
-void section_remove(sec_t *section);
+void *section_remove(sec_t *section);
 
 
-// sec_t *section_find(sec_t *match);
+sec_t *section_find_byname(const char *name);
 
 
-// sec_t *section_find_byname(const char *name);
+sym_t *symbol_insert(const char *name, unsigned long type, unsigned long flags,
+                     sec_t *section, unsigned char *bytes);
 
 
-sym_t *symbol_insert(const char *name, sym_type_t type,
-                     unsigned long flags, void *payload);
+void *symbol_remove(sym_t *symbol);
 
 
-void symbol_remove(sym_t *symbol);
+sym_t *symbol_find_byname(const char *name);
 
 
-// sym_t *symbol_find(sym_t *match);
+sym_t *symbol_find_byaddr(addr_t address, sec_t *section);
 
 
-// sym_t *symbol_find_byname(const char *name);
-
-
-rel_t *reloc_create(rel_type_t type, sec_t *section, addr_t offset,
+rel_t *reloc_insert(unsigned long type, sec_t *section, addr_t offset,
                     sym_t *symbol, off_t addend);
 
 
-rel_t *reloc_isn_to_sym(rel_type_t type, isn_t *instr,
+rel_t *reloc_isn_to_sym(unsigned long type, isn_t *instr,
                         sym_t *symbol, off_t addend);
 
-rel_t *reloc_sec_to_isn(rel_type_t type, sec_t *section, addr_t offset,
+
+rel_t *reloc_sec_to_isn(unsigned long type, sec_t *section, addr_t offset,
                         isn_t *instr);
 
 
+rel_t *reloc_remove(rel_t *reloc);
+
+
+rel_t *reloc_find_bysymbol(sym_t *symbol, sec_t *section);
+
+
 /************************************************************
-*   Functions, blocks and instructions
+*   High-level IBR: Functions, blocks and instructions
 ************************************************************/
+
+typedef enum {
+	EDGE_CALL_STRONG,
+	EDGE_CALL_WEAK,
+	EDGE_CALL_HANDLER
+} fcg_edge_label;
+
 
 struct function {
 	sym_t *symbol;                  /// The symbol representing this function
 
-	graph_t /* <blk_t> */ cfg;      /// The CFG of this function
+	size_t length;                  /// The number of blocks that make up this function
+	list_range_t blocks;            /// The range of blocks that make up this function
+	graph_t cfg;                    /// The CFG of this function
 
-	blk_t *begin_block;             /// The first block of this function
-	blk_t *end_block;               /// The last block of this function
+	// struct {
+	// 	bst_t blocks;
+	// } index;
 
-	// A function chain is maintained for each object file version
-	fun_t *prev;                    /// Previous function in the chain
-	fun_t *next;                    /// Next function in the chain
+	graph_node_t *fcgnode;          /// The FCG node in the parent object file version
+	list_node_t *node;
 };
 
 
 typedef enum {
-	BLOCK_GENERIC,
-	BLOCK_LOOP_HEADER,
-	BLOCK_LOOP_FOOTER,
-	BLOCK_BRANCH_HEADER,
-	BLOCK_BRANCH_THEN,
-	BLOCK_BRANCH_ELSE
-} blk_type_t;
-
-
-extern const char *blk_type_str[];
+	NODE_GENERIC,
+	NODE_LOOP_HEADER,
+	NODE_LOOP_FOOTER,
+	NODE_BRANCH_HEADER,
+	NODE_BRANCH_THEN,
+	NODE_BRANCH_ELSE
+} cfg_node_label;
 
 
 typedef enum {
@@ -343,130 +300,189 @@ typedef enum {
 	EDGE_IND,
 	EDGE_CALLRET,
 	EDGE_INIT
-} blk_edge_type_t;
+} cfg_edge_label;
 
 
 typedef enum {
 	EDGE_NEXT,
 	EDGE_BACK
-} blk_edge_dir_t;
+} cfg_edge_dir;
 
 
-// typedef enum {
-// 	SPLIT_FIRST,
-// 	SPLIT_LAST
-// } blk_split_mode_t;
+typedef enum {
+	SPLIT_FIRST,
+	SPLIT_LAST
+} blk_split_mode;
 
 
 struct block {
-	blk_type_t type;                /// LOOP HEADER, LOOP FOOTER, etc...
+	fun_t *function;
 
-	isn_t *begin_instr;             /// The first instruction of this block
-	isn_t *end_instr;               /// The last instruction of this block
-
-	// Presets-related fields
-	void *smtracer;
+	cfg_node_label label;           /// LOOP HEADER, LOOP FOOTER, etc...
 
 	size_t length;                  /// The number of instructions that make up this block
+	list_range_t instructions;      /// The range of instructions that make up this block
 
-	// An instruction chain is maintained for each object file version
-	blk_t *next;                    /// Previous block in the chain
-	blk_t *prev;                    /// Next block in the chain
+	graph_node_t *cfgnode;          /// The CFG node in the parent function
+	list_node_t *node;
 };
 
 
 typedef enum {
 	INSTR_MNEMONIC,
 	INSTR_RAWBYTES,
-} isn_input_type_t;
-
-
-typedef enum {
-	INSERT_BEFORE,
-	INSERT_AFTER,
-} isn_insert_mode_t;
+} isn_input_type;
 
 
 struct instruction {
+	blk_t *block;
 	addr_t offset;                  /// The offset from the beginning of the section
 	                                /// at which this instruction can be found
 
-	// Architecture-independent information
-	unsigned char mnemonic[32];     /// Textual representation of the instruction
-	unsigned char instruction[32];  /// Raw bytes of the instruction
-	unsigned long long flags;       /// MEMORY, ALGEBRIC, LOGIC, STACK, etc...
-	unsigned int length;            /// Length in bytes
+	unsigned long type;             /// MEMORY, ALGEBRIC, LOGIC, STACK, etc...
+	size_t length;                  /// Length in bytes
 
-	union {                         /// Architecture-specific information
-		// isn_info_specific_x86 x86;
-		// isn_info_specific_arm arm;
-	} arch;
+	char mnemonic[32];              /// Textual representation of the instruction
+	unsigned char bytes[32];        /// Raw bytes of the instruction
 
-	struct {                        /// Jump-table for this instruction
-		size_t fanout;                /// Number of detected destinations
-		list_t /* <isn_t> */ instr;   /// List of detected destination instructions
+	// union {                         /// Architecture-specific information
+	// 	isn_specific_x86 x86;
+	// 	isn_specific_arm arm;
+	// } arch;
+
+	union {                         /// Reachable destinations...
+		list_t jumptable;             /// ...if the instruction is a jump
+		list_t calltable;             /// ...if the instruction is a call
 	} to;
 
-	struct {                        /// Inverse jump-table for this instruction
-		size_t fanin;                 /// Number of detected sources
-		list_t /* <isn_t> */ instr;   /// List of detected source instructions
+	struct {                        /// Reachable sources...
+		list_t jumptable;             /// ...which are jump instructions
+		list_t calltable;             /// ...which are call instructions
 	} from;
 
 	union {                         /// Relocations associated to this instruction...
-		list_t /* <rel_t> */ source;  /// ...when the instruction owns the relocation
-		list_t /* <rel_t> */ dest;    /// ...when the relocation refers to the instruction
+		list_t in;                    /// ...when the relocation applies to the instruction
+		list_t to;                    /// ...when the relocation refers to the instruction
 	} rel;
 
-	// An instruction chain is maintained for each object file version
-	isn_t *prev;                    /// Previous instruction in the chain
-	isn_t *next;                    /// Next instruction in the chain
+	list_node_t *node;
 };
 
 
-#define foreach_function_block(function, block) \
-	for (block = function->begin_block; \
-	     block != function->end_block->next; \
-	     block = block->next)
-
-
-#define foreach_function_instr(function, instr) \
-	for (instr = function->begin_block->begin_instr; \
-	     instr != function->end_block->end->instr->next; \
-	     instr = instr->next)
-
-
-#define foreach_block_instr(block, instr) \
-	for (instr = block->begin_instr; \
-	     instr != block->end_instr->next; \
-	     instr = instr->next)
-
-
-fun_t *function_create(const char *name, isn_t *begin, isn_t *end);
+fun_t *function_insert(const char *name, list_range_t instructions,
+                       sec_t *section, sym_t *symbol);
 
 
 void function_remove(fun_t *function);
 
 
-// fun_t *function_find(fun_t *match);
+fun_t *function_find_byaddr(addr_t address, sec_t *section);
 
 
-// fun_t *function_find_byname(const char *name);
+fun_t *function_find_byname(const char *name);
 
 
-// fun_t *function_find_byblock(blk_t *block);
+blk_t *block_find_byaddr(addr_t address, fun_t *function);
 
 
-// fun_t *function_find_byinstr(isn_t *instr);
+list_range_t instr_insert(const unsigned char *input, isn_input_type type,
+                          isn_t *pivot, list_insert_mode mode);
 
 
-// blk_t *block_find_byinstr(isn_t *instr);
+void instr_remove(list_range_t instructions);
 
 
-isn_t *instr_insert(const unsigned char *input, isn_input_type_t type,
-                    isn_t *pivot, isn_insert_mode_t where);
+list_range_t instr_replace(const unsigned char *input, isn_input_type type,
+                           list_range_t instructions);
 
 
-void instr_remove(isn_t *from, isn_t *to);
+isn_t *instr_find_byaddr(addr_t address, fun_t *function);
+
+
+#define foreach_function_block(function, node)\
+	for (node = function_first_block(function)->node;\
+	     node != function_last_block(function)->node->next;\
+	     node = node->next) \
+
+
+#define foreach_block_instr(function, node)\
+	for (node = block_first_instr(function)->node;\
+	     node != block_last_instr(function)->node->next;\
+	     node = node->next)
+
+
+#define foreach_function_instr(function, node)\
+	for (node = function_first_instr(function)->node;\
+	     node != function_last_instr(function)->node->next;\
+	     node = node->next)
+
+
+__strong_inline__ blk_t *function_first_block(fun_t *function) {
+	if (function == NULL || !range_valid(function->blocks)) {
+		hinternal();
+	}
+
+	return function->blocks.first->elem;
+}
+
+
+__strong_inline__ blk_t *function_last_block(fun_t *function) {
+	if (function == NULL || !range_valid(function->blocks)) {
+		hinternal();
+	}
+
+	return function->blocks.first->elem;
+}
+
+
+__strong_inline__ isn_t *block_first_instr(blk_t *block) {
+	if (block == NULL || !range_valid(block->instructions)) {
+		hinternal();
+	}
+
+	return block->instructions.first->elem;
+}
+
+
+__strong_inline__ isn_t *block_last_instr(blk_t *block) {
+	if (block == NULL || !range_valid(block->instructions)) {
+		hinternal();
+	}
+
+	return block->instructions.last->elem;
+}
+
+
+__strong_inline__ isn_t *function_first_instr(fun_t *function) {
+	return block_first_instr(function_first_block(function));
+}
+
+
+__strong_inline__ isn_t *function_last_instr(fun_t *function) {
+	return block_last_instr(function_last_block(function));
+}
+
+
+__strong_inline__ fun_t *function_find_byinstr(isn_t *instr, sec_t *section) {
+	if (instr == NULL) {
+		hinternal();
+	}
+
+	// TODO: instr->block->function
+
+	return function_find_byaddr(instr->offset, section);
+}
+
+
+__strong_inline__ blk_t *block_find_byinstr(isn_t *instr, fun_t *function) {
+	if (instr == NULL) {
+		hinternal();
+	}
+
+	// TODO: instr->block
+
+	return block_find_byaddr(instr->offset, function);
+}
 
 
 #endif /* _IBR_H */

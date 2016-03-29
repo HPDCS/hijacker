@@ -38,14 +38,23 @@
 /// presence of compiling optimization flags.
 /// Rule of thumb: use a strong_inline function when you
 /// are tempted to use a parametrized macro.
-#define strong_inline inline __attribute__((always_inline))
+#define __strong_inline__ inline __attribute__((always_inline))
 
 
 /// A function which is inlined only when optimizations
 /// are requested prior to compilation.
 /// Rule of thumb: use a weak_inline function when you want
 /// a regular C inline function.
-#define weak_inline inline
+#define __weak_inline__ inline
+
+
+/// A function which is blind is a function that doesn't
+/// check the cross-consistency of its parameters w.r.t.
+/// some external criterion.
+/// Be very careful when using these functions, as an
+/// incorrect usage will almost certainly lead to bugs which
+/// are difficult to trace back.
+#define __blind__
 
 
 /************************************************************

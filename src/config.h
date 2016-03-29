@@ -55,10 +55,10 @@ extern configuration config;
 
 
 /// Easy access to program fields
-#define PROGRAM(field) (config.program.field)
+#define __PROGRAM__(field) (config.program.field)
 
 /// Easy access to current version fields
-#define VERSION(field) (PROGRAM(cversion)->field)
+#define __VERSION__(field) (__PROGRAM__(version)->field)
 
 /// Default output name
 #define DEFAULT_OUT_NAME "hijacked.o"

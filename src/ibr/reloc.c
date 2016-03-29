@@ -24,12 +24,7 @@
 */
 
 
-const char *rel_type_str[] = {
-	"PCREL_32", "PCREL_64", "TLSREL_32", "ABS_32", "ABS_32S", "ABS_64",
-};
-
-
-rel_t *reloc_create(rel_type_t type, sec_t *section, addr_t offset,
+rel_t *reloc_insert(unsigned long type, sec_t *section, addr_t offset,
                     sym_t *symbol, off_t addend) {
 	rel_t *reloc;
 
@@ -48,31 +43,18 @@ rel_t *reloc_create(rel_type_t type, sec_t *section, addr_t offset,
 	reloc->to.addend = addend;
 
 	// Insert the descriptor into the relocation chain
-	first = &VERSION(relocations).first;
-	last = &VERSION(relocations).last;
-
-	if (*first == NULL) {
-		// Initialize the list
-		*first = reloc;
-	}
-	else if (*first != *last) {
-		// Append to the end of the list
-		reloc->prev = *last;
-		(*last)->next = reloc;
-	}
-
-	*last = reloc;
+	reloc->node = list_push_last(&__VERSION__(relocs), reloc);
 
 	return reloc;
 }
 
 
-rel_t *reloc_isn_to_sym(rel_type_t type, isn_t *instr,
+rel_t *reloc_isn_to_sym(unsigned long type, isn_t *instr,
                         sym_t *symbol, off_t addend) {
 	rel_t *reloc;
 	sec_t *section;
 
-	if (instr == NULL) {
+	if (!instr) {
 		hinternal();
 	}
 
@@ -80,24 +62,26 @@ rel_t *reloc_isn_to_sym(rel_type_t type, isn_t *instr,
 	section = section_find_frominstr(instr);
 
 	// Create generic relocation and link it to the instruction
-	reloc = reloc_create(type, section, instr->offset, symbol, addend);
+	reloc = reloc_insert(type, section, instr->offset, symbol, addend);
 	reloc->in.instr = instr;
+
+	// NOTE: The addend is correctly set in `reloc_insert` by
+	// passing the appropriate type
 
 	// Add relocation to the list of relocations owned by the passed
 	// instruction
-	list_push(&instr->rel.source, reloc);
+	list_push_last(&instr->rel.source, reloc);
 
 	return reloc;
 }
 
 
-
-rel_t *reloc_sec_to_isn(rel_type_t type, sec_t *section, addr_t offset,
+rel_t *reloc_sec_to_isn(unsigned long type, sec_t *section, addr_t offset,
                         isn_t *instr) {
 	rel_t *reloc;
 	sec_t *symbol_sec;
 
-	if (instr == NULL) {
+	if (!instr) {
 		hinternal();
 	}
 
@@ -105,12 +89,89 @@ rel_t *reloc_sec_to_isn(rel_type_t type, sec_t *section, addr_t offset,
 	symbol_sec = section_find_frominstr(instr);
 
 	// Create generic relocation and link it to the instruction
-	reloc = reloc_create(type, section, offset, symbol_sec->symbol, addend);
+	reloc = reloc_insert(type, section, offset, symbol_sec->symbol, addend);
 	reloc->to.instr = instr;
 
 	// Add relocation to the list of relocations which refer to the passed
 	// instruction
-	list_push(&instr->rel.dest, reloc);
+	list_push_last(&instr->rel.dest, reloc);
 
 	return reloc;
 }
+
+
+rel_t *reloc_remove(rel_t *reloc) {
+	isn_t *instr;
+
+	list_node_t *node;
+
+	if (!reloc) {
+		// FIXME: In principle, we could just return from the function
+		hinternal();
+	}
+
+	// Remove the descriptor from the relocation chain
+	list_remove(&__VERSION__(relocs), reloc->node);
+
+	// Remove the node stored in the instruction's local list
+	// of source relocations
+	if ((instr = reloc->in.instr)) {
+		node = list_find(instr->rel.source, reloc);
+
+		if (!node) {
+			hinternal();
+		}
+
+		list_remove(instr->rel.source, node);
+	}
+
+	// Remove the node stored in the instruction's local list
+	// of destination relocations
+	if ((instr = reloc->to.instr)) {
+		node = list_find(instr->rel.dest, reloc);
+
+		if (!node) {
+			hinternal();
+		}
+
+		list_remove(instr->rel.dest, node);
+	}
+
+	// TODO: Remove the instruction which uses the relocation
+
+	// Deallocate the descriptor, which is no longer valid
+	free(reloc);
+}
+
+
+rel_t *reloc_find_bysymbol(sym_t *symbol, sec_t *section) {
+	static list_node_t *current;
+	static sym_t *to;
+	static sec_t *in;
+
+	list_node_t *node;
+	rel_t *reloc;
+
+	if (!symbol || !section) {
+		hinternal();
+	}
+
+	if (symbol != to || section != in) {
+		symbol = to;
+		section = in;
+		current = list_first(&section->relocs);
+	}
+
+	while (current) {
+		reloc = current->elem;
+
+		if (reloc->to.symbol == to) {
+			return reloc;
+		}
+
+		current = current->next;
+	}
+
+	return NULL;
+}
+

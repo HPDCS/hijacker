@@ -33,7 +33,7 @@
 #include <instruction.h>
 
 #include <x86/x86.h>
-#include <elf/handle-elf.h> // [SE] TODO: creare un multiplexer per creare entry di rilocazione
+#include <elf/handle-elf.h>
 
 
 #define MAX_LOOKBEHIND		10 // [SE] Used while reverse-parsing instruction to resolve jump tables
@@ -91,10 +91,11 @@ static size_t instr_disassemble(isn_t *instr, isa_family_t isa,
 }
 
 /**
- * Inserts one or more instructions into the instruction chain
- * relative to the position of another, already-existing instruction.
+ * Inserts one or more instructions into the instruction chain,
+ * relative to the position of another already-existing instruction,
+ * and returns a range of newly-inserted instruction descriptors.
  *
- * Observe that this function allocates a new instruction descriptor
+ * Observe that this function allocates new instruction descriptors
  * in dynamic memory.
  *
  * @param  input Pointer to the input representation of the
@@ -102,49 +103,66 @@ static size_t instr_disassemble(isn_t *instr, isa_family_t isa,
  * @param  type  Type of the input representation (i.e., mnemonic
  *               string or raw byte sequence).
  * @param  pivot Pointer to the instruction descriptor used as
- *               reference for the insertion.
- * @param  where Where the instruction will be inserted, relative
+ *               reference for the insertion. If NULL, it is
+ *               inserted at the beginning of at the end of
+ *               the chain, depending on the value of `mode`.
+ * @param  mode  Where the instructions will be inserted, relative
  *               to the pivot (i.e., before or after the pivot).
  *
- * @return       Pointer to the new pivot: if inserted before the
- *               old pivot, the new pivot is the first instruction
- *               from the input; else, it is the last instruction.
- *               If the input representation is an empty sequence
- *               of instructions, NULL is returned.
+ * @return       Inclusive range of newly-inserted instruction
+ *               descriptors; if the input representation is an
+ *               empty sequence, the range is NULL-delimited on
+ *               both sides.
  */
-isn_t *instr_insert(const unsigned char *input, isn_input_type_t type,
-                    isn_t *pivot, isn_insert_mode_t where) {
-	isn_t *instr, *prev;
-	size_t consumed;
+list_range_t instr_insert(const unsigned char *input, isn_input_type type,
+                          isn_t *pivot, list_insert_mode mode) {
+	isn_t *instr, *prev, *newpivot, *first, *last;
 
-	if (input == NULL || pivot == NULL) {
+	if (!input) {
 		hinternal();
 	}
+
+	// TODO: Update instruction addresses: since we are adding
+	// new instructions, the shift amount is equal to their size
+	// TODO: Update parent function symbol size
+	// TODO: Update virtual reference
 
 	// If we wish to insert before the pivot, the first instruction
 	// is inserted backwards and the remaining instructions forwards.
 	// If we want to insert after, we simply decouple the first
 	// forward insertion from the other ones.
 	// This is done to simplify the remaining logic of this function.
-	pivot = instr_insert_single(&input, type, pivot, where);
+	newpivot = instr_insert_single(&input, type, pivot, mode);
 
 	// Insert the remaining instructions into the chain (notice that
-	// the `INSERT_AFTER` policy is enforced at this point)
+	// the `INSERT_AFTER` policy can be enforced at this point)
 	prev = NULL;
-	instr = pivot;
+	instr = newpivot;
 
-	while (instr != NULL) {
+	while (instr) {
 		prev = instr;
 		instr = instr_insert_single(&input, type, instr, INSERT_AFTER);
 	}
 
 	// By now, `prev` points to the latest inserted instruction, or
 	// it is NULL if the first insertion has failed
-	if (where == INSERT_AFTER) {
-		pivot = prev;
+	if (mode == INSERT_AFTER) {
+		newpivot = prev;
 	}
 
-	return pivot;
+	if (!newpivot) {
+		return range(NULL, NULL);
+	}
+
+	if (mode == INSERT_AFTER) {
+		first = pivot->node->next;
+		last = newpivot->node;
+	} else {
+		first = newpivot->node;
+		last = pivot->node->prev;
+	}
+
+	return range(first, last);
 }
 
 
@@ -159,30 +177,33 @@ isn_t *instr_insert(const unsigned char *input, isn_input_type_t type,
  *
  * To simplify the logic of `instr_insert`, this function performs
  * a side-effect on its first argument. Specifically, the pointer
- * to the input representation will advance of a number of bytes
+ * to the input representation will advance by a number of bytes
  * which is equivalent to those that were consumed in the latest
  * invocation. As a result, upon multiple calls to this function,
  * the first argument will always point to the next instruction
  * to parse, or to the end of the sequence if there is no other
  * instruction to insert.
  *
- * @param  input Double pointer to the input representation of the
- *               instruction.
+ * @param  input Double pointer to the input representation of
+ *               the instruction.
  * @param  type  Type of the input representation (i.e., mnemonic
  *               string or raw byte sequence).
  * @param  pivot Pointer to the instruction descriptor used as
- *               reference for the insertion.
- * @param  where Where the instruction will be inserted, relative
+ *               reference for the insertion. If NULL, it is
+ *               inserted at the beginning of at the end of
+ *               the chain, depending on the value of `mode`.
+ * @param  mode  Where the instruction will be inserted, relative
  *               to the pivot (i.e., before or after the pivot).
  *
  * @return       Pointer to the newly-inserted instruction, or
  *               NULL if the input representation is an empty
  *               sequence of instructions.
  */
-static isn_t *instr_insert_single(const unsigned char **input, isn_input_type_t type,
-                                  isn_t *pivot, isn_insert_mode_t where) {
+static isn_t *instr_insert_single(const unsigned char **input, isn_input_type type,
+                                  isn_t *pivot, list_insert_mode mode) {
+	isn_t *instr;
+
 	size_t consumed;
-	isn_t *instr, **first, **last;
 
 	// Make room for a new instruction descriptor
 	instr = hcalloc(sizeof(isn_t));
@@ -205,38 +226,13 @@ static isn_t *instr_insert_single(const unsigned char **input, isn_input_type_t 
 	// Update the input pointer according to the consumed bytes
 	*input += consumed;
 
-	// Insert the descriptor into the instruction chain, according
-	// to the desired insertion mode
-	first = &VERSION(instructions).first;
-	last = &VERSION(instructions).last;
+	// Insert the descriptor into the instruction chain
+	instr->node = list_insert(&__VERSION__(instructions), instr, pivot->node, mode);
 
-	if (where == INSERT_AFTER) {
-		instr->next = pivot->next;
-
-		if (pivot->next != NULL) {
-			pivot->next->prev = instr;
-		} else {
-			*last = instr;
-		}
-
-		instr->prev = pivot;
-		pivot->next = instr;
-	}
-
-	else if (where == INSERT_BEFORE) {
-		instr->prev = pivot->prev;
-
-		if (pivot->prev != NULL) {
-			pivot->prev->next = instr;
-		} else {
-			*first = instr;
-		}
-
-		instr->next = pivot;
-		pivot->prev = instr;
-	}
-
-	// TODO: Handle the case of block boundaries.
+	// TODO: Handle the case of block boundaries
+	// 1. Find pivot's block
+	// 2. If jump or call, split at it
+	// 3. Merge to current block otherwise
 
 	return instr;
 }
@@ -252,32 +248,36 @@ static isn_t *instr_insert_single(const unsigned char **input, isn_input_type_t 
  * descriptors, therefore they will be no longer valid upon
  * returning from this function.
  *
- * @param from Pointer to the first instruction descriptor in
- *             the range to remove.
- * @param to   Pointer to the last instruction descriptor in
- *             the range to remove.
+ * @param instructions Range of instruction descriptors to remove.
  */
-void instr_remove(isn_t *from, isn_t *to) {
-	isn_t *instr, *to_next, *next;
+void instr_remove(list_range_t instructions) {
+	isn_t *instr;
 
-	if (from == NULL || to == NULL) {
-		// FIXME: In principle, we could just return from the function
+	if (instructions.first == NULL || instructions.last == NULL) {
 		hinternal();
 	}
 
-	// TODO: Check that `to` comes after `from`
+	// TODO: Check that `last` comes after `first`
+	// TODO: What to do with other ranges pointing to removed
+	// instructions?
+	// TODO: Update instruction addresses: since we are removing
+	// instructions, the shift amount is equal to their size * -1
+	// TODO: Update parent function symbol size
 
-	// Pointers to next instructions need to be saved prior to
-	// removing the current instructions, otherwise we reference
-	// freed memory!
-	to_next = to->next;
-	instr = from;
+	// At each invocation of the list range removal function,
+	// the next instruction to remove is returned
+	do {
+		instr = list_remove_range(&__VERSION__(instructions), instructions);
 
-	while (instr != to_next) {
-		next = instr->next;
+		// If no more elements are left in the range, just return
+		if (!instr) {
+			return;
+		}
+
+		// Otherwise, we can remove the instruction descriptor which
+		// was held by the removed list node
 		instr_remove_single(instr);
-		instr = next;
-	}
+	} while(true);
 }
 
 
@@ -291,20 +291,6 @@ void instr_remove(isn_t *from, isn_t *to) {
  * @param instr Pointer to the instruction descriptor to remove.
  */
 static void instr_remove_single(isn_t *instr) {
-	first = &VERSION(instructions).first;
-	last = &VERSION(instructions).last;
-
-	if (instr->prev != NULL) {
-		instr->prev->next = instr->next;
-	} else {
-		*first = instr->next;
-	}
-
-	if (instr->next != NULL) {
-		instr->next->prev = instr->prev;
-	} else {
-		*last = instr->prev;
-	}
 
 	// TODO: Handle the case of block boundaries
 	// TODO: Remove all relocations referring to this instruction
@@ -318,334 +304,68 @@ static void instr_remove_single(isn_t *instr) {
  * Replaces one or more existing instructions in the chain with
  * one or more instructions.
  *
- * @param  input Pointer to the input representation of the
- *               instruction.
- * @param  type  Type of the input representation (i.e., mnemonic
- *               string or raw byte sequence).
- * @param  from  Pointer to the first instruction descriptor in
- *               the range to remove.
- * @param  to    Pointer to the last instruction descriptor in
- *               the range to remove.
- * @param  last  Double pointer to the last inserted instruction.
- * @return       Pointer to the first instruction from the input.
- *               If the input representation is an empty sequence
- *               of instructions, NULL is returned.
+ * Observe that this function removes the passed range of
+ * instructions even if there's no replacement.
+ *
+ * @param  input        Pointer to the input representation of the
+ *                      instruction.
+ * @param  type         Type of the input representation (i.e., mnemonic
+ *                      string or raw byte sequence).
+ * @param  instructions Range of instruction descriptors to remove.
+ *
+ * @return              Inclusive range of newly-inserted instruction
+ *                      descriptors; if the input representation is an
+ *                      empty sequence, the range is NULL-delimited on
+ *                      both sides.
  */
-isn_t *instr_replace(const unsigned char *input, isn_input_type_t type,
-                     instr *from, instr *to, instr **last) {
+list_range_t instr_replace(const unsigned char *input, isn_input_type type,
+                           list_range_t instructions) {
+	list_range_t range;
+
+	if (!range_valid(instructions)) {
+		hinternal();
+	}
+
+	// This is as simple as performing an insertion and then
+	// a removal
+	range = instr_insert(input, type, instructions.first, INSERT_BEFORE);
+	instr_remove(instructions);
+
+	// It can be NULL if we tried to insert an empty sequence of
+	// instructions, but this doesn't influence removal
+	return range;
+}
+
+
+isn_t *instr_find_byaddr(addr_t address, fun_t *function) {
+	list_node_t *node;
+	blk_t *block, *prev;
 	isn_t *instr;
 
-	instr = instr_insert(input, type, from, INSERT_BEFORE);
-
-	if (last != NULL) {
-		*last = from->prev;
+	if (!function) {
+		hinternal();
 	}
 
-	instr_remove(from, to);
+	list_for_each(&function->blocks, node) {
+		block = node->elem;
 
-	return instr;
-}
-
-
-/**
- * Seeks the instruction descriptor associated with a given instruction address
- * (either original or new) in the entire program or within a desired function.
- *
- * @param func Pointer to the function descriptor that contains the instruction,
- * or <em>NULL</em> to search throughout the entire program.
- * @param addr Address of the instruction to be found.
- * @param type Integer constant representing which type of address has been
- * passed through the <em>addr</em> parameter.
- *
- * @return Pointer to the instruction descriptor found, if any, or <em>NULL</em>.
- *
- * @author Simone Economo
- */
-insn_info *find_insn(function *func, unsigned long long addr, insn_address_type type) {
-	insn_info *instr;
-
-	if (!func) {
-		func = PROGRAM(code);
-	}
-
-	while (func) {
-
-		if (func->next) {
-			if (func->next->begin_insn->orig_addr <= addr) {
-				func = func->next;
-				continue;
-			}
-			else if (func->next->begin_insn->new_addr <= addr) {
-				func = func->next;
-				continue;
-			}
+		if (block_first_instr(block)->offset > address) {
+			break;
 		}
 
-		instr = func->begin_insn;
-		while(instr) {
-			if (instr->orig_addr == addr && type == ORIG_ADDR) {
-				return instr;
-			}
-			else if (instr->new_addr == addr && type == NEW_ADDR) {
-				return instr;
-			}
-
-			instr = instr->next;
-		}
-
-		func = func->next;
+		prev = block;
 	}
 
-	return NULL;
-}
+	list_for_each(&block->instructions, node) {
+		instr = node->elem;
 
-insn_info *find_insn_cool(insn_info *head, unsigned long long addr) {
-	insn_info *instr;
-
-	for (instr = head; instr; instr = instr->next) {
-		if (instr->orig_addr <= addr
-		 && instr->orig_addr + instr->size > addr) {
+		if (instr->offset <= address
+		    && instr->offset + instr->length > address) {
 			return instr;
 		}
 	}
 
 	return NULL;
-}
-
-insn_info *find_last_insn(function *functions) {
-	function *func;
-	insn_info *instr;
-
-	func = functions;
-	while(func->next) {
-		func = func->next;
-	}
-
-	instr = func->begin_insn;
-	while(instr->next) {
-		instr = instr->next;
-	}
-
-	return instr;
-}
-
-
-// TODO: cambiare la funzione in modo da iterare sul numero di byte passati
-//		dovrebbe quindi restituire una catena già formata di istruzioni
-/**
- * Creates a new instruction node starting from an array of bytes which represents
- * its raw content.
- *
- * @author Davide Cingolani
- *
- * @param bytes The array of bytes representing the raw content of the instruction.
- * @param pos Pointer to an integer representing the current position within
- * the <em>bytes</em> stream.
- * @param final Pointer to a variable which holds the pointer to the descriptor
- * of the newly parsed instruction.
- */
- // TODO: definire statica di nuovo!!!
-void parse_instruction_bytes(unsigned char *bytes, unsigned long int *pos, insn_info **final) {
-	insn_info *instr;
-	int flags;
-
-	if(bytes == NULL || pos == NULL) {
-		hinternal();
-	}
-
-	flags = 0;
-
-	// parse the input bytes to correctly understand which instruction
-	// they represents
-	switch(PROGRAM(insn_set)) {
-	case X86_INSN:
-		if(ELF(is64)) {
-			flags |= DATA_64;
-			flags |= ADDR_64;
-		} else {
-			flags |= DATA_32;
-			flags |= ADDR_32;
-		}
-
-		instr = *final;
-
-		// Interprets the current binary code
-		x86_disassemble_instruction(bytes, pos, &instr->i.x86, flags);
-
-		hnotice(6, "%#08lx: %s (%d)\n", instr->i.x86.initial, instr->i.x86.mnemonic, instr->i.x86.opcode_size);
-
-		// Aligns the instruction descriptor metadata to the actual values
-		instr->flags = instr->i.x86.flags;
-		// [SE] TODO: Decommentando emerge un bug
-		// instr->new_addr = instr->orig_addr = instr->i.x86.initial;
-		instr->size = instr->i.x86.insn_size;
-		instr->opcode_size = instr->i.x86.opcode_size;
-
-		hnotice(5, "A new '%s' instruction is parsed (%d bytes)\n", instr->i.x86.mnemonic, instr->size);
-		hdump(6, "Raw bytes", instr->i.x86.insn, instr->size);
-
-		break;
-	}
-}
-
-
-/**
- * Links a newly created instruction descriptor to the intermediate representation,
- * before or after another descriptor.
- *
- * @param target Pointer to the instruction descriptor of the instruction
- * relative to which insertion will be performed.
- * @param instr Pointer to the newly created instruction descriptor.
- * @param mode Integer constant representing whether the instruction is inserted
- * before or after the target one.
- */
-static inline void insert_insn_at(insn_info *target, insn_info *instr, insn_insert_mode mode) {
-	// insn_info *pivot;
-	// function *func;
-
-	// TODO: debug
-	/*hprint("ISTRUZIONE: '%s' <%#08lx> -- op_size=%d, disp_off=%d, jump_dest=%d, size=%d\n", x86->mnemonic, x86->addr,
-			x86->opcode_size, x86->disp_offset, x86->jump_dest, x86->insn_size);*/
-
-	if (mode == INSERT_BEFORE) {
-		instr->next = target;
-		instr->prev = target->prev;
-
-		if (target->prev) {
-			target->prev->next = instr;
-		}
-
-		target->prev = instr;
-		// pivot = instr;
-	}
-	else if (mode == INSERT_AFTER) {
-		instr->next = target->next;
-		instr->prev = target;
-
-		if (target->next) {
-			target->next->prev = instr;
-		}
-
-		target->next = instr;
-		// pivot = target;
-	}
-
-	// Update instruction references
-	// since we are adding a new instruction, the shift amount
-	// is equal to the instruction's size
-	// update_instruction_addresses(pivot, instr->size);
-
-	//func = get_function(target);
-	//hnotice(4, "Inserted a new instruction node %s the instruction at offset <%#08lx> in function '%s'\n", mode == INSERT_AFTER ? "after" : "before", target->new_addr, func->symbol->name);
-}
-
-
-
-/**
- * Creates new instruction descriptors and adds them to the corresponding
- * instructions chain.
- *
- * @param target Pointer to the instruction descriptor relative to which the
- * insertion will be performed.
- * @param bytes Pointer to a buffer of bytes representing the instructions to add
- * in the machine-dependent format.
- * @param size Instructions length in byte (hence of the <em>bytes</em> parameter).
- * @param mode Integer constant representing whether the instruction is inserted
- * before, after or in place of the target one.
- * @param last Pointer to a variable which will hold the pointer to the descriptor
- * of the last newly inserted instruction.
- *
- * @return Number of newly inserted instructions.
- */
-int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size, insn_insert_mode mode, insn_info **last) {
-	insn_info *instr;
-	unsigned long int pos;
-	int count;
-
-	hnotice(4, "Inserting instructions from raw binary code (%zd bytes) %s the instruction at %#08llx\n",
-		size, mode == INSERT_BEFORE ? "before" : "after", target->orig_addr);
-	hdump(5, "Binary", binary, size);
-
-	// Pointer 'binary' may contains more than one instruction:
-	// in this case, the behavior is to convert the whole binary
-	// and add the relative instructions to the representation
-	pos = 0;
-	count = 0;
-
-	while(pos < size) {
-		// Packs the next instruction
-		instr = calloc(sizeof(insn_info), 1);
-
-		// Calls the disassembly procedure in order to correctly parse
-		// the instruction bytes passed as argument.
-		// This is a fundamental step to retrieve instruction's metadata,
-		// such as jump destination address, displacement offset, opcode size
-		// and so on.
-		// Without these information, future emit step will fail to correctly
-		// relocates and links jump instructions together.
-		parse_instruction_bytes(binary, &pos, &instr);
-
-		// Useful in order to be able to retrieve the section from
-		// the just added instruction
-		instr->orig_addr = instr->new_addr = target->new_addr;
-
-		// Adds the newly created instruction descriptor to the
-		// intermediate representation
-		insert_insn_at(target, instr, mode);
-
-		target = instr;
-		count++;
-	}
-
-	if (last) {
-		*last = instr;
-	}
-
-	hnotice(4, "Inserted %d instruction %s the target <%#08llx>\n",
-		count, mode == INSERT_BEFORE ? "before" : "after", target->new_addr);
-
-	return count;
-}
-
-
-/**
- * Substitutes one instruction with another.
- *
- * @param target Pointer to the target instruction descriptor to be replaced.
- * @param bytes Pointer to a buffer of bytes representing the new instruction in
- * the machine-dependent format.
- * @param size Instruction length in byte (hence of the <em>bytes</em> parameter).
- *
- * @return Number of newly inserted instructions.
- */
-int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size,insn_info **last) {
-	insn_info *instr;
-	unsigned long int pos = 0;
-	// unsigned int old_size;
-	int count;
-
-	hnotice(4, "Substituting target instruction at %#08llx with binary code\n", target->new_addr);
-	hdump(5, "Old instruction", target->i.x86.insn, target->size);
-	hdump(5, "Binary code", binary, size);
-
-	// First instruction met will substitute the current target,
-	// whereas the following ones have to be inserted just after it
-	pos = 0;
-	count = 1;
-	instr = target;
-
-	parse_instruction_bytes(binary, &pos, &instr);
-
-	// we have to update all the references
-	// delta shift should be the: d = (new size - old size) [signed, obviously]
-	// old_size = target->size;
-	// shift_instruction_addresses(instr, (size - old_size));
-
-	// count += insert_instructions_at(instr, binary + pos, size - pos, INSERT_AFTER, last);
-
-	hnotice(4, "Target instruction substituted with %d instructions\n", count);
-
-	return count;
 }
 
 
@@ -737,63 +457,6 @@ void add_jump_instruction(insn_info *target, unsigned char *name, insn_insert_mo
 	// create a new RELA entry
 	symbol_instr_rela_create(sym, *instr, RELOC_PCREL_32);
 }
-
-
-/**
- * Clones an instruction descriptor.
- *
- * @param insn Pointer to the instruction descriptor to clone.
-
- * @return Pointer to the clone instruction descriptor.
- */
-insn_info * clone_instruction (insn_info *instr) {
-	insn_info *clone;
-
-	clone = (insn_info *) calloc(sizeof(insn_info), 1);
-	if(!clone) {
-		herror(true, "Out of memory!\n");
-	}
-
-	memcpy(clone, instr, sizeof(insn_info));
-
-	clone->jumpto = NULL;
-	clone->targetof.first = clone->targetof.last = NULL;
-	clone->jumptable.size = 0;
-	clone->jumptable.entry = NULL;
-	clone->virtual = NULL;
-
-	return clone;
-}
-
-
-/**
- * Clones the list of instruction descriptors passed as parameter.
- *
- * @param insn Pointer to the first instruction descriptor of the list that
- * will be cloned.
- *
- * @return Pointer to the first instruction descriptor of the clone list.
- */
-insn_info * clone_instruction_list (insn_info *instr) {
-	insn_info *clone, *head;
-
-	if(!instr)
-		return NULL;
-
-	head = clone = clone_instruction(instr);
-	clone->prev = NULL;
-	instr = instr->next;
-
-	while(instr) {
-		clone->next = clone_instruction(instr);
-		clone->next->prev = clone;
-		clone = clone->next;
-		instr = instr->next;
-	}
-
-	return head;
-}
-
 
 
 /**
@@ -1666,40 +1329,3 @@ void update_jump_displacements(int version) {
 	}
 }
 
-
-
-/**
- * Substitutes one instruction with another.
- * This function substitutes the instruction pointed to by the <em>target</em> instruction descriptor with
- * the bytes passed as argument as well. After new instruction is swapped, all the others are accordingly shifted to
- * the relative offset (positive or negative) introduced by the difference between the two sizes.
- * Note: This function will call the disassembly procedure in order to correctly parse the instruction bytes passed as
- * argument. This is a fundamental step to retrieve instruction's metadata, such as jump destination address,
- * displacement offset, opcode size and so on. Without these information future emit step will fail to correctly
- * relocates and links jump instructions together.
- *
- * @param target Target instruction's descriptor pointer.
- * @param insn Pointer to the descriptor of the instruction to substitute with.
- */
-// static void substitute_insn_with(insn_info *target, insn_info *instr) {
-
-// 	// we have to update all the references
-// 	// delta shift should be the: d = (old size - the new one) [signed, obviously]
-
-// 	// Copy addresses
-// 	instr->orig_addr = target->orig_addr;
-// 	instr->new_addr = target->new_addr;
-
-// 	// Update references
-// 	instr->prev = target->prev;
-// 	instr->next = target->next;
-// 	if(target->prev)
-// 		target->prev->next = instr;
-// 	if(target->next)
-// 		target->next->prev = instr;
-
-// 	// update_instruction_addresses(instr, (instr->size - target->size));
-
-// 	//func = get_function(target);
-// 	//hnotice(4, "Substituting instruction at address <%#08lx> in function '%s'\n", target->orig_addr, func->symbol->name);
-// }
