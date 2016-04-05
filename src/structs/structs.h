@@ -42,32 +42,36 @@ typedef struct list_node {
 
 
 typedef struct list_range {
+	size_t size;
 	list_node_t *first;
 	list_node_t *last;
 } list_range_t;
 
 
 typedef struct list {
+	size_t size;
 	list_node_t *first;
 	list_node_t *last;
-	size_t size;
 } list_t;
 
 
 typedef enum {
-	INSERT_BEFORE,
-	INSERT_AFTER
+	LIST_INSERT_BEFORE,
+	LIST_INSERT_AFTER
 } list_insert_mode;
 
 
 __blind__ list_node_t *list_insert(list_t *list, void *elem, list_node_t *pivot,
                                    list_insert_mode mode);
 
+__blind__ list_range_t *list_insert_many(list_t *list, list_t *nodes,
+                                         list_node_t *pivot, list_insert_mode mode);
+
 
 __blind__ void *list_remove(list_t *list, list_node_t *node);
 
 
-__blind__ void *list_remove_range(list_t *list, list_range_t range);
+__blind__ void *list_remove_many(list_t *list, list_t *nodes);
 
 
 list_node_t *list_find(list_t *list, void *elem);
@@ -81,6 +85,12 @@ list_node_t *list_find(list_t *list, void *elem);
 	     node = node->next)
 
 
+__strong_inline__ void list_init(list_t *list) {
+	list_t zero = { 0, NULL, NULL};
+	*list = zero;
+}
+
+
 __strong_inline__ list_range_t range(list_node_t *from, list_node_t *to) {
 	// if (from == NULL || to == NULL) {
 	// 	hinternal();
@@ -91,8 +101,51 @@ __strong_inline__ list_range_t range(list_node_t *from, list_node_t *to) {
 }
 
 
-__strong_inline__ bool range_valid(list_range_t range) {
-	return (range.first && range.last);
+__strong_inline__ bool range_is_valid(list_range_t *range) {
+	return (range && range->first && range->last);
+}
+
+
+__weak_inline__ void range_insert(list_range_t *range, list_node_t *pivot,
+                                  list_node_t *node, list_insert_mode mode) {
+	if (!range || !node) {
+		hinternal();
+	}
+
+	if (range->first == pivot) {
+		if (!pivot || pivot && mode == INSERT_BEFORE) {
+			range->first == node;
+		}
+	}
+
+	if (range->last == pivot) {
+		if (!pivot || pivot && mode == INSERT_AFTER) {
+			range->last == node;
+		}
+	}
+}
+
+
+__weak_inline__ void range_remove(list_range_t *range, list_node_t *node) {
+	if (!range || !node) {
+		hinternal();
+	}
+
+	if (range->first == node) {
+		range->first == node->next;
+	}
+
+	if (range->last == pivot) {
+		range->last == node->prev;
+	}
+}
+
+__strong_inline__ bool list_is_empty(list_t *list) {
+	if (!list) {
+		hinternal();
+	}
+
+	return (list->size == 0);
 }
 
 
@@ -134,15 +187,6 @@ __weak_inline__ void list_swap(list_t *from, list_t *to) {
 
 	to->last = from->last;
 	from->last = NULL;
-}
-
-
-__strong_inline__ bool list_empty(list_t *list) {
-	if (!list) {
-		hinternal();
-	}
-
-	return (list->size == 0);
 }
 
 

@@ -24,32 +24,32 @@
 */
 
 
-static __strong_inline__ char *rename(const char *original) {
-	return strconcat(original, "_", __VERSION__(name));
+static __strong_inline__ char *version_rename(const char *original) {
+	return str_concat(original, "_", __VERSION__(name));
 }
 
 
-static __strong_inline__ sec_t *section_clone(sec_t *section, sym_t *symbol) {
+static __weak_inline__ sec_t *section_clone(sec_t *section, sym_t *symbol) {
 	sec_t *clone;
 
-	clone = section_insert(rename(section->name), section->type,
+	clone = section_insert(version_rename(section->name), section->type,
 		section->flags, section->payload, symbol);
 
 	return clone;
 }
 
 
-static __strong_inline__ sym_t *symbol_clone(sym_t *symbol) {
+static __weak_inline__ sym_t *symbol_clone(sym_t *symbol) {
 	sym_t *clone;
 
-	clone = symbol_insert(rename(symbol->name), symbol->type,
+	clone = symbol_insert(version_rename(symbol->name), symbol->type,
 		symbol->flags, symbol->payload);
 
 	return clone;
 }
 
 
-static __strong_inline__ rel_t *reloc_clone(rel_t *reloc, sec_t *section, sym_t *symbol) {
+static __weak_inline__ rel_t *reloc_clone(rel_t *reloc, sec_t *section, sym_t *symbol) {
 	rel_t *clone;
 
 	clone = reloc_insert(reloc->type, section, reloc->in.offset,
@@ -116,6 +116,21 @@ static void version_clone(ver_t *version) {
 }
 
 
+static void version_parse(ver_t *version) {
+	ver_t *current;
+
+	current = __PROGRAM__(version);
+
+	// Temporarily switch to new version
+	__PROGRAM__(version) = version;
+
+
+
+	// Restore previous version
+	__PROGRAM__(version) = current;
+}
+
+
 ver_t *version_create(const char *name) {
 	ver_t *version;
 
@@ -137,6 +152,8 @@ ver_t *version_create(const char *name) {
 	if (version->number != 0) {
 		version_clone(version);
 	}
+
+	version_parse(version);
 
 	return version;
 }

@@ -30,35 +30,28 @@
 #include <ibr.h>
 
 
-sec_t *section_insert(const char *name, unsigned long type, unsigned long flags,
-                      void *payload, sym_t *symbol) {
+sec_t *section_insert(unsigned long type, unsigned long flags, sym_t *symbol) {
 	sec_t *section;
-	sym_t *symbol;
 
 	static unsigned int id = 0;
 
-	// Make room for a new section descriptor
+	if (!symbol) {
+		hinternal();
+	}
+
+	// Populate the new section descriptor
 	section = hcalloc(sizeof(sec_t));
 
-	// Fill section descriptor fields
 	section->id = ++id;
 	section->type = type;
 	section->flags = flags;
-
-	// Insert the descriptor into the section chain
-	section->node = list_push_last(&__VERSION__(sections), section);
-
-	// If requested, create a new symbol, too
-	if (!symbol) {
-		// TODO: Specify symbol flags to insert
-		// TODO: Name must be valid
-		symbol = symbol_insert(name, SYMBOL_SECTION, 0L, section, payload);
-	}
-
 	section->symbol = symbol;
+
+	// Link section descriptor with section symbol descriptor in IBR
 	symbol->isa.section = section;
 
-	// TODO: Set section symbol size
+	// Insert descriptor in the section chain
+	section->node = list_push_last(&__VERSION__(sections), section);
 
 	return section;
 }
@@ -69,14 +62,14 @@ void *section_remove(sec_t *section) {
 		hinternal();
 	}
 
-	// Remove the descriptor from the section chain
+	// Remove descriptor from the section chain
 	list_remove(&__VERSION__(sections), section->node);
 
-	// TODO: Remove the symbol representing this section
+	// TODO: Remove section symbol
 	// TODO: Remove all symbols contained in this section
 	// TODO: Remove all functions contained in this section
 
-	// Deallocate the descriptor, which is no longer valid
+	// Deallocate section descriptor, which is no longer valid
 	free(section);
 }
 
@@ -94,32 +87,38 @@ sec_t *section_find_byname(const char *name) {
 }
 
 
-static void section_code_parse(sec_t *section) {
+static list_range_t section_code_parse(sec_t *section) {
 	isn_range_t instructions;
 
-	fun_t *function, *first;
-	isn_t *instr, *prev;
+	list_node_t *sym_node, *instr_node, *instr_node_last, *instr_node_first;
 
-	list_node_t *node;
+	fun_t *function;
+	isn_t *instr, *first, *last;
 	sym_t *symbol;
+
+	// FIXME: Doesn't work with overlapping functions!
 
 	// TODO: Link jump instructions!
 	// TODO: Parse relocations!
 
 	// All the instructions contained in the section are parsed
 	// at once thanks to our awesome API for instructions insertion!
-	instructions = instr_insert(section->symbol->bytes, INSTR_RAWBYTES, NULL, INSERT_BEFORE);
+	instructions = instr_parse(section->symbol->bytes, INSTR_RAWBYTES);
+
+	if (!range_valid(instructions)) {
+		return;
+	}
 
 	// We start a synchronous traversal of function symbols in
 	// this section and previously-parsed instructions, in order
 	// to create a range of functions that this section contains.
-	instr = prev = instructions.first;
+	instr_node = instr_node_first = instructions.first;
 
-	list_for_each(&__VERSION(symbols)__, node) {
+	list_for_each(&__VERSION(symbols)__, sym_node) {
 		// NOTE: Symbols are inserted in the order of their offsets
 		// This way, we can maintain a single function pointer which
 		// is guaranteed to contain the next breakpoint.
-		symbol = node->elem;
+		symbol = sym_node->elem;
 
 		if (symbol->type == SYMBOL_FUNCTION && symbol->section == section) {
 			// We apply an iterative region splitting algorithm which
@@ -137,28 +136,39 @@ static void section_code_parse(sec_t *section) {
 			// We keep navigating the instruction range until we find
 			// an instruction whose offset matches with the offset of
 			// the function symbol. In that case, the instruction
-			// becomes the first instruction of the function referred
-			// by the symbol.
-			while (instr && instr->offset <= symbol->offset) {
-				instr = instr->next;
+			// becomes the first instruction of the function.
+			while (instr_node != instructions.last->next) {
+
+				if (instr_node->elem->offset == symbol->offset) {
+					// FIXME: We check for equality, but strange things
+					// could happen with handwritten Assembly code (e.g.,
+					// obfuscated code), so this need to be double-checked.
+					break;
+				}
+
+				instr_node_last = instr_node;
+				instr_node = instr_node->next;
 			}
 
-			if (!instr || instr->offset != symbol->offset) {
-				// An instruction which matches with the offset criterion
+			if (instr_node == instructions.last->next) {
+				// An instruction which is located at the symbol offset
 				// must be found, otherwise we cannot proceed
 				hinternal();
 			}
 
 			// Create the new function and update the previous
 			// instruction pointer
-			function = function_insert(symbol->name, range(prev, instr));
+			function = function_insert(NULL,
+				range(instr_node_first, instr_node_last),
+				section, symbol);
 
-
-			prev = instr->next;
+			// The next first instruction is the one that comes
+			// after the current last
+			instr_node_first = instr_node;
 		}
 	}
 
-	section->has.functions = range(first, function);
+	return range(first, function);
 }
 
 

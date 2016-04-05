@@ -32,9 +32,8 @@
 #include <init.h>
 #include <utils.h>
 #include <config.h>
-// #include <options.h>
-// #include <prints.h>
-// #include <compile.h>
+#include <ibr.h>
+
 #include <rules/load-rules.h>
 #include <rules/apply-rules.h>
 
@@ -69,7 +68,7 @@ static void display_usage(char **argv) {
 	printf("\t-i <file>, --input <file>: Input file to process\n");
 	printf("\nADDITIONAL OPTIONS:\n");
 	printf("\t-p <path>, --path <path>: Injection path\n");
-	printf("\t-o <file>, --output <file>: Ouput file. If not set, default to '%s'\n", DEFAULT_OUT_NAME);
+	printf("\t-o <file>, --output <file>: Output file. If not set, default to '%s'\n", DEFAULT_OUT_NAME);
 	printf("\t-v[vv], --verbose=level: Verbose level. Any additional 'v' adds one level. \n");
 }
 
@@ -83,29 +82,28 @@ static void process_configuration(char **argv) {
 	hprint("Verbose mode active\n");
 
 	// Early check on input file
-	if(config.input_file == NULL) {
+	if (config.input_file == NULL) {
 		display_usage(argv);
 		herror(true, "Input file must be specified\n");
 	}
-	else if(!file_exists(config.input_file)) {
+	else if (!file_exists(config.input_file)) {
 		display_usage(argv);
 		herror(true, "Unable to find the requested input file\n");
 	}
 
 	// Early check on configuration file
-	if(config.rules_file == NULL) {
+	if (config.rules_file == NULL) {
 		display_usage(argv);
 		herror(true, "Configuration-rules file must be specified\n");
 	}
-	else if(!file_exists(config.rules_file)) {
+	else if (!file_exists(config.rules_file)) {
 		display_usage(argv);
 		herror(true, "Unable to find the requested configuration-rules file\n");
 	}
 
 	// Early check on output file
-	if(config.output_file == NULL) {
-		display_usage(argv);
-		herror(true, "Output file must be specified\n");
+	if (!config.output_file) {
+		config.output_file = "final.o";
 	}
 
 	// Load the configuration file
@@ -125,7 +123,7 @@ static bool parse_cmd_line(int argc, char **argv) {
 	int c;
 	int option_index;
 
-	if(argc < 3) {
+	if (argc < 3) {
 		display_usage(argv);
 		return false;
 	}
@@ -172,10 +170,6 @@ static bool parse_cmd_line(int argc, char **argv) {
 		}
 	}
 
-	if(!config.output_file) {
-		config.output_file = "final.o";
-	}
-
 	return true;
 }
 
@@ -199,14 +193,16 @@ static void register_presets(void) {
  * current working directory.
  */
 static void link_modules(void) {
-	hnotice(1, "Link additional modules in '%s' to the output instrumented file 'hijacked.o'\n", TEMP_PATH);
+	hnotice(1, "Link additional modules in '%s' to the output instrumented file\n",
+		TEMP_PATH);
 
-	// Step 1: link libhijacker
+	// Link libhijacker
 	link("__temp.o", "-r", "-L", LIBDIR, "-o", "__temp_libhijacked.o", "-lhijacker");
 
-	// Step 2: link other injected modules
-	if(file_exists("incremental.o")) {
-		link("__temp_libhijacked.o", "-r", "-L", LIBDIR, "incremental.o", "-o", config.output_file);
+	// Link other injected modules
+	if (file_exists("incremental.o")) {
+		link("__temp_libhijacked.o", "-r", "-L", LIBDIR,
+			"incremental.o", "-o", config.output_file);
 	} else {
 		rename("__temp_libhijacked.o", config.output_file);
 	}
@@ -214,6 +210,7 @@ static void link_modules(void) {
 	unlink("__temp.o");
 	unlink("__temp_libhijacked.o");
 	unlink("incremental.o");
+
 	hsuccess();
 }
 
@@ -222,27 +219,27 @@ int main(int argc, char **argv) {
 	// Welcome! :)
 	hhijacker();
 
-	// Parse configuration
+	// 1. Parse configuration
 	if(!parse_cmd_line(argc, argv)) {
 		exit(EXIT_FAILURE);
 	}
 
-	// Process the specified command-line configuration
+	// 2. Process the specified command-line configuration
 	process_configuration(argv);
 
-	// Register all the available presets
+	// 3. Register all the available presets
 	register_presets();
 
-	// Load executable and build a map in memory
-	load_program(config.input_file);
+	// 4. Load executable and build a map in memory
+	object_load(config.input_file);
 
-	// Process executable
+	// 5. Instrument executable
 	apply_rules();
 
-	// Write back executable
-	output_object_file("__temp.o");
+	// 6. Write back executable
+	object_write("__temp.o");
 
-	// Finalize the output file by linking the module
+	// 7. Finalize the output file by linking the module
 	link_modules();
 
 	hprint("File ELF written in '%s'\n", config.output_file);

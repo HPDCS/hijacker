@@ -79,24 +79,31 @@ static int function_compare(fun_t *a, fun_t *b, addr_t *address) {
 }
 
 
-fun_t *function_insert(const char *name, list_range_t instructions,
-                       sec_t *section, sym_t *symbol) {
+fun_t *function_insert(list_range_t *instructions, sym_t *symbol) {
 	fun_t *function;
+	ins_t *instr;
 
-	if (!range_valid(instructions)) {
+	list_node_t *node;
+
+	if (!range_valid(instructions) || !symbol) {
 		hinternal();
 	}
 
 	// TODO: Handle function aliases and overlapping functions
 
-	// Make room for a new function descriptor
+	// Populate the new function descriptor
 	function = hcalloc(sizeof(fun_t));
 
-	// Insert the descriptor into the function chain
+	function->symbol = symbol;
+
+	// Insert descriptor in the function chain
 	function->node = list_push_last(&__VERSION__(functions), function);
 
 	// Create a new FCG node
 	function->fcgnode = graph_insert(&__VERSION__(fcg), function, 0L);
+
+	// Create CFG for this function
+	function_parse(function, instructions);
 
 	// We maintain a balanced tree of functions for fast lookup
 	// bst_search_kernel kernel = {
@@ -106,17 +113,17 @@ fun_t *function_insert(const char *name, list_range_t instructions,
 
 	// bst_insert(&section->index.functions, function, &kernel);
 
-	// If requested, create a new symbol, too
-	if (!symbol) {
-		// TODO: Specify symbol flags to insert
-		// TODO: Name must be valid
-		symbol = symbol_insert(name, SYMBOL_FUNCTION, section, 0L);
+	// Update symbol size
+	list_for_each(&instructions, node) {
+		instr = node->elem;
+		symbol->size += instr->length;
 	}
 
-	function->symbol = symbol;
-	symbol->isa.function = function;
+	// Update section symbol size
+	symbol->section->symbol->size += symbol->size;
 
-	// TODO: Set symbol size
+	// Link function descriptor with function symbol descriptor in IBR
+	symbol->isa.function = function;
 
 	return function;
 }
@@ -127,17 +134,20 @@ void function_remove(fun_t *function) {
 		hinternal();
 	}
 
-	// Remove the descriptor from the function chain
+	// Remove descriptor from the function chain
 	list_remove(&__VERSION__(functions), function->node);
 
 	// Remove the FCG node
 	graph_remove(&__VERSION__(fcg), function->fcgnode);
 
-	// TODO: Remove the symbol representing this function
+	// Update section symbol size
+	function->symbol->section->symbol->size += function->symbol->size;
+
+	// TODO: Remove function symbol
 	// TODO: Remove all blocks contained in this function
 	// TODO: Remove all call instructions to this function
 
-	// Deallocate the descriptor, which is no longer valid
+	// Deallocate function descriptor, which is no longer valid
 	free(function);
 }
 

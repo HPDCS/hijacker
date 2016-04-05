@@ -33,53 +33,85 @@
 
 
 sym_t *symbol_insert(const char *name, unsigned long type, unsigned long flags,
-                     sec_t *section, unsigned char *bytes) {
-	sym_t *symbol;
+                     unsigned char *bytes, size_t size, sec_t *section) {
+	sym_t *symbol, *pivot;
 
 	static unsigned int id = 0;
 
-	if (!name || !section) {
+	// TODO: Check symbol size?
+
+	if (!name) {
+		hinternal();
+	}
+	else if (type != SYMBOL_SECTION && !section) {
+		// A non-section symbol must always have a parent section.
+		// NOTE: The correct way to use this function is therefore
+		// to create a section symbol, then the section, then any
+		// non-section symbol contained in this section.
+		// TODO: Check other cases (e.g. COMMON, ABS, etc.)
 		hinternal();
 	}
 
-	// TODO: What to do with symbols that belong to non-defined sections?
-	// TODO: Set offset and update section symbol size
-
-	// Make room for a new symbol descriptor
+	// Populate the new symbol descriptor
 	symbol = hcalloc(sizeof(sym_t));
 
-	// Fill symbol descriptor fields
 	symbol->id = ++id;
 	symbol->name = str_copy(name);
 	symbol->type = type;
 	symbol->flags = flags;
+	symbol->bytes = bytes;
+	symbol->size = size;
 	symbol->section = section;
 
-	// TODO: If symbol is internally-defined, payload must be non-NULL
-	symbol->bytes = bytes;
+	// FIXME: How to handle non-allocated symbols?
+	// Their size should be the size in memory, but a NULL
+	// payload because the default value is defined in the
+	// OFF standard of choice (e.g., ELF)
 
-	// Insert the descriptor into the symbol chain
-	symbol->node = list_push_last(&__VERSION__(symbols), symbol);
+	// Insert descriptor in the symbol chain at the right position:
+	// if a section symbol, insert it as the last section symbol;
+	// else, insert it as the last symbol in the parent section.
+	if (!section) {
+		pivot = __VERSION__(sections).last->symbol;
+		symbol->node = list_insert(&__VERSION__(symbols), symbol, pivot, INSERT_AFTER);
+	}
+	else {
+		pivot = section->has.symbols.last;
+		symbol->node = list_insert(&__VERSION__(symbols), symbol, pivot, INSERT_AFTER);
+
+		range_insert(&section->has.symbols, pivot, symbol->node, INSERT_AFTER);
+
+		symbol->offset = section->symbol->size;
+		section->symbol->size += symbol->size;
+	}
 
 	return symbol;
 }
 
 
 void *symbol_remove(sym_t *symbol) {
+	sec_t *section;
+
 	if (!symbol) {
 		hinternal();
 	}
 
-	// TODO: Update section symbol size
-	// TODO: Possibly shift offsets of other symbols!
-
-	// Remove the descriptor from the symbol chain
+	// Remove descriptor from the section chain
 	list_remove(&__VERSION__(symbols), symbol->node);
+
+	section = symbol->section;
+
+	if (section) {
+		range_remove(&section->has.symbols, symbol);
+
+		section->symbol->size -= symbol->size;
+		// TODO: Possibly shift offsets of other symbols in the section
+	}
 
 	// TODO: Remove all relocations referring to this symbol
 	// TODO: Remove function/section represented by this symbol
 
-	// Deallocate the descriptor, which is no longer valid
+	// Deallocate section descriptor, which is no longer valid
 	free(symbol);
 }
 

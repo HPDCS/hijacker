@@ -46,16 +46,16 @@
  * must be already allocated by the caller function, hence a side-
  * effect is performed on it.
  *
- * @param  instr    Pointer to the instruction descriptor to fill.
- * @param  isa      Target architecture.
- * @param  mnemonic Textual representation of the instruction.
+ * @param  instr Pointer to the instruction descriptor to fill.
+ * @param  isa   Target architecture.
+ * @param  text  Textual representation of the instruction.
  *
- * @return          The number of characters that are effectively
- *                  consumed from the beginning of the string, or 0
- *                  if the string is not valid in the target ISA.
+ * @return       The number of characters that are effectively
+ *               consumed from the beginning of the string, or 0
+ *               if the string is not valid in the target ISA.
  */
 static size_t instr_assemble(isn_t *instr, isa_family_t isa,
-                             const char *mnemonic) {
+                             const char **text) {
 	// TODO: To implement
 	return 42; // The best integer placeholder ever!
 }
@@ -78,14 +78,14 @@ static size_t instr_assemble(isn_t *instr, isa_family_t isa,
  *
  * @param  instr Pointer to the instruction descriptor to fill.
  * @param  isa   Target architecture.
- * @param  bytes Raw bytes of the instruction.
+ * @param  bytes Machine-code representation of the instruction.
  *
  * @return       The number of bytes that are effectively consumed
  *               from the beginning of the bytes sequence, or 0 if
  *               the sequence is not valid in the target ISA.
  */
 static size_t instr_disassemble(isn_t *instr, isa_family_t isa,
-                                const unsigned char *bytes) {
+                                const unsigned char **bytes) {
 	// TODO: To implement
 	return 42; // The best integer placeholder ever!
 }
@@ -211,20 +211,17 @@ static isn_t *instr_insert_single(const unsigned char **input, isn_input_type ty
 	// Fill up the instruction descriptor in the appropriate manner
 	if (type == INSTR_MNEMONIC) {
 		consumed = instr_assemble(instr,
-			config.program.arch, (const char *) *input);
+			config.program.arch, (const char **) input);
 	}
 	else if (type == INSTR_RAWBYTES) {
 		consumed = instr_disassemble(instr,
-			config.program.arch, *input);
+			config.program.arch, input);
 	}
 
 	if (consumed == 0) {
 		free(instr);
 		return NULL;
 	}
-
-	// Update the input pointer according to the consumed bytes
-	*input += consumed;
 
 	// Insert the descriptor into the instruction chain
 	instr->node = list_insert(&__VERSION__(instructions), instr, pivot->node, mode);

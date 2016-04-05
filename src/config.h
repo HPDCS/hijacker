@@ -37,6 +37,7 @@
 /// A configuration object for the current hijacking session.
 typedef struct configuration {
 	unsigned int verbose;     /// Requested verbosity level for debug prints
+
 	const char *rules_file;   /// Path to the configuration file to be parsed
 	const char *input_file;   /// Path to the input file to be loaded
 	const char *output_file;  /// Path to the output file to be written

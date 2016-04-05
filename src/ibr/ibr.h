@@ -90,15 +90,15 @@ struct version {
 };
 
 
-#define foreach_version(version, number)\
-	for (number = 0, version = __PROGRAM__(versions)[number];\
-	     number < __PROGRAM__(nversions); number += 1)
+#define version_for_each(vnumber, version)\
+	for (vnumber = 0, version = __PROGRAM__(versions)[vnumber];\
+	     vnumber < __PROGRAM__(nversions); vnumber += 1)
 
 
-obj_t *executable_load(const char *path);
+void object_load(const char *path);
 
 
-void executable_write(const char *path);
+void object_write(const char *path);
 
 
 ver_t *version_create(const char *name);
@@ -329,9 +329,19 @@ struct block {
 
 
 typedef enum {
-	INSTR_MNEMONIC,
-	INSTR_RAWBYTES,
-} isn_input_type;
+	INSTR_RAW_TEXT,
+	INSTR_RAW_BYTES,
+} isn_raw_format;
+
+
+typedef struct instruction_raw {
+	isn_raw_format format;
+
+	union {
+		const char *text;
+		const unsigned char *bytes;
+	} sequence;
+} isn_raw_t;
 
 
 struct instruction {
