@@ -885,5 +885,10 @@ block *block_graph_create(function *functions) {
 		block_graph_visit(func->source->in.first->elem, &loop_visit);
 	}
 
+	if (config.verbose > 6) {
+		block_tree_dump("treedump.txt", "a+");
+		block_graph_dump(PROGRAM(v_code)[version], "graphdump.txt", "a+");
+	}
+
 	return blocks;
 }

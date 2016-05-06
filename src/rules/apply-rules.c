@@ -390,7 +390,7 @@ static void hijack_main(unsigned char *entry_point) {
 	unsigned char code[1] = {0x90};
 	unsigned char code2[1] = {0xc3};
 	unsigned char code2bis[1] = {0xc9};
-	unsigned char code3[5] = {0x48, 0x89, 0xe5, 0x55, 0x55};
+	unsigned char code3[5] = {0x48, 0x89, 0xe5, 0x55};
 
 	sym_main = find_symbol_by_name("main");
 

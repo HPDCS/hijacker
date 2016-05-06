@@ -741,13 +741,6 @@ static void resolve_blocks(void) {
 
 	blocks = block_graph_create(PROGRAM(code));
 
-	// We spit out some boring textual representation of both the balanced tree
-	// and the final flow graph
-	if (config.verbose > 2) {
-		block_tree_dump("treedump.txt", "w+");
-		block_graph_dump(PROGRAM(code), "graphdump.txt", "w+");
-	}
-
 	PROGRAM(blocks)[0] = blocks;
 
 	hsuccess();
