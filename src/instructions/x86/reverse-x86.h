@@ -32,7 +32,7 @@
 #include <trampoline.h>
 
 
-void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where);
+void x86_trampoline_prepare(insn_info *target, char *function_name, int where);
 
 /**
  * In order to properly save the stack in the instrumented code

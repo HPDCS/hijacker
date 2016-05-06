@@ -39,9 +39,9 @@
 
 
 // Size of a single entry in the TLS buffer
-#define BUFFER_ENTRY_SIZE (1<<4 + 1<<3)
+#define BUFFER_ENTRY_SIZE 24
 // Size of a single field in an entry of the TLS buffer
-#define BUFFER_FIELD_SIZE (1<<3)
+#define BUFFER_FIELD_SIZE 8
 // Maximum length for the name of the TLS buffer symbol
 #define BUFFER_NAME_LEN   (1<<6)
 
@@ -116,7 +116,6 @@ static void smt_tls_init(void) {
   disp = 0;
 
   sym = find_symbol_by_name(".tbss");
-  // tbss_sec = find_symbol_by_name(".tbss")->sec;
 
   if (sym == NULL) {
     // If the section hasn't been found, it's time to create it
@@ -161,6 +160,8 @@ static void smt_tls_init(void) {
 
     hnotice(3, "Existing .tbss section found of size %u bytes\n", tbss_sym->size);
 
+    tbss_sec = tbss_sym->sec;
+
     tbss_size += tbss_sym->size;
     tbss_payload = calloc(tbss_size, 1);
 
@@ -191,8 +192,7 @@ static void smt_tls_init(void) {
   buffer_name = malloc(BUFFER_NAME_LEN);
   sprintf(buffer_name, "__smtracer_buffer_%d", PROGRAM(version));
 
-  tls_buffer_sym = symbol_create(buffer_name, SYMBOL_TLS, SYMBOL_LOCAL, tbss_sec,
-    BUFFER_ENTRY_SIZE * tls_buffer_size);
+  tls_buffer_sym = symbol_create(buffer_name, SYMBOL_TLS, SYMBOL_LOCAL, tbss_sec, tbss_size);
 
   tls_buffer_sym->offset = disp;
   tls_buffer_sym->secnum = tbss_sec->index;
@@ -435,7 +435,11 @@ static void smt_compute_features(void) {
 void smt_init(void) {
   function *func;
   insn_info *instr;
+
   size_t count, highest;
+
+  block *blk;
+  smt_data *smt;
 
   // Detect the maximum size for the TLS buffer so that
   // no relevant access will be discarded due to lack of space
@@ -463,6 +467,17 @@ void smt_init(void) {
   // Block-level features are computed to later instrument basic blocks according
   // to user-defined blk_score_thresholds
   smt_compute_features();
+
+  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+    smt = blk->smtracer;
+
+    hnotice(2, "Block %u at <%#08llx> has score %0.3f\n",
+      blk->id, blk->begin->orig_addr, smt->score);
+
+    if (highest < smt->score) {
+      highest = smt->score;
+    }
+  }
 }
 
 inline static bool smt_is_flushpoint(insn_info *instr, function *func) {
@@ -1174,7 +1189,11 @@ static void smt_call_routine(unsigned int total, symbol *callfunc, insn_info *pi
       0x9c,
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+
+    // if (!ll_empty(&pivot->targetof) && !pivot->virtual) {
+    //   set_virtual_reference(pivot, current);
+    // }
   }
 
   // Load TLS storage

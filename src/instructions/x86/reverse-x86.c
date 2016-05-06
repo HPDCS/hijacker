@@ -38,13 +38,16 @@
 #include <x86/reverse-x86.h>
 
 
-void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
+void x86_trampoline_prepare(insn_info *target, char *function_name, int where) {
 	insn_info_x86 *x86;
 	insn_info *instr;
 	insn_entry *entry;
 
 	ll_node *rela_node;
 	symbol *sym;
+
+	// FIXME: da istanziare correttamente per symbol_create!!
+	section *sec = NULL;
 
 	unsigned int size;
 	int num;
@@ -170,9 +173,9 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	// Note that 'target' actually is the 2nd MOV instruction being instrumented, therefore
 	// in order to make the correct relocation we have to look for its predecessor (twice)
 	// which (should) be the last MOV that should pushes the calling address on the stack
-	hnotice(4, "Push the function pointer to '%s' in the trampoline structure\n", func);
+	hnotice(4, "Push the function pointer to '%s' in the trampoline structure\n", function_name);
 
-	sym = create_symbol_node(func, SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
+	sym = symbol_create(function_name, SYMBOL_UNDEF, SYMBOL_GLOBAL, sec, 0);
 	symbol_instr_rela_create(sym, instr->prev, RELOC_ABS_64);
 
 
@@ -182,7 +185,7 @@ void x86_trampoline_prepare(insn_info *target, unsigned char *func, int where) {
 	insert_instructions_at(target, call, sizeof(call), where, &instr);
 
 	// Checks and creates the symbol name that will be the target of the call
-	sym = create_symbol_node((unsigned char *)"trampoline", SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
+	sym = symbol_create("trampoline", SYMBOL_UNDEF, SYMBOL_GLOBAL, sec, 0);
 	symbol_instr_rela_create(sym, instr, RELOC_PCREL_32);
 
 	// in order to align the stack pointer we need to insert an ADD instruction
@@ -251,7 +254,7 @@ void push_x86_insn_entry (insn_info *instr, insn_entry *entry) {
 	// the trampoline stack call, but after the call to its symbol is registered
 
 	/*symbol *sym;
-	sym = create_symbol_node("trampoline_function", SYMBOL_UNDEF, SYMBOL_GLOBAL, 0);
+	sym = symbol_create("trampoline_function", SYMBOL_UNDEF, SYMBOL_GLOBAL, *NULL*, 0);
 	sym = symbol_check_shared(sym);
 	sym->position = insn->new_addr + insn->opcode_size;*/
 

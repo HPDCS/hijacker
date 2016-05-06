@@ -40,12 +40,12 @@ static void clone_text_sections(int version, char *suffix) {
 	function *func;
 	section *sec, *clone;
 
-	char name[256];
+	char *name;
 
 	// Currently, the only way to associate a function with its
 	// CODE section is by knowing the function itself. In other
 	// words, there is no way to know from a section the functions
-	// it containts.
+	// it contains.
 
 	// To create as many CODE section duplicates as necessary,
 	// we iterate over the function chain in the current version
@@ -63,11 +63,8 @@ static void clone_text_sections(int version, char *suffix) {
 			hinternal();
 		}
 
-		bzero(name, sizeof(name));
-		strcpy(name, sec->name);
-		strcat(name, ".");
-		strcat(name, suffix);
-
+		name = calloc(sizeof(char), strlen(sec->name) + strlen(suffix) + 2);
+		sprintf(name, "%s.%s", sec->name, suffix);
 		clone = find_section_by_name(name, version);
 
 		if (clone == NULL) {
@@ -75,201 +72,226 @@ static void clone_text_sections(int version, char *suffix) {
 			section_append(clone, &PROGRAM(sections)[version]);
 		}
 
-		// func->symbol = clone->sym;
 		func->symbol->sec = clone;
-	}
-}
 
+		ll_node *alias_node;
+		symbol *alias;
 
-static void clone_text_relocation(function *func, int version, char *suffix) {
-	insn_info *instr;
+		for (alias_node = func->alias.first; alias_node; alias_node = alias_node->next) {
+			alias = alias_node->elem;
 
-	ll_node *sym_node;
-
-	symbol *sym, *clone, *callee;
-
-	unsigned char name[256];
-
-	for (instr = func->begin_insn; instr; instr = instr->next) {
-
-		for (sym_node = instr->parent->reference.first; sym_node; sym_node = sym_node->next) {
-			sym = sym_node->elem;
-
-			if (sym->type == SYMBOL_SECTION && str_equal(sym->sec->name, ".rodata")) {
-				// Skip this part, it is handled by `clone_rodata_relocation`
-				continue;
-			}
-
-			clone = symbol_rela_clone(sym);
-			clone->relocation.target_insn = instr;
-			clone->relocation.sec = func->symbol->sec;
-
-			// It's a relocation toward a function, so we must update
-			// symbol-specific information
-			if (sym->type == SYMBOL_FUNCTION) {
-				bzero(name, sizeof(name));
-				strcpy(name, sym->name);
-				strcat(name, "_");
-				strcat(name, suffix);
-
-				callee = find_symbol_by_name(name);
-
-				if (callee == NULL) {
-					hinternal();
-				}
-
-				// This is a trick: we treat `callee->symbol` as a relocation
-				// entry, which is later filled with relocation information
-				// from `clone`
-				sym = symbol_rela_clone(callee);
-				memcpy(&sym->relocation, &clone->relocation, sizeof(struct _relocation));
-
-				clone = sym;
-			}
-
-			ll_push(&instr->reference, clone);
+			alias->sec = clone;
 		}
 	}
 }
 
 
-static void clone_rodata_relocation(symbol *symbols, int version, section *text) {
-	section *rodata;
-	symbol *sym, *rela;
+/**
+ *
+ * Nothing to see here---move along, move along.
+ *
+ */
+static void clone_relocations(int version, char *suffix) {
 	function *func;
 	insn_info *instr;
 
-	ll_node *ref_node;
+	ll_node *rela_node;
 
-	unsigned int offset;
+	symbol *rela, *clone, *sym;
 
-	// Rather than creating as many read-only sections as the number of executable
-	// versions, we reuse the same '.rodata' section for all versions. Specifically,
-	// the new relocation entries will have offsets that fall outside of '.rodata's
-	// original boundaries. The proper size will be later computed in the emit step.
-	rodata = find_section_by_name((unsigned char *)".rodata", 0);
+	char *name;
 
-	if (!rodata) {
-		hnotice(4, "Missing '.rodata' section, no relocation entries to clone\n");
-		return;
-	}
+	for (func = PROGRAM(v_code)[version]; func; func = func->next) {
+		for (instr = func->begin_insn; instr; instr = instr->next) {
 
-	// We begin from the next byte after the end of '.rodata'
-	offset = rodata->sym->size;
+			// --------------------------------------------------------
+			// From CODE to *
+			// --------------------------------------------------------
 
-	// We order relocations in '.rodata' to '.text.xyz' according to their offsets
-	// from the beginning of '.rodata'
-	linked_list ordered = { NULL, NULL };
+			for (rela_node = instr->parent->reference.first; rela_node;
+			     rela_node = rela_node->next) {
+				rela = rela_node->elem;
 
-	find_relocations(symbols, rodata, text->sym, &ordered);
-
-	// We now iteratively compare .rodata->.text.xyz relocations against all the
-	// known instructions in the IBR, to see if there's a match
-	while (!ll_empty(&ordered)) {
-		sym = ll_pop_first(&ordered);
-
-		if (sym->version > 0) {
-			continue;
-		}
-
-		for (func = PROGRAM(v_code)[version]; func; func = func->next) {
-			for (instr = func->begin_insn; instr; instr = instr->next) {
-
-				for (ref_node = instr->parent->reference.first; ref_node; ref_node = ref_node->next) {
-					rela = ref_node->elem;
-
-					// We check if the instruction refers the beginning of a jump table
-					if (rela->sec == sym->relocation.sec
-						  && rela->relocation.addend == sym->relocation.offset) {
-						// We *MIGHT* have found the beginning of a jump table.
-						// As such, the original symbol must be duplicated and its offset must be
-						// updated accordingly (since the entire jump table is duplicated)
-
-						rela = symbol_rela_clone(rela);
-						rela->version = version;
-
-						// rela->relocation.offset = instr->reference->relocation.offset;
-						rela->relocation.addend = offset;
-						// rela->relocation.type = instr->reference->relocation.type;
-						rela->relocation.sec = text;
-
-						ll_push(&instr->reference, rela);
-						rela->relocation.target_insn = instr;
-
-						hnotice(3, "Added new jumptable base address relocation in <%s + %x> to <%s + %x>\n",
-							rela->relocation.sec->name, rela->relocation.offset,
-								rela->name, rela->relocation.addend);
-					}
-
-					else if (instr->orig_addr == sym->relocation.addend + sym->relocation.sec->offset) {
-						// If the instruction address is referred to by a relocation, duplicate
-						// the latter and update pointers in the intermediate representation
-						// so that the original relocation from version 0 and the instruction from
-						// the current version aren't linked anymore
-						rela = symbol_rela_clone(text->sym);
-						rela->version = version;
-
-						rela->relocation.offset = offset;
-						// rela->relocation.addend = sym->relocation.addend;
-						// rela->relocation.type = sym->relocation.type;
-						rela->relocation.sec = rodata;
-
-						ll_push(&instr->pointedby, rela);
-						rela->relocation.target_insn = instr;
-
-						hnotice(3, "Added new indirect relocation in <%s + %x> to <%s + %x>\n",
-							rela->relocation.sec->name, rela->relocation.offset,
-								rela->name, rela->relocation.addend);
-					}
-
+				if (rela->type == SYMBOL_SECTION && rela->sec->type == SECTION_CODE) {
+					hinternal();
 				}
+
+				else if (rela->type != SYMBOL_FUNCTION) {
+					clone = symbol_rela_clone(rela);
+				}
+
+				else {
+					// If it is a relocation toward a function, we must make
+					// sure that the function from the new version is referred,
+					// not the original one
+
+					// name = malloc(strlen(rela->name) + strlen(suffix) + 2);
+					// bzero(name, sizeof(name));
+					// sprintf(name, "%s_%s", rela->name, suffix);
+					name = add_suffix(rela->name, "_", suffix);
+
+					// We seek the correct function by its name
+					// (this should work, provided that cloning of functions
+					// and instructions occurs before cloning relocations)
+					sym = find_symbol_by_name(name);
+
+					if (sym == NULL) {
+						// TODO: This is a gigantic hack to clone function aliases
+						// which is not duplicated by `switch_executable_version`,
+						// since there is no concrete function's descriptor associated
+						herror(true, "Cannot find symbol '%s'\n", name);
+
+					// 	sym = find_symbol_by_name(rela->name);
+					// 	if (sym == NULL) {
+					// 		hinternal();
+					// 	}
+
+					// 	// It is reasonable that this is a function alias which is not in
+					// 	// the function list because it was not be cloned in the clone
+					// 	// function list step. Here we create a new symbol on-the-fly, to
+					// 	// represent it.
+					// 	clone = symbol_create(name, sym->type, sym->bind, sym->sec, sym->size);
+					// 	clone->func = sym->func;
+					// 	clone->offset = sym->offset;
+					// 	ll_push(&sym->func->alias, clone);
+					// 	sym = clone;
+					// 	herror(false, "Created a new function alias '%s'\n", sym->name);
+					}
+
+					clone = symbol_rela_clone(sym);
+					// We need to copy everything since we're cloning an
+					// authentic symbol which has no relocation information
+					clone->relocation.type = rela->relocation.type;
+					clone->relocation.offset = rela->relocation.offset;
+					clone->relocation.addend = rela->relocation.addend;
+				}
+
+				// We need to update the section information
+				clone->relocation.sec = func->symbol->sec;
+
+				clone->relocation.target_insn = instr;
+				ll_push(&instr->reference, clone);
+			}
+
+			// --------------------------------------------------------
+			// From * to CODE
+			// --------------------------------------------------------
+
+			for (rela_node = instr->parent->pointedby.first; rela_node;
+			     rela_node = rela_node->next) {
+				rela = rela_node->elem;
+
+				if (rela->type == SYMBOL_SECTION && rela->sec->type == SECTION_CODE) {
+					// hinternal();
+				}
+
+				// We seek the symbol associated to the parent section of
+				// the current function
+				sym = func->symbol->sec->sym;
+
+				if (sym == NULL) {
+					hinternal();
+				}
+
+				clone = symbol_rela_clone(sym);
+				clone->relocation.type = rela->relocation.type;
+				clone->relocation.sec = rela->relocation.sec;
+				// WARNING: This offset *must* be updated in `adjust_relocations`!
+				// If this is not the case, abandon the ship.
+				clone->relocation.offset = rela->relocation.offset;
+				clone->relocation.addend = rela->relocation.addend;
+
+				clone->relocation.target_insn = instr;
+				ll_push(&instr->pointedby, clone);
 			}
 
 		}
-
-		// TODO: It is safe to suppose that relocations are always 8 bytes long?
-		offset += sizeof(char *);
-		rodata->sym->size += sizeof(char *);
 	}
-
-	hnotice(4, "Added new relocation entries in '.rodata' section (%d bytes)\n",
-		rodata->sym->size);
 }
 
 
-// static void clone_func_relocation(int version, unsigned char *suffix) {
-// 	function *func, *target_func;
-// 	symbol *sym;
-// 	insn_info *instr;
+static void adjust_relocations(symbol *symbols, int version, section *text) {
+	symbol *rela, *rela2;
+	section *sec;
 
-// 	unsigned char name[256];
+	for (sec = PROGRAM(sections)[0]; sec; sec = sec->next) {
 
-// 	for (func = PROGRAM(v_code)[version]; func; func = func->next) {
-// 		for (instr = func->begin_insn; instr; instr = instr->next) {
-// 			sym = instr->reference;
+		if (sec->type == SECTION_CODE || sec->type == SECTION_RELOC) {
+			continue;
+		}
 
-// 			if (!IS_CALL(instr) && sym && sym->type == SYMBOL_FUNCTION) {
-// 				hnotice(3, "Found function '%s' relocation to the instruction '%s' at address <%#08llx>\n",
-// 					sym->name, instr->i.x86.mnemonic, instr->orig_addr);
+		// Get all relocations at `sec` to `text`, ordered by offset
+		// and picked from the global list of symbols `symbols`
+		linked_list relocs = { NULL, NULL };
+		find_relocations(symbols, sec, text->sym, &relocs);
 
-// 				bzero(name, sizeof(name));
-// 				strcpy(name, sym->name);
-// 				strcat(name, "_");
-// 				strcat(name, suffix);
+		// Consume the ordered list of relocations, in order to respect
+		// the offset ordering enforced above
+		while(!ll_empty(&relocs)) {
+			rela = ll_pop_first(&relocs);
 
-// 				for (target_func = PROGRAM(v_code)[version]; target_func; target_func = target_func->next) {
-// 					if (str_equal(target_func->name, name)) {
-// 						hnotice(3, "Updating relocation with reference to new function '%s'\n",
-// 							target_func->symbol->name);
+			if (rela->version == 0) {
+				// We are asking for relocations toward `text`, which is
+				// a section belonging to a version > 0
+				hinternal();
+			}
 
-// 						symbol_instr_rela_create(target_func->symbol, instr, RELOC_ABS_32);
-// 						break;
-// 					}
-// 				}
-// 			}
-// 		}
-// 	}
-// }
+			if (rela->relocation.target_insn == NULL) {
+				// All relocations towards CODE sections should have the
+				// `target_insn` field populated
+				hinternal();
+			}
+
+			// We parse the list of relocations again, this time seeking all
+			// relocations which apply to the requested CODE section.
+			// In particular, we need to match a X->CODE relocation
+			// with a CODE->X relocation. When this happens, we *MIGHT* have
+			// found the beginning of a branch table.
+			for (rela2 = symbols; rela2; rela2 = rela2->next) {
+				if (rela2->authentic == true || rela2->version != version) {
+					continue;
+				}
+
+				if (rela2->relocation.sec != text) {
+					// We ask for CODE->X relocations
+					continue;
+				}
+
+				if (rela2->relocation.target_insn == NULL) {
+					// All relocations at CODE sections should have the
+					// `target_insn` field populated
+					hinternal();
+				}
+
+				if (rela->relocation.sec == rela2->sec
+				    && rela->relocation.offset == rela2->relocation.addend) {
+					// Cross-matching sections and cross-matching displacements...
+					// ...we might have found the beginning of a branch table
+
+					rela2->relocation.addend = sec->sym->size;
+
+					hnotice(3, "Updated CODE->* relocation in <%s + %llx> to <%s + %x>\n",
+						rela2->relocation.sec->name, rela2->relocation.offset,
+							rela2->name, rela2->relocation.addend);
+
+					break;
+				}
+			}
+
+			// The offset is updated to the current size of the section,
+			// the section size is increased by the size of a relocation
+			// entry (which is reasonably equal to 8 bytes...)
+			rela->relocation.offset = sec->sym->size;
+			// FIXME: Is it safe to suppose that relocations are always 8 bytes long?
+			sec->sym->size += sizeof(char *);
+
+			hnotice(3, "Updated *->CODE relocation in <%s + %llx> to <%s + %x>\n",
+				rela->relocation.sec->name, rela->relocation.offset,
+					rela->name, rela->relocation.addend);
+		}
+	}
+}
+
 
 int switch_executable_version(int version) {
 	function *functions, *func;
@@ -284,10 +306,12 @@ int switch_executable_version(int version) {
 	// Updates the current working version of the binary representation.
 	// NOTE: We must perform this assignment now because all *_clone
 	// functions rely on the increased version number.
+	// NOTE: I believe it is better not to do that here
 	PROGRAM(version) = version;
 
 	// Checks whether the version is already present in the list
-	// otherwise it creates a new one by cloning the whole code
+	// otherwise it creates a new one by cloning code and relocations,
+	// as well as inflating data sections whenever appropriate...
 	// (symbols are not copied since they are shared among versions)
 
 	if(!PROGRAM(v_code)[version]) {
@@ -296,58 +320,43 @@ int switch_executable_version(int version) {
 		suffix = (char *) (config.rules[version]->suffix);
 
 		// Clones the whole code (function symbols included) from the plain version
-		// to the new one, by appending the user-defined suffix to each name
+		// to the new one, by appending the user-defined suffix to each name.
+		// Once cloned, instructions are no more linked together in the call/jump graph;
+		// this task belongs to the parsing stage, nevertheless/ we have to re-execute it
+		// in order to realign the representation's semantics.
 		PROGRAM(v_code)[version] = clone_function_list(PROGRAM(v_code)[0], suffix);
 
-		// Text sections are cloned, too...
+		// Duplicates all sections containing code and updates the section pointer
+		// in the respective function symbols, so that the new functions (which
+		// were cloned previously) are correctly associated with the new text section.
 		clone_text_sections(version, suffix);
 
-		// A new section symbol is created that represents the .text.xyz section
-		// holding the current version's code. This step is mandatory to have the
-		// relocation towards the .text.xyz section aligned for the switch cases.
-		// bzero(name, sizeof(name));
-		// strcpy(name, ".text.");
-		// strcat(name, suffix);
-		// text = create_symbol_node((unsigned char *)name, SYMBOL_SECTION, SYMBOL_LOCAL, 0);
+		// We now clone all relocations at or to a cloned text so that we can later
+		// adjust them if needed. This is a quite naive copy of relocations which
+		// only takes care of adjusting the `relocation.sec` field so as to make
+		// it point to the cloned text section.
+		clone_relocations(version, suffix);
 
-		// Clone rodata relocations
+		// For each text section T in the new version, we adjust relocations
+		// from X->T in order to create room for new data in X. This should
+		// hopefully covers cases such as branch tables and other pointers.
 		for (text = PROGRAM(sections)[version]; text; text = text->next) {
-			clone_rodata_relocation(PROGRAM(symbols), version, text);
+			adjust_relocations(PROGRAM(symbols), version, text);
 		}
 
-		// Clone text relocations
-		for (func = PROGRAM(v_code)[version]; func; func = func->next) {
-			clone_text_relocation(func, version, suffix);
-		}
+		// Re-linking jump instructions
+		link_jump_instructions();
 
-		// We must also take into account indirect function invocations
-		// clone_func_relocation(version, suffix);
-
-		// Relinking jump instructions. Once cloned, instructions are no more
-		// linked together; this task belongs to the parsing stage, nevertheless
-		// we have to re-execute it in order to realign the representation's semantics
-		// During the cloning operation, each instruction will be unreferenced otherwise
-		// we they still points to the old original copy, which would be incorrect!
-
-		for (func = PROGRAM(v_code)[version]; func; func = func->next) {
-			link_jump_instructions(func);
-		}
-
-		// Eventually, a new CFG is created for this version
-		PROGRAM(blocks)[version] = block_graph_create(PROGRAM(v_code)[version]);
-
-		if (config.verbose > 2) {
-			block_tree_dump("treedump.txt", "a+");
-			block_graph_dump(PROGRAM(v_code)[version], "graphdump.txt", "a+");
-		}
-
-		hnotice(3, "Version %d of the executable's binary representation created\n", version);
+		// Re-creating a CFG
+		PROGRAM(blocks)[version] = block_graph_create();
 
 		// Update the executable versions array
 		PROGRAM(code) = PROGRAM(v_code)[version];
 
 		// The overall number of handled versions has to be increased
 		PROGRAM(versions)++;
+
+		hnotice(4, "Version %d of the executable's binary representation created\n", version);
 	}
 
 	hnotice(3, "Switched to version %d\n\n", version);

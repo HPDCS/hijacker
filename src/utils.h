@@ -104,4 +104,6 @@ extern void ll_push_first(linked_list *list, void *elem);
 extern void *ll_pop(linked_list *list);
 extern void *ll_pop_first(linked_list *list);
 
+extern char *add_suffix(char *base, char *delim, char *suffix);
+
 #endif /* _UTILS_H_ */

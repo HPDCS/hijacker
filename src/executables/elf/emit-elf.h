@@ -34,7 +34,7 @@
 
 
 #define SECTION_INIT_SIZE 1024
-#define SECNAME_SIZE 256
+#define SECNAME_SIZE 512
 
 
 typedef struct _hijacked_elf {
