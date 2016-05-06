@@ -790,13 +790,13 @@ static void resolve_jump_table(function *func, insn_info *instr) {
 
 		// Zero-sized call tables mean a single function pointer
 		if (callee && size == 0) {
-			hnotice(6, "Function pointer to %s\n", callee->name);
+			hnotice(5, "Function pointer to %s\n", callee->name);
 
 			set_jumpto_reference(instr, callee->begin_insn);
 		}
 
 		else if (size) {
-			hnotice(6, "Array named %s starting at %s + <%#08llx> and sized %lu\n",
+			hnotice(5, "Array named %s starting at %s + <%#08llx> and sized %lu\n",
 				sym->name, sec->name, (unsigned long long) start, size);
 
 			set_jump_table(NULL, instr, sec, start, size);
@@ -840,6 +840,9 @@ void link_jump_instructions(function *func) {
 		// ---------------------------------------------------------
 
 		if (IS_JUMP(instr)) {
+
+			hnotice(3, "Found jump instruction at <%#08llx> (<%#08llx>)\n",
+				instr->orig_addr, instr->new_addr);
 
 			if (IS_JUMPIND(instr)) {
 				// If the instruction is an indirect jump, try to resolve its
@@ -886,6 +889,9 @@ void link_jump_instructions(function *func) {
 		// ---------------------------------------------------------
 
 		else if (IS_CALL(instr)) {
+
+			hnotice(3, "Found call instruction at <%#08llx> (<%#08llx>)\n",
+				instr->orig_addr, instr->new_addr);
 
 			if (IS_CALLIND(instr)) {
 				// Handle indirect calls (tricky, uses the same naive algorithm

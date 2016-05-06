@@ -81,6 +81,7 @@ static void clone_text_sections(int version, char *suffix) {
 
 
 static void clone_relocations(int version, char *suffix) {
+	function *func;
 	insn_info *instr;
 
 	ll_node *rela_node;
@@ -151,7 +152,7 @@ static void clone_relocations(int version, char *suffix) {
 
 				// We seek the symbol associated to the parent section of
 				// the current function
-				sym = func->symbol->sec->symbol;
+				sym = func->symbol->sec->sym;
 
 				if (sym == NULL) {
 					hinternal();
@@ -172,130 +173,163 @@ static void clone_relocations(int version, char *suffix) {
 
 
 static void adjust_relocations(symbol *symbols, int version, section *text) {
-	ll_node *rela_node;
+	symbol *rela, *rela2;
+	section *sec;
 
-	symbol *rela, *sym;
-
-	for (func = PROGRAM(v_code)[version]; func; func = func->next) {
-		for (instr = func->begin_insn; instr; instr = instr->next) {
-
-			for (rela_node = instr->pointedby.first; rela_node; rela_node = rela_node->next) {
-				rela = rela_node->elem;
-
-				if (rela->sec->type == SECTION_CODE) {
-					continue;
-				}
-
-			}
-
-		}
-
-	}
-}
-
-
-static void clone_jump_tables(symbol *symbols, int version, section *text) {
-	section *rodata;
-	symbol *sym, *rela;
-	function *func;
-	insn_info *instr;
-
-	ll_node *ref_node;
-
-	unsigned int offset;
-
-	// Rather than creating as many read-only sections as the number of executable
-	// versions, we reuse the same '.rodata' section for all versions. Specifically,
-	// the new relocation entries will have offsets that fall outside of '.rodata's
-	// original boundaries. The proper size will be later computed in the emit step.
-	rodata = find_section_by_name((unsigned char *)".rodata", 0);
-
-	if (!rodata) {
-		hnotice(4, "Missing '.rodata' section, no relocation entries to clone\n");
-		return;
-	}
-
-	// We begin from the next byte after the end of '.rodata'
-	offset = rodata->sym->size;
-
-	// We order relocations in '.rodata' to '.text.xyz' according to their offsets
-	// from the beginning of '.rodata'
-	linked_list ordered = { NULL, NULL };
-
-	find_relocations(symbols, rodata, text->sym, &ordered);
-
-	// We now iteratively compare .rodata->.text.xyz relocations against all the
-	// known instructions in the IBR, to see if there's a match
-	while (!ll_empty(&ordered)) {
-		sym = ll_pop_first(&ordered);
-
-		if (sym->version > 0) {
+	for (sec = PROGRAM(sections)[0]; sec; sec = sec->next) {
+		if (sec->type == SECTION_CODE) {
 			continue;
 		}
 
-		for (func = PROGRAM(v_code)[version]; func; func = func->next) {
-			for (instr = func->begin_insn; instr; instr = instr->next) {
+		linked_list relocs = { NULL, NULL };
 
-				for (ref_node = instr->parent->reference.first; ref_node; ref_node = ref_node->next) {
-					rela = ref_node->elem;
+		// Get all relocations in `sec` to `text`, ordered by offset
+		// and picked from the global list of symbols `symbols`
+		find_relocations(symbols, sec, text->sym, &relocs);
 
-					// We check if the instruction refers the beginning of a jump table
-					if (rela->sec == sym->relocation.sec
-						  && rela->relocation.addend == sym->relocation.offset) {
-						// We *MIGHT* have found the beginning of a jump table.
-						// As such, the original symbol must be duplicated and its offset must be
-						// updated accordingly (since the entire jump table is duplicated)
+		// Consume the ordered list by picking the first relocation
+		// each time, in order to respect the offset ordering
+		// enforced above
+		while(!ll_empty(&relocs)) {
+			rela = ll_pop_first(&relocs);
 
-						rela = symbol_rela_clone(rela);
-						rela->version = version;
+			if (rela->version == 0) {
+				// We are asking for relocations toward `text`, which is
+				// a section belonging to a version strictly greater
+				// than 0
+				hinternal();
+			}
 
-						// rela->relocation.offset = instr->reference->relocation.offset;
-						rela->relocation.addend = offset;
-						// rela->relocation.type = instr->reference->relocation.type;
-						rela->relocation.sec = text;
+			if (rela->relocation.target_insn == NULL) {
+				// All relocations towards CODE sections should have the
+				// `target_insn` field populated
+				hinternal();
+			}
 
-						ll_push(&instr->reference, rela);
-						rela->relocation.target_insn = instr;
+			for (rela2 = symbols; rela2; rela2 = rela2->next) {
+				if (rela2->authentic == true
+					  || rela2->version != version
+					  || rela2->relocation.sec != text) {
+					continue;
+				}
 
-						hnotice(3, "Added new jumptable base address relocation in <%s + %x> to <%s + %x>\n",
-							rela->relocation.sec->name, rela->relocation.offset,
-								rela->name, rela->relocation.addend);
-					}
+				if (rela2->relocation.target_insn == NULL) {
+					hinternal();
+				}
 
-					else if (instr->orig_addr == sym->relocation.addend + sym->relocation.sec->offset) {
-						// If the instruction address is referred to by a relocation, duplicate
-						// the latter and update pointers in the intermediate representation
-						// so that the original relocation from version 0 and the instruction from
-						// the current version aren't linked anymore
-						rela = symbol_rela_clone(text->sym);
-						rela->version = version;
+				if (rela->relocation.sec == rela2->sec
+				    && rela->relocation.offset == rela2->relocation.addend) {
+					// We *MIGHT* have found the beginning of a branch table.
 
-						rela->relocation.offset = offset;
-						// rela->relocation.addend = sym->relocation.addend;
-						// rela->relocation.type = sym->relocation.type;
-						rela->relocation.sec = rodata;
+					rela2->relocation.addend = sec->sym->size;
 
-						ll_push(&instr->pointedby, rela);
-						rela->relocation.target_insn = instr;
+					hnotice(3, "Updated CODE->* relocation in <%s + %x> to <%s + %x>\n",
+						rela2->relocation.sec->name, rela2->relocation.offset,
+							rela2->name, rela2->relocation.addend);
 
-						hnotice(3, "Added new indirect relocation in <%s + %x> to <%s + %x>\n",
-							rela->relocation.sec->name, rela->relocation.offset,
-								rela->name, rela->relocation.addend);
-					}
-
+					break;
 				}
 			}
 
+			// The offset is updated to the current size of the section,
+			// the section size is increased by the size of a relocation
+			// entry (which is reasonably equal to 8 bytes...)
+			rela->relocation.offset = sec->sym->size;
+			// FIXME: Is it safe to suppose that relocations are always 8 bytes long?
+			sec->sym->size += sizeof(char *);
+
+			hnotice(3, "Updated *->CODE relocation in <%s + %x> to <%s + %x>\n",
+				rela->relocation.sec->name, rela->relocation.offset,
+					rela->name, rela->relocation.addend);
 		}
-
-		// TODO: It is safe to suppose that relocations are always 8 bytes long?
-		offset += sizeof(char *);
-		rodata->sym->size += sizeof(char *);
 	}
-
-	hnotice(4, "Added new relocation entries in '.rodata' section (%d bytes)\n",
-		rodata->sym->size);
 }
+
+
+// static void clone_jump_tables(symbol *symbols, int version, section *text) {
+// 	section *rodata;
+// 	symbol *sym, *rela;
+// 	function *func;
+// 	insn_info *instr;
+
+// 	ll_node *ref_node;
+
+// 	unsigned int offset;
+
+// 	// Rather than creating as many read-only sections as the number of executable
+// 	// versions, we reuse the same '.rodata' section for all versions. Specifically,
+// 	// the new relocation entries will have offsets that fall outside of '.rodata's
+// 	// original boundaries. The proper size will be later computed in the emit step.
+// 	rodata = find_section_by_name((unsigned char *)".rodata", 0);
+
+// 	if (!rodata) {
+// 		hnotice(4, "Missing '.rodata' section, no relocation entries to clone\n");
+// 		return;
+// 	}
+
+// 	// We begin from the next byte after the end of '.rodata'
+// 	offset = rodata->sym->size;
+
+// 	// We order relocations in '.rodata' to '.text.xyz' according to their offsets
+// 	// from the beginning of '.rodata'
+// 	linked_list ordered = { NULL, NULL };
+
+// 	find_relocations(symbols, rodata, text->sym, &ordered);
+
+// 	// We now iteratively compare .rodata->.text.xyz relocations against all the
+// 	// known instructions in the IBR, to see if there's a match
+// 	while (!ll_empty(&ordered)) {
+// 		sym = ll_pop_first(&ordered);
+
+// 		if (sym->version > 0) {
+// 			continue;
+// 		}
+
+// 		for (func = PROGRAM(v_code)[version]; func; func = func->next) {
+// 			for (instr = func->begin_insn; instr; instr = instr->next) {
+
+// 				for (ref_node = instr->parent->reference.first; ref_node; ref_node = ref_node->next) {
+// 					rela = ref_node->elem;
+
+// 					// We check if the instruction refers the beginning of a jump table
+// 					if (rela->sec == sym->relocation.sec
+// 						  && rela->relocation.addend == sym->relocation.offset) {
+// 						// We *MIGHT* have found the beginning of a jump table.
+// 						// As such, the original symbol must be duplicated and its offset must be
+// 						// updated accordingly (since the entire jump table is duplicated)
+
+// 						rela = symbol_rela_clone(rela);
+// 						rela->version = version;
+
+// 						// rela->relocation.offset = instr->reference->relocation.offset;
+// 						rela->relocation.addend = offset;
+// 						// rela->relocation.type = instr->reference->relocation.type;
+// 						rela->relocation.sec = text;
+
+// 						ll_push(&instr->reference, rela);
+// 						rela->relocation.target_insn = instr;
+
+// 						hnotice(3, "Added new jumptable base address relocation in <%s + %x> to <%s + %x>\n",
+// 							rela->relocation.sec->name, rela->relocation.offset,
+// 								rela->name, rela->relocation.addend);
+// 					}
+
+// 					else if (instr->orig_addr == sym->relocation.addend + sym->relocation.sec->offset) {
+// 					}
+
+// 				}
+// 			}
+
+// 		}
+
+
+// 		offset += sizeof(char *);
+// 		rodata->sym->size += sizeof(char *);
+// 	}
+
+// 	hnotice(4, "Added new relocation entries in '.rodata' section (%d bytes)\n",
+// 		rodata->sym->size);
+// }
 
 
 // static void clone_func_relocation(int version, unsigned char *suffix) {
@@ -372,9 +406,13 @@ int switch_executable_version(int version) {
 
 		clone_relocations(version, suffix);
 
-		// Clone jump tables
+		// For each text section S in the new version, we adjust relocations
+		// from X->S in order to create room for new data in X.
+		// This hopefully covers cases such as branch tables and other
+		// pointers going around in town.
+
 		for (text = PROGRAM(sections)[version]; text; text = text->next) {
-			clone_jump_tables(PROGRAM(symbols), version, text);
+			adjust_relocations(PROGRAM(symbols), version, text);
 		}
 
 		// Relinking jump instructions. Once cloned, instructions are no more
