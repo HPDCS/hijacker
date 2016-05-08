@@ -161,6 +161,8 @@ static void smt_tls_init(void) {
 
     hnotice(3, "Existing .tbss section found of size %u bytes\n", tbss_sym->size);
 
+    tbss_sec = tbss_sym->sec;
+
     tbss_size += tbss_sym->size;
     tbss_payload = calloc(tbss_size, 1);
 

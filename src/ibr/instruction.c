@@ -820,13 +820,12 @@ static void resolve_jump_table(function *func, insn_info *instr) {
  */
 
 void link_jump_instructions(function *func) {
-	insn_info *instr;
-	insn_info *dest;
+	insn_info *instr, *dest;
+
+	unsigned long long jmp_addr;
 
 	function *callee;
 	symbol *sym;
-
-	unsigned long long jmp_addr;
 
 	hnotice(2, "Resolve jumps/calls of function '%s'\n", func->name);
 
@@ -873,6 +872,8 @@ void link_jump_instructions(function *func) {
 						hinternal();
 				}
 
+				hnotice(6, "Jump to a local instruction at <%#08llx> detected\n", jmp_addr);
+
 				dest = find_insn_cool(func->begin_insn, jmp_addr);
 
 				if (!dest) {
@@ -897,6 +898,8 @@ void link_jump_instructions(function *func) {
 				// Handle indirect calls (tricky, uses the same naive algorithm
 				// as for switch-case statements)
 				resolve_jump_table(func, instr);
+
+				continue;
 			}
 
 			else if (!ll_empty(&instr->reference)) {
@@ -910,9 +913,8 @@ void link_jump_instructions(function *func) {
 				if (sym->size == 0) {
 					// The function is defined elsewhere (i.e. in a different file object)
 					// meaning that the linker will be in charge to correctly handle it
-					hnotice(3, "Call instruction at <%#08llx> (<%#08llx>) invokes external function, skipping\n",
+					hnotice(4, "Call instruction at <%#08llx> (<%#08llx>) invokes external function, skipping\n",
 						instr->orig_addr, instr->new_addr);
-
 					continue;
 				}
 
@@ -924,8 +926,8 @@ void link_jump_instructions(function *func) {
 			}
 
 			else {
-				// If the CALL has a non-null embedded offset, it is a call to a local function and
-				// the format is the same as a jump.
+				// If the CALL has a non-null embedded offset, it is a call to
+				// a local function and the format is the same as a jump.
 				switch (PROGRAM(insn_set)) {
 					case X86_INSN:
 						if (instr->i.x86.jump_dest == 0) {
@@ -938,7 +940,7 @@ void link_jump_instructions(function *func) {
 						hinternal();
 				}
 
-				hnotice(5, "Call to a local function at <%#08llx> detected\n", jmp_addr);
+				hnotice(6, "Call to a local function at <%#08llx> detected\n", jmp_addr);
 
 				callee = find_func_from_addr(jmp_addr);
 
@@ -950,34 +952,27 @@ void link_jump_instructions(function *func) {
 				// relocation entry.
 				switch(PROGRAM(insn_set)) {
 					case X86_INSN:
-						memset(instr->i.x86.insn + 1, 0, (instr->size - instr->opcode_size));
-						break;
+						memset(instr->i.x86.insn + instr->opcode_size, 0, (instr->size - instr->opcode_size));
+						// break;
 				}
 
-				// if (callee) {
-					// CALL to local function detected, augment the intermediate representation
-					// with the appropriate linking between instructions.
-					hnotice(4, "Callee function '%s' at <%#08llx> found\n",
-						callee->name, callee->orig_addr);
+				// At this point 'callee' will point to the destination function
+				// relative to the call; the only thing we have to do is to treat
+				// local function calls as relocation entities.
+				sym = callee->symbol;
 
-					// At this point 'callee' will point to the destination function
-					// relative to the call; the only thing we have to do is to add the
-					// reference to the relative function's symbol so that, in the future
-					// emit step, the code will automatically retrieve the correct final
-					// address of the relocation. In such a way we threat local function
-					// calls as relocation entities.
-					sym = callee->symbol;
-
-					if (ll_empty(&instr->reference) || PROGRAM(version) > 0) {
-						// The instruction object will be bound to the proper symbol
-						symbol_instr_rela_create(sym, instr, RELOC_PCREL_32);
-					}
-
-					set_jumpto_reference(instr, callee->begin_insn);
+				// if (ll_empty(&instr->reference) || PROGRAM(version) > 0) {
+					// The instruction object will be bound to the proper symbol
+					symbol_instr_rela_create(sym, instr, RELOC_PCREL_32);
 				// }
-
 			}
 
+			// CALL to local function detected, augment the intermediate representation
+			// with the appropriate linking between instructions.
+			hnotice(4, "Callee function '%s' at <%#08llx> found\n",
+				callee->name, callee->orig_addr);
+
+			set_jumpto_reference(instr, callee->begin_insn);
 		}
 
 	}
@@ -985,6 +980,11 @@ void link_jump_instructions(function *func) {
 }
 
 
+// FIXME: Questa funzione sancisce il passaggio da un address space
+// pseudo-segmentato (offset_sezione + offset_istruzione) a uno
+// totalmente lineare (offset_istruzione)... verificare che questa
+// operazione venga svolta correttamente (e verificare che sia
+// effettivamente necessaria...)
 /**
  * Updates all the instruction addresses, starting from the beginning of the
  * program all the way to its end. An offset variable takes into account the
@@ -993,6 +993,7 @@ void link_jump_instructions(function *func) {
  * new address, leaving the original address untouched for debugging purposes.
  *
  * @author Davide Cingolani
+ * @author Simone Economo
  */
 void update_instruction_addresses(int version) {
 	function *foo;
@@ -1007,69 +1008,50 @@ void update_instruction_addresses(int version) {
 
 	long long rela_offset;
 
-	hnotice(4, "Recalculate instructions' addresses\n");
+	hnotice(3, "Recalculate instructions' addresses\n");
 
 	// Instruction addresses are recomputed from scratch starting from the very beginning
 	// of the code section.
-	foo = PROGRAM(v_code)[version];
 	offset = 0;
-	while(foo) {
 
-		hnotice(5, "Updating instructions in function '%s'\n", foo->name);
-
+	for (foo = PROGRAM(v_code)[version]; foo; foo = foo->next) {
 		foo_size = 0;
 
-		instr = foo->begin_insn;
-		while(instr != NULL) {
+		hnotice(4, "Updating instructions in function '%s'\n", foo->name);
+
+		for (instr = foo->begin_insn; instr; instr = instr->next) {
 
 			old_offset = instr->new_addr;
-			// instr->i.x86.addr = instr->new_addr = offset;
 			instr->new_addr = offset;
 
 			offset += instr->size;
 			foo_size += instr->size;
 
-			// [SE] Updates the relocation entry to reflect the address update
-			// if (instr->reference) {
-			// 	instr->reference->relocation.offset = instr->new_addr + rela_offset;
-			// }
-			// if (instr->reference) {
-			// 	// rela_offset = instr->reference->relocation.offset - instr->new_addr;
-			// 	instr->reference->relocation.offset = instr->new_addr + instr->opcode_size;
-			// }
-
+			// Updates the relocation entry to reflect the address update
 			for (rela_node = instr->reference.first; rela_node; rela_node = rela_node->next) {
 				rela = rela_node->elem;
 
-				rela->relocation.offset = instr->new_addr + instr->opcode_size;
+				// rela->relocation.offset = instr->new_addr + instr->opcode_size;
+				rela->relocation.offset += instr->new_addr - old_offset;
 			}
 
-			// [SE] TODO: Hackish way to check for relocation from .text to .rodata, find better one
-			// if (instr->pointedby && !strncmp((const char *)instr->pointedby->name, ".text", 5)) {
-			// 	instr->pointedby->relocation.addend = instr->new_addr;
-			// }
-
+			// FIXME: Hackish way to check for relocation from .text to .rodata, find better one
 			for (rela_node = instr->pointedby.first; rela_node; rela_node = rela_node->next) {
 				rela = rela_node->elem;
 
 				if (str_prefix(rela->name, ".text")) {
-					rela->relocation.addend = instr->new_addr;
+					rela->relocation.addend += instr->new_addr - old_offset;
 				}
 			}
 
-
-			hnotice(6, "Instruction '%s' <%#08llx> at old address <%#08llx> (size %u) has new address <%#08llx>\n",
+			hnotice(5, "Instruction '%s' <%#08llx> at old address <%#08llx> (size %u) has new address <%#08llx>\n",
 				instr->i.x86.mnemonic, (unsigned long long) instr, old_offset, instr->size, instr->new_addr);
-
-			instr = instr->next;
 		}
 
 		foo->symbol->size = foo_size;
 
 		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n",
 			foo->symbol->name, foo->begin_insn->new_addr, foo->symbol->size);
-
-		foo = foo->next;
 	}
 
 }

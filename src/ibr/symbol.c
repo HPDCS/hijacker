@@ -571,7 +571,7 @@ symbol *symbol_rela_create_from_ELF(reloc *rel) {
 
 	rela->authentic = false;
 
-	hnotice(3, "New RELA node [%d] has been created at '%s' + %lld to symbol '%s' + %ld\n",
+	hnotice(3, "New RELA node [%d] has been created at '%s' + <%#08llx> to symbol '%s' + %ld\n",
 		rela->relocation.type, rela->relocation.sec->name, rela->relocation.offset,
 			rela->name, rela->relocation.addend);
 
@@ -646,7 +646,7 @@ symbol *symbol_instr_rela_create(symbol *sym, insn_info *insn, reloc_type type) 
 			hinternal();
 	}
 
-	hnotice(3, "New RELA node [%d] has been created at instruction <%#08llx> to symbol '%s' + %ld\n",
+	hnotice(3, "New RELA node [%s] has been created at instruction <%#08llx> to symbol '%s' + %ld\n",
 		reloc_type_str[type], insn->new_addr, rela->name, rela->relocation.addend);
 
 	return rela;

@@ -120,9 +120,12 @@ static void clone_relocations(int version, char *suffix) {
 					}
 
 					clone = symbol_rela_clone(sym);
+					// We need to copy everything since we're cloning an
+					// authentic symbol which has no relocation information
 					clone->relocation.type = rela->relocation.type;
 					clone->relocation.sec = rela->relocation.sec;
 					clone->relocation.offset = rela->relocation.offset;
+					clone->relocation.addend = rela->relocation.addend;
 				}
 
 				else if (rela->type == SYMBOL_SECTION && rela->sec->type == SECTION_CODE) {
