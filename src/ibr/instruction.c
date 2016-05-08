@@ -1008,16 +1008,14 @@ void update_instruction_addresses(int version) {
 
 	long long rela_offset;
 
-	hnotice(3, "Recalculate instructions' addresses\n");
-
-	// Instruction addresses are recomputed from scratch starting from the very beginning
-	// of the code section.
+	// Instruction addresses are recomputed from scratch starting from
+	// the very beginning of the code section.
 	offset = 0;
 
 	for (foo = PROGRAM(v_code)[version]; foo; foo = foo->next) {
 		foo_size = 0;
 
-		hnotice(4, "Updating instructions in function '%s'\n", foo->name);
+		hnotice(3, "Updating instructions in function '%s'\n", foo->name);
 
 		for (instr = foo->begin_insn; instr; instr = instr->next) {
 
@@ -1027,25 +1025,33 @@ void update_instruction_addresses(int version) {
 			offset += instr->size;
 			foo_size += instr->size;
 
+			hnotice(4, "Instruction '%s' <%#08llx> at old address <%#08llx> (size %u) has new address <%#08llx>\n",
+				instr->i.x86.mnemonic, (unsigned long long) instr, old_offset, instr->size, instr->new_addr);
+
 			// Updates the relocation entry to reflect the address update
 			for (rela_node = instr->reference.first; rela_node; rela_node = rela_node->next) {
 				rela = rela_node->elem;
+				rela_offset = rela->relocation.offset;
 
 				// rela->relocation.offset = instr->new_addr + instr->opcode_size;
 				rela->relocation.offset += instr->new_addr - old_offset;
+
+				hnotice(5, "Relocation in '%s' at old offset <%#08llx> updated to new offset <%#08llx>\n",
+					instr->i.x86.mnemonic, rela_offset, rela->relocation.offset);
 			}
 
 			// FIXME: Hackish way to check for relocation from .text to .rodata, find better one
 			for (rela_node = instr->pointedby.first; rela_node; rela_node = rela_node->next) {
 				rela = rela_node->elem;
+				rela_offset = rela->relocation.addend;
 
-				if (str_prefix(rela->name, ".text")) {
+				// if (str_prefix(rela->name, ".text")) {
 					rela->relocation.addend += instr->new_addr - old_offset;
-				}
-			}
+				// }
 
-			hnotice(5, "Instruction '%s' <%#08llx> at old address <%#08llx> (size %u) has new address <%#08llx>\n",
-				instr->i.x86.mnemonic, (unsigned long long) instr, old_offset, instr->size, instr->new_addr);
+				hnotice(5, "Relocation to '%s' at old addend <%#08llx> updated to new addend <%#08llx>\n",
+					instr->i.x86.mnemonic, rela_offset, rela->relocation.addend);
+			}
 		}
 
 		foo->symbol->size = foo_size;

@@ -116,7 +116,6 @@ static void smt_tls_init(void) {
   disp = 0;
 
   sym = find_symbol_by_name(".tbss");
-  // tbss_sec = find_symbol_by_name(".tbss")->sec;
 
   if (sym == NULL) {
     // If the section hasn't been found, it's time to create it

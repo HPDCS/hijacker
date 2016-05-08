@@ -707,6 +707,8 @@ static void resolve_relocation(void) {
 			}
 
 			else {
+				// FIXME: *(not:CODE)->*(not:CODE) has a bug if there are multiple
+				// sections .data, .rodata, etc...
 				// hinternal();
 			}
 		}

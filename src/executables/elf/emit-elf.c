@@ -436,12 +436,14 @@ unsigned long elf_write_code(section *sec, function *func) {
 
 	int machine;
 
-	size_t offset, addr, written, size;
+	unsigned long long old_offset, offset, addr, written;
+
+	size_t size;
 
 	void *ptr;
 
 	ll_node *rela_node;
-	symbol *sym;
+	symbol *rela;
 
 	int displ;
 
@@ -462,51 +464,52 @@ unsigned long elf_write_code(section *sec, function *func) {
 	offset = (unsigned long)((char *)sec->ptr - (char *)sec->payload);
 	written = 0;
 
-	// hnotice(3, "Writing function's data to text section...\n");
-
 	// Get machine information
 	machine = ELF(is64) ? ELF(hdr)->header64.e_machine : ELF(hdr)->header32.e_machine;
 
-	switch (machine) {
-	case -1:
+	if (machine == -1) {
 		herror(true, "Instruction code not yet implemented...\n");
-		break;
+	}
 
-	case EM_X86_64:
-		ptr = sec->ptr;
+	ptr = sec->ptr;
 
-		for (instr = func->begin_insn; instr; instr = instr->next) {
-			x86 = &instr->i.x86;
-			displ = 0;
+	for (instr = func->begin_insn; instr; instr = instr->next) {
+		displ = 0;
 
-			if (x86->disp != 0) {
-				displ = x86->disp_size;
-			}
+		switch(machine) {
+			case EM_X86_64:
+				x86 = &instr->i.x86;
 
-			// Handle relocations
-			for (rela_node = instr->reference.first; rela_node; rela_node = rela_node->next) {
-				sym = rela_node->elem;
-
-				instr->new_addr = offset + written;
-				addr = instr->new_addr + instr->opcode_size + displ;
-				// sym->relocation.offset = addr;
-				sym->relocation.sec = text[PROGRAM(version)];
-
-				elf_write_reloc(rela_text[PROGRAM(version)], sym, addr, sym->relocation.addend);
-			}
-
-			// Handle instruction
-			memcpy(sec->ptr, x86->insn, instr->size);
-
-			sec->ptr = (void *)((char *)sec->ptr + instr->size);
-			written += instr->size;
+				if (x86->disp != 0) {
+					displ = x86->disp_size;
+				}
+				break;
+			default:
+				herror(true, "Architecture type not recognized!\n");
 		}
 
-		// written += (long)((char *)sec->ptr - (char *)ptr);
-		break;
+		old_offset = instr->new_addr;
+		instr->new_addr = offset + written;
 
-	default:
-		herror(true, "Architecture type not recognized!\n");
+		// Write instruction
+		memcpy(sec->ptr, x86->insn, instr->size);
+
+		sec->ptr = (void *)((char *)sec->ptr + instr->size);
+		written += instr->size;
+
+		// Write relocations within instruction
+		for (rela_node = instr->reference.first; rela_node; rela_node = rela_node->next) {
+			rela = rela_node->elem;
+			rela->relocation.sec = text[PROGRAM(version)];
+
+			// hprint("Offset: %08llx, Orig: %08llx + %ld, New: %08llx + %ld\n",
+			// 	rela->relocation.offset, old_offset, rela->relocation.offset - old_offset, instr->new_addr, rela->relocation.offset - old_offset);
+
+			// addr = instr->new_addr + instr->opcode_size + displ;
+			addr = instr->new_addr + (rela->relocation.offset - old_offset);
+
+			elf_write_reloc(rela_text[PROGRAM(version)], rela, addr, rela->relocation.addend);
+		}
 	}
 
 	func->symbol->size = written;
