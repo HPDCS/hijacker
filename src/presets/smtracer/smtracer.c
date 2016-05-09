@@ -192,8 +192,7 @@ static void smt_tls_init(void) {
   buffer_name = malloc(BUFFER_NAME_LEN);
   sprintf(buffer_name, "__smtracer_buffer_%d", PROGRAM(version));
 
-  tls_buffer_sym = symbol_create(buffer_name, SYMBOL_TLS, SYMBOL_LOCAL, tbss_sec,
-    BUFFER_ENTRY_SIZE * tls_buffer_size);
+  tls_buffer_sym = symbol_create(buffer_name, SYMBOL_TLS, SYMBOL_LOCAL, tbss_sec, tbss_size);
 
   tls_buffer_sym->offset = disp;
   tls_buffer_sym->secnum = tbss_sec->index;

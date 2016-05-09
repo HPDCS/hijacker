@@ -565,7 +565,7 @@ symbol *symbol_rela_create_from_ELF(reloc *rel) {
 	rel->sym->referenced = true;
 
 	rela->relocation.addend = rel->addend;
-	rela->relocation.offset = rel->offset;
+	rela->relocation.offset = rel->sec->offset + rel->offset;
 	rela->relocation.type = rel->type;
 	rela->relocation.sec = rel->sec;
 
@@ -596,7 +596,8 @@ symbol *symbol_instr_rela_create(symbol *sym, insn_info *insn, reloc_type type) 
 
 	sym->referenced = true;
 
-	rela->relocation.offset = insn->new_addr + insn->opcode_size - func->symbol->sec->offset;
+	// rela->relocation.offset = insn->new_addr + insn->opcode_size - func->symbol->sec->offset;
+	rela->relocation.offset = insn->new_addr + insn->opcode_size;
 	rela->relocation.sec = func->symbol->sec;
 
 	ll_push(&insn->reference, rela);

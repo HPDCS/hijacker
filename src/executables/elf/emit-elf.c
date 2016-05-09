@@ -1258,16 +1258,22 @@ static void elf_fill_sections(void) {
 			hnotice(3, "Setting size of section '%s' [%d] (%d bytes)\n",
 				sec->name, sym->secnum, sym->size);
 
-			set_hdr_info(bss->header, sh_size, sym->size);
-			// elf_write_data(bss, sec->payload, sym->size);
+			// NOTE: `elf_write_data` is fundamental in order to prevent
+			// that `shrink_section_size` truncates the effective section's size
+
+			// set_hdr_info(bss->header, sh_size, sym->size);
+			elf_write_data(bss, sec->payload, sym->size);
 		}
 
 		else if (str_equal(sec->name, ".tbss")) {
 			hnotice(3, "Setting size of section '%s' [%d] (%d bytes)\n",
 				sec->name, sym->secnum, sym->size);
 
-			set_hdr_info(tbss->header, sh_size, sym->size);
-			// elf_write_data(tbss, sec->payload, sym->size);
+			// NOTE: `elf_write_data` is fundamental in order to prevent
+			// that `shrink_section_size` truncates the effective section's size
+			
+			// set_hdr_info(tbss->header, sh_size, sym->size);
+			elf_write_data(tbss, sec->payload, sym->size);
 		}
 	}
 

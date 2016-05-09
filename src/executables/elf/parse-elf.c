@@ -595,23 +595,26 @@ static void resolve_relocation(void) {
 
 	hnotice(1, "Resolving relocations...\n\n");
 
-	// Cycle through relocation sections
+	// Cycle through all the relocation sections
 	for (sec = PROGRAM(sections)[0]; sec; sec = sec->next) {
 
+		// If this is not a relocation section, skip it
 		if (sec->type != SECTION_RELOC) {
 			continue;
 		}
 
 		hnotice(2, "Parsing relocation section '%s'\n", sec_name(sec->index));
 
-		// Retrieve target section object
+		// Retrieve target section object from the knowledge of the 
+		// target section's index of the current relocation
 		target = find_section(sec_field(sec->index, sh_info));
 
 		if (target == NULL) {
 			hinternal();
 		}
 
-		// Cycle through relocation entries
+		// Cycle through all the relocation entries in the current
+		// relocation section `sec`
 		for (rel = sec->payload; rel; rel = rel->next) {
 
 			if (rel->symnum == 0) {
@@ -621,7 +624,7 @@ static void resolve_relocation(void) {
 
 			rel->sec = target;
 
-			// We look for the symbol pointed to by the relocation
+			// We look for the symbol pointed by the relocation `rel`
 			sym = find_symbol(rel->symnum);
 
 			if (!sym) {
@@ -637,11 +640,14 @@ static void resolve_relocation(void) {
 			hnotice(4, "Symbol found: '%s' [%u] [%s]\n",
 				sym->name, rel->symnum, symbol_type_str[sym->type]);
 
+			// Create a "relocation symbol" to the target object
+			// TODO: controllare che gli spiazzamenti e gli offset siano calcolati bene
 			rela = symbol_rela_create_from_ELF(rel);
 
 			if (rel->sec->type == SECTION_CODE) {
 				// The relocation applies to an instruction, so it is a SECTION->CODE
 				// kind of relocation.
+				// DAVIDE: this is a CODE->SECTION, indeed
 
 				addr = rel->sec->offset + rel->offset;
 
@@ -662,9 +668,15 @@ static void resolve_relocation(void) {
 
 				// The instruction object will be bound to the proper symbol.
 				// This reference is read by the specific machine code emitter
-				// that is in charge to proper handle the relocation.
+				// that is in charge to handle the relocation
 				rela->relocation.target_insn = instr;
 
+				// This relocation applies to the current instruction towards some symbol,
+				// therefore we must to add a new reference in the instruction's descriptor
+				// in order to keep track of it. The reference will be lately resolved by
+				// the specific emitter in the emit phase.
+				// Note: we use a list since there may be more relocations that applies to
+				// the same instruction.
 				ll_push(&instr->reference, rela);
 				// instr->reference = rela;
 
@@ -685,20 +697,28 @@ static void resolve_relocation(void) {
 				func = find_func_from_addr(addr);
 
 				if (!func) {
+					// Relocation points to a ghost function!
 					hinternal();
 				}
 
 				instr = find_insn_cool(func->begin_insn, addr);
 
 				if (!instr) {
+					// Relocation points to a ghost instruction!
 					hinternal();
 				}
 
 				hnotice(4, "Instruction pointed to by relocation: <%#08llx> '%s'\n",
 					instr->orig_addr, instr->i.x86.mnemonic);
 
+				// Add the reference to the found instruction in the current relocation's
+				// descriptor
 				rela->relocation.target_insn = instr;
 
+				// Add the reference that the currently found instruction has been referenced
+				// by a relocation.
+				// Note: we use list because one instruction can be referenced by more than
+				// one relocation entry
 				ll_push(&instr->pointedby, rela);
 				// instr->pointedby = rela;
 
@@ -707,6 +727,8 @@ static void resolve_relocation(void) {
 			}
 
 			else {
+				rela->relocation.offset = rel->offset;
+				herror(false, "Relocation entry does not match any case\n");
 				// FIXME: *(not:CODE)->*(not:CODE) has a bug if there are multiple
 				// sections .data, .rodata, etc...
 				// hinternal();

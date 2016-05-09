@@ -128,7 +128,9 @@ void section_append(section *sec, section **head) {
 
 
 /**
- * Looks for the section with the index specified.
+ * Look for the section with the index specified.
+ *
+ * @param index The index of the section to look for
  *
  * @return Returns the pointer to the section found, if any, NULL otherwise.
  */
