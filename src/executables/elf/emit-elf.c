@@ -488,15 +488,16 @@ unsigned long elf_write_code(section *sec, function *func) {
 				herror(true, "Architecture type not recognized!\n");
 		}
 
-		old_offset = instr->new_addr;
-		instr->new_addr = offset + written;
+		// old_offset = instr->new_addr;
+		// instr->new_addr = offset + written;
 
 		// Write instruction
 		memcpy(sec->ptr, x86->insn, instr->size);
 
 		sec->ptr = (void *)((char *)sec->ptr + instr->size);
-		written += instr->size;
+		// written += instr->size;
 
+		// For each relocation that apply to this instruction we have to rewrite them
 		// Write relocations within instruction
 		for (rela_node = instr->reference.first; rela_node; rela_node = rela_node->next) {
 			rela = rela_node->elem;
@@ -506,17 +507,19 @@ unsigned long elf_write_code(section *sec, function *func) {
 			// 	rela->relocation.offset, old_offset, rela->relocation.offset - old_offset, instr->new_addr, rela->relocation.offset - old_offset);
 
 			// addr = instr->new_addr + instr->opcode_size + displ;
-			addr = instr->new_addr + (rela->relocation.offset - old_offset);
+			// // addr = instr->new_addr + (rela->relocation.offset - old_offset);
+			addr = rela->relocation.offset;
 
 			elf_write_reloc(rela_text[PROGRAM(version)], rela, addr, rela->relocation.addend);
 		}
 	}
 
-	func->symbol->size = written;
+	// func->symbol->size = written;
 
 	hnotice(3, "Function '%s' has been written at '%s' + %u with size %u\n",
 		func->name, sec->name, func->symbol->offset, func->symbol->size);
 
+	// FIXME: non sono sicuro che l'offset sia gestito correttamente
 	return offset;
 }
 
@@ -1174,6 +1177,9 @@ static void elf_fill_sections(void) {
 
 	for (ver = 0; ver < PROGRAM(versions); ver++) {
 		switch_executable_version(ver);
+
+		update_instruction_addresses(ver);
+		update_jump_displacements(ver);
 
 		// Even if functions belong to different '.text' original sections,
 		// they are all actually written into the same output text section

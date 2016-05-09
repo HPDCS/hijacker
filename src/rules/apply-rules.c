@@ -516,8 +516,8 @@ void apply_rules(void) {
 		// if (version != 0 && instrumented) {
 			// [SE] If some actual instrumentation has been carried out, first update
 			// instruction addresses and then recompute jump displacements
-			update_instruction_addresses(version);
-			update_jump_displacements(version);
+			// update_instruction_addresses(version);
+			// update_jump_displacements(version);
 		// }
 
 		hnotice(1, "Instrumentation of executable version %d terminated: %d instructions have been instrumented\n",

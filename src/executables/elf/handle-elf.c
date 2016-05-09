@@ -80,6 +80,10 @@ static void clone_text_sections(int version, char *suffix) {
 }
 
 
+/**
+ *
+ *
+ */
 static void clone_relocations(int version, char *suffix) {
 	function *func;
 	insn_info *instr;
@@ -325,7 +329,6 @@ static void adjust_relocations(symbol *symbols, int version, section *text) {
 
 // 		}
 
-
 // 		offset += sizeof(char *);
 // 		rodata->sym->size += sizeof(char *);
 // 	}
@@ -382,6 +385,7 @@ int switch_executable_version(int version) {
 	// Updates the current working version of the binary representation.
 	// NOTE: We must perform this assignment now because all *_clone
 	// functions rely on the increased version number.
+	// NOTE: I believe it is better not to do that here
 	PROGRAM(version) = version;
 
 	// Checks whether the version is already present in the list
@@ -421,7 +425,7 @@ int switch_executable_version(int version) {
 		// Relinking jump instructions. Once cloned, instructions are no more
 		// linked together; this task belongs to the parsing stage, nevertheless
 		// we have to re-execute it in order to realign the representation's semantics
-		// During the cloning operation, each instruction will be unreferenced otherwise
+		// During the cloning operation, each instruction will be unreferenced, otherwise
 		// we they still points to the old original copy, which would be incorrect!
 
 		for (func = PROGRAM(v_code)[version]; func; func = func->next) {

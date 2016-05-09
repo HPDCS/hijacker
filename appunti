@@ -1,0 +1,23 @@
+- Doppia rilocazione su singola istruzione
+- Le stampe di debug sono basate sul valore new_addr che ora tiene in conto dello spiazzamento di sezione (.text multiple)
+- Lo switch della versione deve essere gestito coerentemente nelle chiamate delle funzioni di libreria (es. la ricerca di simboli o sezioni)
+  In particolare, la funzione di ricerca delle sezioni preleva la versione corrente dal PROGRAM che potrebbe non essere aggiornato al momento giusto;
+  la funzione di clonazione delle sezioni, invece, preleva il numero di versione dai parametri.
+  Gestire coerentemente il cambio di versione nella varibile globale di programma
+  
+- Gestire il cloning delle rilocazioni atomicamente in un'unica funzione
+
+- Macro per il tipo di sezione
+- Sistemare il flag authenitc sui simboli
+- target_insn viene **erroneamente** utilizzato in entrambi i versi semantici, tuttavia l'emitter non lo sfrutta se non da * to CODE
+- controllare i nomi delle variabili
+- occhio al codice commentato
+- non uniformità nei nomi dei field nelle strutture dell'ibr
+- creare API di stampa degli oggetti dell'IBR
+- Il punto di linearizzazione degli indirizzi delle istruzioni è nello switch di versione (viene applicata anche per la versione 0!)
+- L'euristica di risoluzione delle jump table è soggetta a crashare nel caso in cui la movimentazione dello start address sia confusa con la movimentazione di dati all'interno di un case statement
+- I simboli non inizializzati a zero non finiscono in .bss come da manuale, bensì in COMMON che in hijacker non ha un simbolo esplicito associato; pertanto l'instrumentazione potrebbe fallire a casusa della ricerca di una sezione fantasma
+  
+Funzioni da controllare
+- switch_executable_version
+  - clone_text_section

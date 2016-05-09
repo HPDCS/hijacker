@@ -455,6 +455,7 @@ insn_info * clone_instruction (insn_info *instr) {
 
 	memcpy(clone, instr, sizeof(insn_info));
 
+	// Reset the meta-data of new instruction clone
 	clone->jumpto = NULL;
 	clone->targetof.first = clone->targetof.last = NULL;
 	clone->jumptable.size = 0;
