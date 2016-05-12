@@ -335,7 +335,7 @@ void symbol_append(symbol *sym, symbol **head) {
 				// NOTE: In the future it would be posible to collapse two function symbols
 				// in the case they have the same byte footprint
 				char *new_name = malloc(256 * sizeof(char));
-				
+
 				sprintf(new_name, "%s_%d", sym->name, duplicate->index);
 				duplicate->name = new_name;
 
@@ -584,7 +584,18 @@ symbol *symbol_rela_create_from_ELF(reloc *rel) {
 	rel->sym->referenced = true;
 
 	rela->relocation.addend = rel->addend;
-	rela->relocation.offset = rel->sec->offset + rel->offset;
+
+	// if (rel->sym->sec != NULL && rel->sym->sec->type == SECTION_CODE) {
+		// rela->relocation.addend += rel->sym->sec->offset;
+	// }
+
+	rela->relocation.offset = rel->offset;
+
+	// if (rel->sec->type == SECTION_CODE) {
+		// Spaghetti coding never dies...
+		// rela->relocation.offset += rel->sec->offset;
+	// }
+
 	rela->relocation.type = rel->type;
 	rela->relocation.sec = rel->sec;
 

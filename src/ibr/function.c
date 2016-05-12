@@ -78,6 +78,20 @@ function *find_func_from_addr(unsigned long long addr) {
 }
 
 
+function *find_func_cool(section *sec, unsigned long long addr) {
+	function *func;
+
+	for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
+		if (func->symbol->sec == sec && func->begin_insn->orig_addr <= addr
+		 && func->begin_insn->orig_addr + func->symbol->size > addr) {
+			return func;
+		}
+	}
+
+	return NULL;
+}
+
+
 /**
  * Creates a new function descriptor along with its relative symbol. The newly
  * created function is added to the program's code (at the end) and is associated

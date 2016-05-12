@@ -359,6 +359,7 @@ symbol *symbol_rela_clone(symbol *sym);
 
 /* function.c */
 
+function *find_func_cool(section *sec, unsigned long long addr);
 function *find_func_from_instr(insn_info *instr, insn_address_type type);
 function *find_func_from_addr(unsigned long long addr);
 function *function_create_from_insn(char *name, insn_info *code);

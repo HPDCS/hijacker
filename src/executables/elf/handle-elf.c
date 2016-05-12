@@ -154,7 +154,7 @@ static void clone_relocations(int version, char *suffix) {
 				rela = rela_node->elem;
 
 				if (rela->type == SYMBOL_SECTION && rela->sec->type == SECTION_CODE) {
-					hinternal();
+					// hinternal();
 				}
 
 				// We seek the symbol associated to the parent section of

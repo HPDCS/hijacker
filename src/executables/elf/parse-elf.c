@@ -391,16 +391,18 @@ static function *resolve_function_symbol(symbol *sym) {
 	// the beginning of the section, plus the offset of the section
 	// from the beginning of the file object. This value is later used
 	// to re-compute the addresses of all the instructions.
-	func->orig_addr = func->new_addr = sym->offset + sec->offset;
+	// func->orig_addr = func->new_addr = sym->offset + sec->offset;
+	func->orig_addr = func->new_addr = sym->offset;
 
 	hnotice(2, "Function '%s' (%d bytes long) :: <%#08llx> (<%#08llx>)\n",
-		sym->name, sym->size, sym->offset, func->orig_addr);
+		sym->name, sym->size, sym->offset, func->begin_insn->orig_addr);
 
 	func->symbol = sym;
 	sym->func = func;
 
 	return func;
 }
+
 
 static void resolve_variable_symbol(symbol *sym) {
 	// We discard SHN_COMMON symbols because they refer to unallocated symbols,
@@ -426,6 +428,7 @@ static void resolve_variable_symbol(symbol *sym) {
 		hdump(5, sym->name, sym->payload, sym->size);
 	}
 }
+
 
 static void resolve_section_symbol(symbol *sym) {
 	section *sec;
@@ -544,23 +547,23 @@ static void resolve_symbols(void) {
 
 	prev->end_insn = instr;
 
-	// Update instruction addresses so to take into account
-	// multiple '.text' sections
-	for (prev = NULL, func = first; func; prev = func, func = func->next) {
+	// // Update instruction addresses so to take into account
+	// // multiple '.text' sections
+	// for (prev = NULL, func = first; func; prev = func, func = func->next) {
 
-		// Avoid updating instruction addresses multiple times.
-		// This check is needed because in some cases (e.g., C++ files)
-		// it is possible to have overlapping functions, that is functions
-		// whose base addresses are the same.
-		if (prev != NULL && func->orig_addr == prev->orig_addr) {
-			continue;
-		}
+	// 	// Avoid updating instruction addresses multiple times.
+	// 	// This check is needed because in some cases (e.g., C++ files)
+	// 	// it is possible to have overlapping functions, that is functions
+	// 	// whose base addresses are the same.
+	// 	if (prev != NULL && func->orig_addr == prev->orig_addr) {
+	// 		continue;
+	// 	}
 
-		for (instr = func->begin_insn; instr; instr = instr->next) {
-			instr->orig_addr += func->symbol->sec->offset;
-			instr->new_addr = instr->orig_addr;
-		}
-	}
+	// 	for (instr = func->begin_insn; instr; instr = instr->next) {
+	// 		instr->orig_addr += func->symbol->sec->offset;
+	// 		instr->new_addr = instr->orig_addr;
+	// 	}
+	// }
 
 	PROGRAM(symbols) = sec->payload;
 	PROGRAM(code) = first;
@@ -605,7 +608,7 @@ static void resolve_relocation(void) {
 
 		hnotice(2, "Parsing relocation section '%s'\n", sec_name(sec->index));
 
-		// Retrieve target section object from the knowledge of the 
+		// Retrieve target section object from the knowledge of the
 		// target section's index of the current relocation
 		target = find_section(sec_field(sec->index, sh_info));
 
@@ -641,17 +644,16 @@ static void resolve_relocation(void) {
 				sym->name, rel->symnum, symbol_type_str[sym->type]);
 
 			// Create a "relocation symbol" to the target object
-			// TODO: controllare che gli spiazzamenti e gli offset siano calcolati bene
 			rela = symbol_rela_create_from_ELF(rel);
 
 			if (rel->sec->type == SECTION_CODE) {
-				// The relocation applies to an instruction, so it is a SECTION->CODE
-				// kind of relocation.
-				// DAVIDE: this is a CODE->SECTION, indeed
+				// The relocation applies to an instruction, so it is a CODE->*
+				// kind of relocation ({where}->{to})
 
-				addr = rel->sec->offset + rel->offset;
+				// addr = rel->sec->offset + rel->offset;
+				addr = rel->offset;
 
-				func = find_func_from_addr(addr);
+				func = find_func_cool(rel->sec, addr);
 
 				if (!func) {
 					hinternal();
@@ -678,7 +680,6 @@ static void resolve_relocation(void) {
 				// Note: we use a list since there may be more relocations that applies to
 				// the same instruction.
 				ll_push(&instr->reference, rela);
-				// instr->reference = rela;
 
 				// hnotice(2, "Added symbol reference to '%s' + <%#08llx> + %d\n\n",
 				// 	sym->relocation.sec->name, rel->offset, rel->addend);
@@ -689,12 +690,13 @@ static void resolve_relocation(void) {
 				// the relocation does not apply to an instruction but to another symbol;
 				// e.g. a SECTION symbol, in case of generic references (.data, .bss, .rodata)
 
-				// If we are here, the relocation is SECTION->SECTION, otherwise
+				// If we are here, the relocation is *->CODE, otherwise
 				// an instruction would be found in the previous branch.
 
-				addr = rel->sym->sec->offset + rel->addend;
+				// addr = rel->sym->sec->offset + rel->addend;
+				addr = rel->addend;
 
-				func = find_func_from_addr(addr);
+				func = find_func_cool(rel->sym->sec, addr);
 
 				if (!func) {
 					// Relocation points to a ghost function!
@@ -720,17 +722,13 @@ static void resolve_relocation(void) {
 				// Note: we use list because one instruction can be referenced by more than
 				// one relocation entry
 				ll_push(&instr->pointedby, rela);
-				// instr->pointedby = rela;
 
 				// hnotice(2, "Added symbol reference to '%s' + <%#08llx> + %d\n\n",
 				// 	sym->relocation.sec->name, rel->offset, rel->addend);
 			}
 
 			else {
-				rela->relocation.offset = rel->offset;
 				herror(false, "Relocation entry does not match any case\n");
-				// FIXME: *(not:CODE)->*(not:CODE) has a bug if there are multiple
-				// sections .data, .rodata, etc...
 				// hinternal();
 			}
 		}
@@ -866,6 +864,10 @@ void elf_create_map(void) {
 	// Ultimates the binary representation
 	resolve_symbols();
 	resolve_relocation();
+
+	update_instruction_addresses(0);
+	update_jump_displacements(0);
+
 	resolve_jumps();
 	resolve_blocks();
 
