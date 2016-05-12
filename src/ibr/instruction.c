@@ -826,7 +826,7 @@ void link_jump_instructions(function *func) {
 	unsigned long long jmp_addr;
 
 	function *callee;
-	symbol *sym;
+	symbol *sym, *rela;
 
 	hnotice(2, "Resolve jumps/calls of function '%s'\n", func->name);
 
@@ -919,7 +919,37 @@ void link_jump_instructions(function *func) {
 					continue;
 				}
 
-				callee = sym->func;
+				// When using OpenMP, CGG has the *brilliant* idea of calling a function
+				// by referring the function address indirectly through a .text-based
+				// relocation and an addend which, clearly, on x86 is 4 bytes behind.
+				// If you didn't understand the sentence above, don't worry... it doesn't
+				// make sense because what GCC does, too, is beyond reason.
+
+				if (sym->type == SYMBOL_SECTION && sym->sec->type == SECTION_CODE) {
+					// FIXME: Not sure size - opcode_size is portable across ISAs
+					jmp_addr = sym->relocation.addend + instr->size - instr->opcode_size;
+					callee = find_func_from_addr(jmp_addr);
+
+					hnotice(4, "Call instruction at <%#08llx> invokes function through indirect relocation\n", instr->orig_addr);
+
+					if (callee) {
+						for (rela = PROGRAM(symbols); rela->next; rela = rela->next) {
+							if (rela->next == sym) {
+								rela->next = sym->next;
+								break;
+							}
+						}
+
+						ll_pop_first(&instr->reference);
+						free(sym);
+
+						symbol_instr_rela_create(callee, instr, RELOC_PCREL_32);
+					} else {
+						hinternal();
+					}
+				} else {
+					callee = sym->func;
+				}
 
 				if (!callee) {
 					hinternal();
