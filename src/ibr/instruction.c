@@ -383,7 +383,10 @@ void add_call_instruction(insn_info *target, unsigned char *name, insn_insert_mo
 	}
 
 	// Creates the symbol name
-	sym = symbol_create(name, SYMBOL_UNDEF, SYMBOL_GLOBAL, sec, 0);
+	sym = find_symbol_by_name(name);
+	if (sym == NULL) {
+		sym = symbol_create(name, SYMBOL_UNDEF, SYMBOL_GLOBAL, sec, 0);
+	}
 
 	// Adds the instruction to the binary representation
 	// WRANING! We MUST add the instruction BEFORE creating
@@ -926,8 +929,16 @@ void link_jump_instructions(function *func) {
 				// make sense because what GCC does, too, is beyond reason.
 
 				if (sym->type == SYMBOL_SECTION && sym->sec->type == SECTION_CODE) {
+					// sym punta ad una sezione testo al cui offset di rilocazione
+					// è indirettamente associata una funzione.
+					// è necessario trovare la funzione destinazione, creare un nuovo
+					// simbolo di rilocazione verso la funzione a partire dall'istruzione
+					// corrente ed eliminare il simbolo (fake) che rappresenta la rilocazione
+					// verso .text dalla stessa istruzione
+
 					// FIXME: Not sure size - opcode_size is portable across ISAs
 					jmp_addr = sym->relocation.addend + instr->size - instr->opcode_size;
+					jmp_addr += sym->sec->offset;
 					callee = find_func_from_addr(jmp_addr);
 
 					hnotice(4, "Call instruction at <%#08llx> invokes function through indirect relocation\n", instr->orig_addr);
@@ -943,7 +954,7 @@ void link_jump_instructions(function *func) {
 						ll_pop_first(&instr->reference);
 						free(sym);
 
-						symbol_instr_rela_create(callee, instr, RELOC_PCREL_32);
+						symbol_instr_rela_create(callee->symbol, instr, RELOC_PCREL_32);
 					} else {
 						hinternal();
 					}

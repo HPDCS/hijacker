@@ -307,6 +307,7 @@ symbol *symbol_create_from_ELF(Elf_Sym *elfsym) {
 
 void symbol_append(symbol *sym, symbol **head) {
 	symbol *curr, *prev;
+	symbol *duplicate;
 
 	// We append the symbol to an input list of symbols, at a position
 	// which depends on the symbol binding:
@@ -324,6 +325,25 @@ void symbol_append(symbol *sym, symbol **head) {
 	} else {
 		curr = *head;
 		prev = NULL;
+
+		// duplicate = find_symbol_by_name(sym->name);
+		for (duplicate = *head; duplicate != NULL; duplicate = duplicate->next) {
+			if (duplicate->name[0] == '\0')
+				continue;
+
+			if (str_equal(duplicate->name, sym->name)) {
+				// NOTE: In the future it would be posible to collapse two function symbols
+				// in the case they have the same byte footprint
+				char *new_name = malloc(256 * sizeof(char));
+				
+				sprintf(new_name, "%s_%d", sym->name, duplicate->index);
+				duplicate->name = new_name;
+
+				herror(false, "Two symbol with same names are found ('%s'); change into '%s'\n",
+					sym->name, new_name);
+			}
+		}
+
 
 		while (curr) {
 			if (sym->bind == SYMBOL_LOCAL && curr->bind != SYMBOL_LOCAL) {
