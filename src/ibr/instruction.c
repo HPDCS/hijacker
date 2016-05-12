@@ -922,11 +922,20 @@ void link_jump_instructions(function *func) {
 					continue;
 				}
 
-				// When using OpenMP, CGG has the *brilliant* idea of calling a function
-				// by referring the function address indirectly through a .text-based
-				// relocation and an addend which, clearly, on x86 is 4 bytes behind.
-				// If you didn't understand the sentence above, don't worry... it doesn't
-				// make sense because what GCC does, too, is beyond reason.
+				// A CALL whose displacement is filled with a .text+addend relocation,
+				// rather than a relocation toward a FUNCTION symbol, may result
+				// from incremental linking. Consider two LOCAL functions with the
+				// same name in two different objects. When linking those object
+				// with '-r' a third object file will be produced with two LOCAL
+				// functions, both with the same name.
+				// To distinguish between an invocation to a function and one
+				// to the other function, the linker modifies all relocations.
+				// Specifically, it resorts to a .text+addend schema. This will
+				// guarantee that the correct function be called, always.
+				// Note that the same mechanism is also used by the linker for
+				// other kind of same-name symbols (e.g., OBJECT ones).
+				// Unfortunately, this causes problem to our parsing of the instruction
+				// jump/call graph, as well as the CFG.
 
 				if (sym->type == SYMBOL_SECTION && sym->sec->type == SECTION_CODE) {
 					// sym punta ad una sezione testo al cui offset di rilocazione
@@ -943,27 +952,27 @@ void link_jump_instructions(function *func) {
 
 					hnotice(4, "Call instruction at <%#08llx> invokes function through indirect relocation\n", instr->orig_addr);
 
-					if (callee) {
-						for (rela = PROGRAM(symbols); rela->next; rela = rela->next) {
-							if (rela->next == sym) {
-								rela->next = sym->next;
-								break;
-							}
-						}
-
-						ll_pop_first(&instr->reference);
-						free(sym);
-
-						symbol_instr_rela_create(callee->symbol, instr, RELOC_PCREL_32);
-					} else {
+					if (!callee) {
 						hinternal();
 					}
+
+					for (rela = PROGRAM(symbols); rela->next; rela = rela->next) {
+						if (rela->next == sym) {
+							rela->next = sym->next;
+							break;
+						}
+					}
+
+					ll_pop_first(&instr->reference);
+					free(sym);
+
+					symbol_instr_rela_create(callee->symbol, instr, RELOC_PCREL_32);
 				} else {
 					callee = sym->func;
-				}
 
-				if (!callee) {
-					hinternal();
+					if (!callee) {
+						hinternal();
+					}
 				}
 			}
 

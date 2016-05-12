@@ -384,7 +384,6 @@ symbol *symbol_check_shared(symbol *sym) {
 
 	// Duplicate the last symbol copy and mark it, too, as a copy
 	clone = (symbol *) malloc(sizeof(symbol));
-
 	memcpy(clone, sym, sizeof(symbol));
 
 	clone->duplicate = true;
