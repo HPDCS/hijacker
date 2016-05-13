@@ -600,8 +600,6 @@ static void resolve_relocation(void) {
 
 	// Cycle through all the relocation sections
 	for (sec = PROGRAM(sections)[0]; sec; sec = sec->next) {
-
-		// If this is not a relocation section, skip it
 		if (sec->type != SECTION_RELOC) {
 			continue;
 		}
@@ -616,8 +614,7 @@ static void resolve_relocation(void) {
 			hinternal();
 		}
 
-		// Cycle through all the relocation entries in the current
-		// relocation section `sec`
+		// Cycle through all the relocation entries in `sec`
 		for (rel = sec->payload; rel; rel = rel->next) {
 
 			if (rel->symnum == 0) {
@@ -634,14 +631,13 @@ static void resolve_relocation(void) {
 				hinternal();
 			}
 
-			hnotice(3, "Parsing relocation at '%s' + <%#08llx> + %d to %s [%d]\n",
-				rel->sec->name, rel->offset, rel->addend, sym->name, rel->symnum);
-
-			// Symbol found, we can proceed to perform further analysis
 			rel->sym = sym;
 
-			hnotice(4, "Symbol found: '%s' [%u] [%s]\n",
-				sym->name, rel->symnum, symbol_type_str[sym->type]);
+			// hnotice(4, "Symbol found: '%s' [%u] [%s]\n",
+			// 	sym->name, rel->symnum, symbol_type_str[sym->type]);
+
+			hnotice(3, "Parsing relocation at '%s' + <%#08llx> + %d to %s [%d]\n",
+				rel->sec->name, rel->offset, rel->addend, sym->name, rel->symnum);
 
 			// Create a "relocation symbol" to the target object
 			rela = symbol_rela_create_from_ELF(rel);

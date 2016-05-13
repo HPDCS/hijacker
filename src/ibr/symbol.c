@@ -466,7 +466,14 @@ void find_relocations(symbol *symbols, section *in, symbol *to, linked_list *lis
 
 	for (sym = symbols; sym; sym = sym->next) {
 
-		if (sym->sec == in && str_equal(sym->name, to->name)) {
+		// Skip all non-relocation symbols
+		if (sym->authentic) {
+			continue;
+		}
+
+		// Check if the relocation applies to the requested section
+		// and refers the requested symbol
+		if (sym->relocation.sec == in && str_equal(sym->name, to->name)) {
 
 			if (ll_empty(list)) {
 				ll_push(list, sym);
@@ -584,18 +591,7 @@ symbol *symbol_rela_create_from_ELF(reloc *rel) {
 	rel->sym->referenced = true;
 
 	rela->relocation.addend = rel->addend;
-
-	// if (rel->sym->sec != NULL && rel->sym->sec->type == SECTION_CODE) {
-		// rela->relocation.addend += rel->sym->sec->offset;
-	// }
-
 	rela->relocation.offset = rel->offset;
-
-	// if (rel->sec->type == SECTION_CODE) {
-		// Spaghetti coding never dies...
-		// rela->relocation.offset += rel->sec->offset;
-	// }
-
 	rela->relocation.type = rel->type;
 	rela->relocation.sec = rel->sec;
 

@@ -947,7 +947,7 @@ void link_jump_instructions(function *func) {
 
 					// FIXME: Not sure size - opcode_size is portable across ISAs
 					jmp_addr = sym->relocation.addend + instr->size - instr->opcode_size;
-					jmp_addr += sym->sec->offset;
+					// jmp_addr += sym->sec->offset;
 					callee = find_func_from_addr(jmp_addr);
 
 					hnotice(4, "Call instruction at <%#08llx> invokes function through indirect relocation\n", instr->orig_addr);

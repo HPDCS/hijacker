@@ -82,6 +82,7 @@ static void clone_text_sections(int version, char *suffix) {
 
 /**
  *
+ * Nothing to see here---move along, move along.
  *
  */
 static void clone_relocations(int version, char *suffix) {
@@ -101,10 +102,19 @@ static void clone_relocations(int version, char *suffix) {
 			// From CODE to *
 			// --------------------------------------------------------
 
-			for (rela_node = instr->parent->reference.first; rela_node; rela_node = rela_node->next) {
+			for (rela_node = instr->parent->reference.first; rela_node;
+			     rela_node = rela_node->next) {
 				rela = rela_node->elem;
 
-				if (rela->type == SYMBOL_FUNCTION) {
+				if (rela->type == SYMBOL_SECTION && rela->sec->type == SECTION_CODE) {
+					hinternal();
+				}
+
+				else if (rela->type != SYMBOL_FUNCTION) {
+					clone = symbol_rela_clone(rela);
+				}
+
+				else {
 					// If it is a relocation toward a function, we must make
 					// sure that the function from the new version is referred,
 					// not the original one
@@ -127,20 +137,12 @@ static void clone_relocations(int version, char *suffix) {
 					// We need to copy everything since we're cloning an
 					// authentic symbol which has no relocation information
 					clone->relocation.type = rela->relocation.type;
-					clone->relocation.sec = rela->relocation.sec;
 					clone->relocation.offset = rela->relocation.offset;
 					clone->relocation.addend = rela->relocation.addend;
 				}
 
-				else if (rela->type == SYMBOL_SECTION && rela->sec->type == SECTION_CODE) {
-					hinternal();
-				}
-
-				else {
-					// We only need to update the section information
-					clone = symbol_rela_clone(rela);
-					clone->relocation.sec = func->symbol->sec;
-				}
+				// We need to update the section information
+				clone->relocation.sec = func->symbol->sec;
 
 				clone->relocation.target_insn = instr;
 				ll_push(&instr->reference, clone);
@@ -150,7 +152,8 @@ static void clone_relocations(int version, char *suffix) {
 			// From * to CODE
 			// --------------------------------------------------------
 
-			for (rela_node = instr->parent->pointedby.first; rela_node; rela_node = rela_node->next) {
+			for (rela_node = instr->parent->pointedby.first; rela_node;
+			     rela_node = rela_node->next) {
 				rela = rela_node->elem;
 
 				if (rela->type == SYMBOL_SECTION && rela->sec->type == SECTION_CODE) {
@@ -168,6 +171,8 @@ static void clone_relocations(int version, char *suffix) {
 				clone = symbol_rela_clone(sym);
 				clone->relocation.type = rela->relocation.type;
 				clone->relocation.sec = rela->relocation.sec;
+				// WARNING: This offset *must* be updated in `adjust_relocations`!
+				// If this is not the case, abandon the ship.
 				clone->relocation.offset = rela->relocation.offset;
 
 				clone->relocation.target_insn = instr;
@@ -184,26 +189,24 @@ static void adjust_relocations(symbol *symbols, int version, section *text) {
 	section *sec;
 
 	for (sec = PROGRAM(sections)[0]; sec; sec = sec->next) {
-		if (sec->type == SECTION_CODE) {
+
+		if (sec->type == SECTION_CODE || sec->type == SECTION_RELOC) {
 			continue;
 		}
 
-		linked_list relocs = { NULL, NULL };
-
-		// Get all relocations in `sec` to `text`, ordered by offset
+		// Get all relocations at `sec` to `text`, ordered by offset
 		// and picked from the global list of symbols `symbols`
+		linked_list relocs = { NULL, NULL };
 		find_relocations(symbols, sec, text->sym, &relocs);
 
-		// Consume the ordered list by picking the first relocation
-		// each time, in order to respect the offset ordering
-		// enforced above
+		// Consume the ordered list of relocations, in order to respect
+		// the offset ordering enforced above
 		while(!ll_empty(&relocs)) {
 			rela = ll_pop_first(&relocs);
 
 			if (rela->version == 0) {
 				// We are asking for relocations toward `text`, which is
-				// a section belonging to a version strictly greater
-				// than 0
+				// a section belonging to a version > 0
 				hinternal();
 			}
 
@@ -213,20 +216,31 @@ static void adjust_relocations(symbol *symbols, int version, section *text) {
 				hinternal();
 			}
 
+			// We parse the list of relocations again, this time seeking all
+			// relocations which apply to the requested CODE section.
+			// In particular, we need to match a X->CODE relocation
+			// with a CODE->X relocation. When this happens, we *MIGHT* have
+			// found the beginning of a branch table.
 			for (rela2 = symbols; rela2; rela2 = rela2->next) {
-				if (rela2->authentic == true
-					  || rela2->version != version
-					  || rela2->relocation.sec != text) {
+				if (rela2->authentic == true || rela2->version != version) {
+					continue;
+				}
+
+				if (rela2->relocation.sec != text) {
+					// We ask for CODE->X relocations
 					continue;
 				}
 
 				if (rela2->relocation.target_insn == NULL) {
+					// All relocations at CODE sections should have the
+					// `target_insn` field populated
 					hinternal();
 				}
 
 				if (rela->relocation.sec == rela2->sec
 				    && rela->relocation.offset == rela2->relocation.addend) {
-					// We *MIGHT* have found the beginning of a branch table.
+					// Cross-matching sections and cross-matching displacements...
+					// ...we might have found the beginning of a branch table
 
 					rela2->relocation.addend = sec->sym->size;
 
@@ -389,7 +403,8 @@ int switch_executable_version(int version) {
 	PROGRAM(version) = version;
 
 	// Checks whether the version is already present in the list
-	// otherwise it creates a new one by cloning the whole code
+	// otherwise it creates a new one by cloning code and relocations,
+	// as well as inflating data sections whenever appropriate...
 	// (symbols are not copied since they are shared among versions)
 
 	if(!PROGRAM(v_code)[version]) {
@@ -398,41 +413,36 @@ int switch_executable_version(int version) {
 		suffix = (char *) (config.rules[version]->suffix);
 
 		// Clones the whole code (function symbols included) from the plain version
-		// to the new one, by appending the user-defined suffix to each name
+		// to the new one, by appending the user-defined suffix to each name.
+		// Once cloned, instructions are no more linked together in the call/jump graph;
+		// this task belongs to the parsing stage, nevertheless/ we have to re-execute it
+		// in order to realign the representation's semantics.
 		PROGRAM(v_code)[version] = clone_function_list(PROGRAM(v_code)[0], suffix);
 
-		// A new section symbol is created that represents the .text.xyz section
-		// holding the current version's code. This step is mandatory to have the
-		// relocation towards the .text.xyz section aligned for the switch cases.
-		// bzero(name, sizeof(name));
-		// strcpy(name, ".text.");
-		// strcat(name, suffix);
-		// text = create_symbol_node((unsigned char *)name, SYMBOL_SECTION, SYMBOL_LOCAL, 0);
-
+		// Duplicates all sections containing code and updates the section pointer
+		// in the respective function symbols, so that the new functions (which
+		// were cloned previously) are correctly associated with the new text section.
 		clone_text_sections(version, suffix);
 
+		// We now clone all relocations at or to a cloned text so that we can later
+		// adjust them if needed. This is a quite naive copy of relocations which
+		// only takes care of adjusting the `relocation.sec` field so as to make
+		// it point to the cloned text section.
 		clone_relocations(version, suffix);
 
-		// For each text section S in the new version, we adjust relocations
-		// from X->S in order to create room for new data in X.
-		// This hopefully covers cases such as branch tables and other
-		// pointers going around in town.
-
+		// For each text section T in the new version, we adjust relocations
+		// from X->T in order to create room for new data in X. This should
+		// hopefully covers cases such as branch tables and other pointers.
 		for (text = PROGRAM(sections)[version]; text; text = text->next) {
 			adjust_relocations(PROGRAM(symbols), version, text);
 		}
 
-		// Relinking jump instructions. Once cloned, instructions are no more
-		// linked together; this task belongs to the parsing stage, nevertheless
-		// we have to re-execute it in order to realign the representation's semantics
-		// During the cloning operation, each instruction will be unreferenced, otherwise
-		// we they still points to the old original copy, which would be incorrect!
-
+		// Re-linking jump instructions
 		for (func = PROGRAM(v_code)[version]; func; func = func->next) {
 			link_jump_instructions(func);
 		}
 
-		// Eventually, a new CFG is created for this version
+		// Re-creating a CFG
 		PROGRAM(blocks)[version] = block_graph_create(PROGRAM(v_code)[version]);
 
 		// Update the executable versions array
