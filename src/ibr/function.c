@@ -43,24 +43,35 @@
  *
  * @author Simone Economo
  */
-function *find_func_from_instr(insn_info *instr, insn_address_type type) {
+function *find_func_from_instr(insn_info *target, insn_address_type type) {
 	function *func, *prev;
+	insn_info *instr;
 
-	for (func = PROGRAM(v_code)[PROGRAM(version)], prev = NULL; func;
-		   prev = func, func = func->next) {
-		if (type == NEW_ADDR && func->begin_insn->new_addr > instr->new_addr) {
-			return prev;
-		}
-		else if (type == ORIG_ADDR && func->begin_insn->orig_addr > instr->orig_addr) {
-			return prev;
+	for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
+		for (instr = func->begin_insn; instr; instr = instr->next) {
+			if (instr == target) {
+				return func;
+			}
 		}
 	}
 
-	// if (!func) {
-	// 	return NULL;
+	return NULL;
+
+	// for (func = PROGRAM(v_code)[PROGRAM(version)], prev = NULL; func;
+	// 	   prev = func, func = func->next) {
+	// 	if (type == NEW_ADDR && func->begin_insn->new_addr > instr->new_addr) {
+	// 		return prev;
+	// 	}
+	// 	else if (type == ORIG_ADDR && func->begin_insn->orig_addr > instr->orig_addr) {
+	// 		return prev;
+	// 	}
 	// }
 
-	return prev;
+	// // if (!func) {
+	// // 	return NULL;
+	// // }
+
+	// return prev;
 }
 
 
@@ -104,18 +115,14 @@ function *find_func_cool(section *sec, unsigned long long addr) {
  *
  * @return Pointer to the new function descriptor.
  */
-function *function_create_from_insn(char *name, insn_info *code) {
-	function *func, *curr;
+function *function_create_from_insn(char *name, insn_info *code, section *sec) {
+	function *func, *prev, *curr;
 	symbol *sym;
 	insn_info *instr;
-	section *sec;
 
 	size_t size;
 
-	size = 0;
-	for (instr = code; instr; instr = instr->next) {
-		size += instr->size;
-	}
+	for (size = 0, instr = code; instr; size += instr->size, instr = instr->next);
 
 	func = (function *) calloc(sizeof(function), 1);
 
@@ -124,19 +131,27 @@ function *function_create_from_insn(char *name, insn_info *code) {
 
 	func->begin_insn = code;
 
-	for (curr = PROGRAM(v_code)[PROGRAM(version)]; curr->next; curr = curr->next);
-
-	sec = curr->symbol->sec;
-	sec->sym->size += size;
-
 	sym = symbol_create(name, SYMBOL_FUNCTION, SYMBOL_GLOBAL, sec, size);
 	func->symbol = sym;
 	sym->func = func;
 
-	func->orig_addr = func->new_addr = (curr->new_addr + curr->symbol->size);
-	func->symbol->offset = func->orig_addr;
+	// func->symbol->offset = sec->sym->size;
 
-	curr->next = func;
+	for (instr = code; instr; instr = instr->next) {
+		instr->new_addr += sec->sym->size;
+	}
+
+	// sec->sym->size += size;
+
+	for (prev = NULL, curr = PROGRAM(v_code)[PROGRAM(version)]; curr;
+		prev = curr, curr = curr->next) {
+		if (prev && prev->symbol->sec == sec && curr->symbol->sec != sec) {
+			break;
+		}
+	}
+
+	prev->next = func;
+	func->next = curr;
 
 	hnotice(4, "New function '%s' created\n", name);
 
@@ -151,7 +166,7 @@ function *function_create_from_insn(char *name, insn_info *code) {
  *
  *
  */
-function *function_create_from_bytes(char *name, unsigned char *code, size_t size) {
+function *function_create_from_bytes(char *name, unsigned char *code, size_t size, section *sec) {
 	insn_info *insn, *first;
 	function *func;
 	unsigned long long pos;
@@ -160,13 +175,8 @@ function *function_create_from_bytes(char *name, unsigned char *code, size_t siz
 	insn = first;
 	pos = 0;
 
-	func = function_create_from_insn(name, first);
-	insn->new_addr = func->new_addr;
-
 	// Parse the instruction bytes provided in order to create a chain of
 	// instructions to append to the newly-created function
-
-	// This will create the instruction chain
 	while(pos < size) {
 		parse_instruction_bytes(code, &pos, &insn);
 
@@ -179,6 +189,8 @@ function *function_create_from_bytes(char *name, unsigned char *code, size_t siz
 		insn->next->orig_addr = insn->orig_addr;
 		insn = insn->next;
 	}
+
+	func = function_create_from_insn(name, first, sec);
 
 	return func;
 }

@@ -392,7 +392,6 @@ static function *resolve_function_symbol(symbol *sym) {
 	// from the beginning of the file object. This value is later used
 	// to re-compute the addresses of all the instructions.
 	// func->orig_addr = func->new_addr = sym->offset + sec->offset;
-	func->orig_addr = func->new_addr = sym->offset;
 
 	hnotice(2, "Function '%s' (%d bytes long) :: <%#08llx> (<%#08llx>)\n",
 		sym->name, sym->size, sym->offset, func->begin_insn->orig_addr);
@@ -488,9 +487,10 @@ static void resolve_symbols(void) {
 
 				if (func) {
 					// We maintain an ordered list of functions according to their
-					// absolute addresses.
+					// parent sections and their absolute addresses.
 					for (prev = NULL, curr = first; curr; prev = curr, curr = curr->next) {
-						if (func->orig_addr <= curr->orig_addr) {
+						if (func->symbol->sec == curr->symbol->sec &&
+						    func->begin_insn->orig_addr <= curr->begin_insn->orig_addr) {
 							break;
 						}
 					}
@@ -633,9 +633,6 @@ static void resolve_relocation(void) {
 
 			rel->sym = sym;
 
-			// hnotice(4, "Symbol found: '%s' [%u] [%s]\n",
-			// 	sym->name, rel->symnum, symbol_type_str[sym->type]);
-
 			hnotice(3, "Parsing relocation at '%s' + <%#08llx> + %d to %s [%d]\n",
 				rel->sec->name, rel->offset, rel->addend, sym->name, rel->symnum);
 
@@ -736,16 +733,7 @@ static void resolve_relocation(void) {
 
 
 static void resolve_jumps(void) {
-	function *func, *prev;
-
-	hnotice(1, "Resolving jump and call instructions...\n\n");
-
-	for (prev = NULL, func = PROGRAM(code); func; prev = func, func = func->next) {
-		if (prev != NULL && func->orig_addr == prev->orig_addr) {
-			continue;
-		}
-		link_jump_instructions(func);
-	}
+	link_jump_instructions();
 
 	hsuccess();
 }
@@ -753,13 +741,7 @@ static void resolve_jumps(void) {
 
 
 static void resolve_blocks(void) {
-	block *blocks;
-
-	hnotice(1, "Resolving blocks...\n\n");
-
-	blocks = block_graph_create(PROGRAM(code));
-
-	PROGRAM(blocks)[0] = blocks;
+	PROGRAM(blocks)[0] = block_graph_create();
 
 	hsuccess();
 }

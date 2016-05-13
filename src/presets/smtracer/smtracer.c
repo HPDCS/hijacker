@@ -39,9 +39,9 @@
 
 
 // Size of a single entry in the TLS buffer
-#define BUFFER_ENTRY_SIZE (1<<4 + 1<<3)
+#define BUFFER_ENTRY_SIZE 24
 // Size of a single field in an entry of the TLS buffer
-#define BUFFER_FIELD_SIZE (1<<3)
+#define BUFFER_FIELD_SIZE 8
 // Maximum length for the name of the TLS buffer symbol
 #define BUFFER_NAME_LEN   (1<<6)
 

@@ -69,7 +69,7 @@ insn_info *find_insn(function *func, unsigned long long addr, insn_address_type 
 	while (func) {
 
 		if (func->next) {
-			if (func->next->begin_insn->orig_addr <= addr) {
+			if (func->next->begin_insn->new_addr <= addr) {
 				func = func->next;
 				continue;
 			}
@@ -823,7 +823,8 @@ static void resolve_jump_table(function *func, insn_info *instr) {
  * @param func The pointer to a valid function's descriptors
  */
 
-void link_jump_instructions(function *func) {
+void link_jump_instructions(void) {
+	function *func, *prev;
 	insn_info *instr, *dest;
 
 	unsigned long long jmp_addr;
@@ -831,202 +832,214 @@ void link_jump_instructions(function *func) {
 	function *callee;
 	symbol *sym, *rela;
 
-	hnotice(2, "Resolve jumps/calls of function '%s'\n", func->name);
+	hnotice(1, "Resolving jump and call instructions...\n");
 
-	for (instr = func->begin_insn; instr; instr = instr->next) {
-
-		hnotice(6, "Inspecting instruction %s at %#08llx\n",
-			instr->i.x86.mnemonic, instr->orig_addr);
-
-		// ---------------------------------------------------------
-		// JUMP instructions
-		// ---------------------------------------------------------
-
-		if (IS_JUMP(instr)) {
-
-			hnotice(3, "Found jump instruction at <%#08llx> (<%#08llx>)\n",
-				instr->orig_addr, instr->new_addr);
-
-			if (IS_JUMPIND(instr)) {
-				// If the instruction is an indirect jump, try to resolve its
-				// associated jump table (currently only for switch-case statements)
-				// NOTE: This is a very naive and loose algorithm that may fail
-				// in several cases, and is not kitten-proof! Beware!
-				resolve_jump_table(func, instr);
-			}
-
-			else if (!ll_empty(&instr->reference)) {
-				// If the jump instruction has a relocation, simply skip the instruction;
-				// the linker will be in charge to correctly handle it
-				continue;
-			}
-
-			else {
-				// The JUMP has a non-null embedded offset, from which we can derive
-				// the effective jump address
-				switch (PROGRAM(insn_set)) {
-					case X86_INSN:
-						if (instr->i.x86.jump_dest == 0) {
-							// We expect a non-null embedded offset...
-							hinternal();
-						}
-						jmp_addr = instr->orig_addr + instr->size + instr->i.x86.jump_dest;
-						break;
-					default:
-						hinternal();
-				}
-
-				hnotice(6, "Jump to a local instruction at <%#08llx> detected\n", jmp_addr);
-
-				dest = find_insn_cool(func->begin_insn, jmp_addr);
-
-				if (!dest) {
-					hinternal();
-				}
-
-				set_jumpto_reference(instr, dest);
-			}
-
+	for (prev = NULL, func = PROGRAM(v_code)[PROGRAM(version)]; func;
+	     prev = func, func = func->next) {
+		if (functions_overlap(prev, func)) {
+			continue;
 		}
 
-		// ---------------------------------------------------------
-		// CALL instructions
-		// ---------------------------------------------------------
+		hnotice(2, "Resolve jumps/calls of function '%s'\n", func->name);
 
-		else if (IS_CALL(instr)) {
+		for (instr = func->begin_insn; instr; instr = instr->next) {
 
-			hnotice(3, "Found call instruction at <%#08llx> (<%#08llx>)\n",
-				instr->orig_addr, instr->new_addr);
+			hnotice(6, "Inspecting instruction %s at %#08llx\n",
+				instr->i.x86.mnemonic, instr->orig_addr);
 
-			if (IS_CALLIND(instr)) {
-				// Handle indirect calls (tricky, uses the same naive algorithm
-				// as for switch-case statements)
-				resolve_jump_table(func, instr);
+			// ---------------------------------------------------------
+			// JUMP instructions
+			// ---------------------------------------------------------
 
-				continue;
-			}
+			if (IS_JUMP(instr)) {
 
-			else if (!ll_empty(&instr->reference)) {
-				// NOTE: Not likely, but a call instruction may have multiple
-				// associated relocations
-				sym = instr->reference.first->elem;
+				hnotice(3, "Found jump instruction at <%#08llx> (<%#08llx>)\n",
+					instr->orig_addr, instr->new_addr);
 
-				// We must check whether it is a CALL to a local function or not,
-				// and act accordingly.
+				if (IS_JUMPIND(instr)) {
+					// If the instruction is an indirect jump, try to resolve its
+					// associated jump table (currently only for switch-case statements)
+					// NOTE: This is a very naive and loose algorithm that may fail
+					// in several cases, and is not kitten-proof! Beware!
+					resolve_jump_table(func, instr);
+				}
 
-				if (sym->size == 0) {
-					// The function is defined elsewhere (i.e. in a different file object)
-					// meaning that the linker will be in charge to correctly handle it
-					hnotice(4, "Call instruction at <%#08llx> (<%#08llx>) invokes external function, skipping\n",
-						instr->orig_addr, instr->new_addr);
+				else if (!ll_empty(&instr->reference)) {
+					// If the jump instruction has a relocation, simply skip the instruction;
+					// the linker will be in charge to correctly handle it
 					continue;
 				}
 
-				// A CALL whose displacement is filled with a .text+addend relocation,
-				// rather than a relocation toward a FUNCTION symbol, may result
-				// from incremental linking. Consider two LOCAL functions with the
-				// same name in two different objects. When linking those object
-				// with '-r' a third object file will be produced with two LOCAL
-				// functions, both with the same name.
-				// To distinguish between an invocation to a function and one
-				// to the other function, the linker modifies all relocations.
-				// Specifically, it resorts to a .text+addend schema. This will
-				// guarantee that the correct function be called, always.
-				// Note that the same mechanism is also used by the linker for
-				// other kind of same-name symbols (e.g., OBJECT ones).
-				// Unfortunately, this causes problem to our parsing of the instruction
-				// jump/call graph, as well as the CFG.
-
-				if (sym->type == SYMBOL_SECTION && sym->sec->type == SECTION_CODE) {
-					// sym punta ad una sezione testo al cui offset di rilocazione
-					// è indirettamente associata una funzione.
-					// è necessario trovare la funzione destinazione, creare un nuovo
-					// simbolo di rilocazione verso la funzione a partire dall'istruzione
-					// corrente ed eliminare il simbolo (fake) che rappresenta la rilocazione
-					// verso .text dalla stessa istruzione
-
-					// FIXME: Not sure size - opcode_size is portable across ISAs
-					jmp_addr = sym->relocation.addend + instr->size - instr->opcode_size;
-					// jmp_addr += sym->sec->offset;
-					callee = find_func_from_addr(jmp_addr);
-
-					hnotice(4, "Call instruction at <%#08llx> invokes function through indirect relocation\n", instr->orig_addr);
-
-					if (!callee) {
-						hinternal();
-					}
-
-					for (rela = PROGRAM(symbols); rela->next; rela = rela->next) {
-						if (rela->next == sym) {
-							rela->next = sym->next;
+				else {
+					// The JUMP has a non-null embedded offset, from which we can derive
+					// the effective jump address
+					switch (PROGRAM(insn_set)) {
+						case X86_INSN:
+							if (instr->i.x86.jump_dest == 0) {
+								// We expect a non-null embedded offset...
+								hinternal();
+							}
+							jmp_addr = instr->orig_addr + instr->size + instr->i.x86.jump_dest;
 							break;
-						}
+						default:
+							hinternal();
 					}
 
-					ll_pop_first(&instr->reference);
-					free(sym);
+					hnotice(6, "Jump to a local instruction at <%#08llx> detected\n", jmp_addr);
 
-					symbol_instr_rela_create(callee->symbol, instr, RELOC_PCREL_32);
-				} else {
-					callee = sym->func;
+					dest = find_insn_cool(func->begin_insn, jmp_addr);
 
-					if (!callee) {
+					if (!dest) {
 						hinternal();
 					}
+
+					set_jumpto_reference(instr, dest);
 				}
+
 			}
 
-			else {
-				// If the CALL has a non-null embedded offset, it is a call to
-				// a local function and the format is the same as a jump.
-				switch (PROGRAM(insn_set)) {
-					case X86_INSN:
-						if (instr->i.x86.jump_dest == 0) {
-							// We expect a non-null embedded offset...
+			// ---------------------------------------------------------
+			// CALL instructions
+			// ---------------------------------------------------------
+
+			else if (IS_CALL(instr)) {
+
+				hnotice(3, "Found call instruction at <%#08llx> (<%#08llx>)\n",
+					instr->orig_addr, instr->new_addr);
+
+				if (IS_CALLIND(instr)) {
+					// Handle indirect calls (tricky, uses the same naive algorithm
+					// as for switch-case statements)
+					resolve_jump_table(func, instr);
+
+					continue;
+				}
+
+				else if (!ll_empty(&instr->reference)) {
+					// NOTE: Not likely, but a call instruction may have multiple
+					// associated relocations
+					sym = instr->reference.first->elem;
+
+					// We must check whether it is a CALL to a local function or not,
+					// and act accordingly.
+
+					if (sym->size == 0) {
+						// The function is defined elsewhere (i.e. in a different file object)
+						// meaning that the linker will be in charge to correctly handle it
+						hnotice(4, "Call instruction at <%#08llx> (<%#08llx>) invokes external function, skipping\n",
+							instr->orig_addr, instr->new_addr);
+						continue;
+					}
+
+					// A CALL whose displacement is filled with a .text+addend relocation,
+					// rather than a relocation toward a FUNCTION symbol, may result
+					// from incremental linking. Consider two LOCAL functions with the
+					// same name in two different objects. When linking those object
+					// with '-r' a third object file will be produced with two LOCAL
+					// functions, both with the same name.
+					//
+					// To distinguish between an invocation to a function and one
+					// to the other function, the linker modifies all relocations.
+					// Specifically, it resorts to a .text+addend schema. This will
+					// guarantee that the correct function be called, always.
+					// Note that the same mechanism is also used by the linker for
+					// other kind of same-name symbols (e.g., OBJECT ones).
+					//
+					// Unfortunately, this causes problem to our parsing of the instruction
+					// jump/call graph, as well as the CFG.
+
+					if (sym->type == SYMBOL_SECTION && sym->sec->type == SECTION_CODE) {
+						// sym punta ad una sezione testo al cui offset di rilocazione
+						// è indirettamente associata una funzione.
+						// è necessario trovare la funzione destinazione, creare un nuovo
+						// simbolo di rilocazione verso la funzione a partire dall'istruzione
+						// corrente ed eliminare il simbolo (fake) che rappresenta la rilocazione
+						// verso .text dalla stessa istruzione
+
+						// FIXME: Not sure 'size - opcode_size' is portable across ISAs
+						jmp_addr = sym->relocation.addend + instr->size - instr->opcode_size;
+
+						callee = find_func_cool(sym->sec, jmp_addr);
+
+						hnotice(4, "Call instruction at <%#08llx> invokes function through indirect relocation\n", instr->orig_addr);
+
+						if (!callee) {
 							hinternal();
 						}
-						jmp_addr = instr->orig_addr + instr->size + instr->i.x86.jump_dest;
-						break;
-					default:
+
+						for (rela = PROGRAM(symbols); rela->next; rela = rela->next) {
+							if (rela->next == sym) {
+								rela->next = sym->next;
+								break;
+							}
+						}
+
+						ll_pop_first(&instr->reference);
+						free(sym);
+
+						symbol_instr_rela_create(callee->symbol, instr, RELOC_PCREL_32);
+					} else {
+						callee = sym->func;
+
+						if (!callee) {
+							hinternal();
+						}
+					}
+				}
+
+				else {
+					// If the CALL has a non-null embedded offset, it is a call to
+					// a local function and the format is the same as a jump.
+					switch (PROGRAM(insn_set)) {
+						case X86_INSN:
+							if (instr->i.x86.jump_dest == 0) {
+								// We expect a non-null embedded offset...
+								hinternal();
+							}
+							jmp_addr = instr->orig_addr + instr->size + instr->i.x86.jump_dest;
+							break;
+						default:
+							hinternal();
+					}
+
+					hnotice(6, "Call to a local function at <%#08llx> detected\n", jmp_addr);
+
+					callee = find_func_cool(func->symbol->sec, jmp_addr);
+
+					if (!callee) {
 						hinternal();
+					}
+
+					// The instruction is translated into a zero'd CALL with an associated
+					// relocation entry.
+					switch(PROGRAM(insn_set)) {
+						case X86_INSN:
+							memset(instr->i.x86.insn + instr->opcode_size, 0, (instr->size - instr->opcode_size));
+							// break;
+					}
+
+					// At this point 'callee' will point to the destination function
+					// relative to the call; the only thing we have to do is to treat
+					// local function calls as relocation entities.
+					sym = callee->symbol;
+
+					// if (ll_empty(&instr->reference) || PROGRAM(version) > 0) {
+						// The instruction object will be bound to the proper symbol
+						symbol_instr_rela_create(sym, instr, RELOC_PCREL_32);
+					// }
 				}
 
-				hnotice(6, "Call to a local function at <%#08llx> detected\n", jmp_addr);
+				// CALL to local function detected, augment the intermediate representation
+				// with the appropriate linking between instructions.
+				hnotice(4, "Callee function '%s' at <%#08llx> found\n",
+					callee->name, callee->begin_insn->orig_addr);
 
-				callee = find_func_from_addr(jmp_addr);
-
-				if (!callee) {
-					hinternal();
-				}
-
-				// The instruction is translated into a zero'd CALL with an associated
-				// relocation entry.
-				switch(PROGRAM(insn_set)) {
-					case X86_INSN:
-						memset(instr->i.x86.insn + instr->opcode_size, 0, (instr->size - instr->opcode_size));
-						// break;
-				}
-
-				// At this point 'callee' will point to the destination function
-				// relative to the call; the only thing we have to do is to treat
-				// local function calls as relocation entities.
-				sym = callee->symbol;
-
-				// if (ll_empty(&instr->reference) || PROGRAM(version) > 0) {
-					// The instruction object will be bound to the proper symbol
-					symbol_instr_rela_create(sym, instr, RELOC_PCREL_32);
-				// }
+				set_jumpto_reference(instr, callee->begin_insn);
 			}
 
-			// CALL to local function detected, augment the intermediate representation
-			// with the appropriate linking between instructions.
-			hnotice(4, "Callee function '%s' at <%#08llx> found\n",
-				callee->name, callee->orig_addr);
-
-			set_jumpto_reference(instr, callee->begin_insn);
 		}
-
 	}
+
 
 }
 
@@ -1067,6 +1080,8 @@ void update_instruction_addresses(int version) {
 		foo_size = 0;
 
 		hnotice(3, "Updating instructions in function '%s'\n", foo->name);
+
+		foo->symbol->offset = offset;
 
 		for (instr = foo->begin_insn; instr; instr = instr->next) {
 

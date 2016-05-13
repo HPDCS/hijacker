@@ -385,12 +385,22 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
 
 static void hijack_main(unsigned char *entry_point) {
 	// Find the current main function
-	symbol *sym_main, *sym;
+	symbol *sym_main, *sym_text, *sym;
 	function *main;
+	section *text;
+
 	unsigned char code[1] = {0x90};
 	unsigned char code2[1] = {0xc3};
 	unsigned char code2bis[1] = {0xc9};
 	unsigned char code3[5] = {0x48, 0x89, 0xe5, 0x55};
+
+	sym_text = find_symbol_by_name(".text.instr");
+
+	if (sym_text == NULL) {
+		hinternal();
+	}
+
+	text = sym_text->sec;
 
 	sym_main = find_symbol_by_name("main");
 
@@ -409,7 +419,7 @@ static void hijack_main(unsigned char *entry_point) {
 	}
 
 	// Creates a new stub function that acts as the new main
-	main = function_create_from_bytes("main", code, sizeof(code));
+	main = function_create_from_bytes("main", code, sizeof(code), text);
 
 	// Adds the jump to the new entry point
 	insert_instructions_at(main->begin_insn, code2, sizeof(code2), INSERT_AFTER, &(main->begin_insn));
@@ -493,7 +503,8 @@ void apply_rules(void) {
 			hnotice(3, "Looking for the instruction with flags %x\n", tagInstruction->flags);
 			func = PROGRAM(code);
 			while(func) {
-				hnotice(3, "Instrumenting function '%s' <%#08llx>\n", func->symbol->name, func->new_addr);
+				hnotice(3, "Instrumenting function '%s' <%#08llx>\n",
+					func->symbol->name, func->begin_insn->new_addr);
 				instrumented += apply_rule_instruction(exec, tagInstruction, func);
 				func = func->next;
 			}

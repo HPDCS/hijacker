@@ -272,7 +272,7 @@ void block_link(block *from, block *to, block_edge_type type) {
 	}
 
 	if (from == to) {
-		hnotice(4, "Skipping block #%u auto-linking\n", from->id, to->id);
+		hnotice(4, "Skipping block #%u auto-linking\n", from->id);
 		return;
 	}
 
@@ -564,18 +564,22 @@ static bool block_graph_complete_post(void *elem, void *data) {
 	return true;
 }
 
-block *block_graph_create(function *functions) {
-	function *func, *next, *prev, *callee;
+block *block_graph_create(void) {
+	function *first, *func, *next, *prev, *callee;
 	insn_info *instr;
 	block *blocks, *current_blk, *new_blk, *temp_blk, *temp_new_blk;
 
 	symbol *sym;
 
+	hnotice(1, "Resolving CFG...\n");
+
+	first = PROGRAM(v_code)[PROGRAM(version)];
+
 	// The first block comprises the entire program, then it will be
 	// progressively split until we obtain basic blocks
 	current_blk = block_create();
-	current_blk->begin = functions->begin_insn;
-	current_blk->end = find_last_insn(functions);
+	current_blk->begin = first->begin_insn;
+	current_blk->end = find_last_insn(first);
 
 	hnotice(4, "Program block #%u created from <%#08llx> to <%#08llx>\n",
 		current_blk->id, current_blk->begin->orig_addr, current_blk->end->orig_addr);
@@ -584,12 +588,12 @@ block *block_graph_create(function *functions) {
 
 	// For each instruction in each function, we begin iteratively
 	// splitting current blocks into smaller and smaller chunks
-	for (prev = NULL, func = functions; func; prev = func, func = func->next) {
+	for (prev = NULL, func = first; func; prev = func, func = func->next) {
 
 		hnotice(2, "Resolving CFG for function '%s' at <%#08llx>\n",
 			func->name, func->begin_insn->orig_addr);
 
-		if (prev != NULL && func->orig_addr == prev->orig_addr) {
+		if (functions_overlap(prev, func)) {
 			// Handle the case of overlapping functions
 
 			func->begin_blk = prev->begin_blk;
@@ -831,7 +835,7 @@ block *block_graph_create(function *functions) {
 		// linked with the current one in terms of instructions
 		// TODO: Find a better way
 		for (next = func->next; next; next = next->next) {
-			if (func->orig_addr != next->orig_addr) {
+			if (!functions_overlap(func, next)) {
 				break;
 			}
 		}

@@ -264,6 +264,8 @@ struct _reloc {
 /* Functions */
 
 struct _function {
+	unsigned char   *name;
+
 	block *begin_blk;        // [SE]
 	block *end_blk;          // [SE]
 
@@ -273,15 +275,15 @@ struct _function {
 	linked_list callto;      // List of functions that are called by this function
 	bool visited;            // True if the function was already met in the current visit
 
-	int     passes;
-	unsigned char   *name;
-	unsigned long long  orig_addr;
-	unsigned long long  new_addr;
 	insn_info   *begin_insn;
 	insn_info   *end_insn;
 	symbol      *symbol;  // [DC] Added reference to the relative symbol
 	struct _function *next;
 };
+
+#define functions_overlap(a, b)\
+	(a && b && a->symbol->sec == b->symbol->sec\
+		&& a->begin_insn->new_addr == b->begin_insn->new_addr)
 
 
 /* Sections and relocation entries */
@@ -334,7 +336,7 @@ void add_jump_instruction(insn_info *target, unsigned char *name, insn_insert_mo
 void set_jumpto_reference(insn_info *jump, insn_info *target);
 void set_jumptable_entry(insn_info *jump, insn_info *entry, unsigned int idx);
 void set_virtual_reference(insn_info *target, insn_info *virtual);
-void link_jump_instructions(function *func);
+void link_jump_instructions(void);
 void update_instruction_addresses(int version);
 void update_jump_displacements(int version);
 void set_call_displacement(insn_info *jump, insn_info *target);
@@ -362,8 +364,8 @@ symbol *symbol_rela_clone(symbol *sym);
 function *find_func_cool(section *sec, unsigned long long addr);
 function *find_func_from_instr(insn_info *instr, insn_address_type type);
 function *find_func_from_addr(unsigned long long addr);
-function *function_create_from_insn(char *name, insn_info *code);
-function *function_create_from_bytes(char *name, unsigned char *code, size_t size);
+function *function_create_from_insn(char *name, insn_info *code, section *sec);
+function *function_create_from_bytes(char *name, unsigned char *code, size_t size, section *sec);
 function *clone_function(function *func, char *suffix);
 function *clone_function_list(function *func, char *suffix);
 // function *clone_function_descriptor(function *original, char *name);
@@ -386,7 +388,7 @@ block *block_find(insn_info *instr);
 void block_link(block *from, block *to, block_edge_type type);
 void block_tree_dump(char *filename, char *mode);
 void block_graph_dump(function *func, char *filename, char *mode);
-block *block_graph_create(function *functions);
+block *block_graph_create();
 void block_graph_visit(block_edge *edge, graph_visit *visit);
 
 

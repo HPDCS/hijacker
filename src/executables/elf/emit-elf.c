@@ -415,8 +415,10 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 	sym->offset = ((char *)ptr - (char *)symtable->payload);
 	symtable->ptr = (void *)((char *)symtable->ptr + size);
 
-	hnotice(3, "Symbol [%u] '%s' (type %d and bind %d) of %d bytes written into section %s at offset <%#08llx>\n", sym->index, sym->name,
-			sym->type, sym->bind, sym->size, sec ? sec->name : "(none)", sym->offset);
+	hnotice(3, "Symbol [%u] '%s' (type %d and bind %d) of %d bytes "
+		"written into section %s at offset <%#08llx>\n",
+			sym->index, sym->name, sym->type, sym->bind, sym->size,
+				(sec ? sec->name : "(none)"), sym->offset);
 
 	return sym->index;
 }
@@ -585,8 +587,9 @@ long elf_write_reloc(section *sec, symbol *sym, unsigned long long addr, long ad
 	// the same entries.
 	// sym->referenced = 0;
 
-	hnotice(4, "Written relocation entry at offset <%#08llx> to symbol '%s' (%d) %ld\n",
-		addr, sym->name, sym->index, addend);
+	hnotice(4, "Written relocation entry at section '%s' + <%#08llx> "
+		"to symbol '%s' (%d) + <%llx>\n",
+		sec->name, addr, sym->name, sym->index, addend);
 
 	return addr;
 }
@@ -1271,7 +1274,7 @@ static void elf_fill_sections(void) {
 
 			// NOTE: `elf_write_data` is fundamental in order to prevent
 			// that `shrink_section_size` truncates the effective section's size
-			
+
 			// set_hdr_info(tbss->header, sh_size, sym->size);
 			elf_write_data(tbss, sec->payload, sym->size);
 		}
@@ -1312,9 +1315,11 @@ static void elf_fill_sections(void) {
 		}
 
 		// Needed because of multiple '.text' input sections
-		if (str_prefix(sym->name, ".text") && sym->relocation.target_insn) {
-			offset = sym->relocation.target_insn->new_addr;
-		}
+		// if (str_prefix(sym->name, ".text") && sym->relocation.target_insn) {
+		// 	offset = sym->relocation.target_insn->new_addr;
+		// } else {
+			offset = sym->relocation.addend;
+		// }
 
 		elf_write_reloc(sec, sym, sym->relocation.offset, offset);
 	}

@@ -108,77 +108,80 @@ symbol *create_symbol_node(unsigned char *name, symbol_type type, symbol_bind bi
 	symbol *sym;
 	symbol *node;
 	// unsigned int index;
+	//
 
-	// Check whether the symbol requested is already present
-	node = PROGRAM(symbols);
-	while(node) {
-		if(!strcmp((const char *)node->name, (const char *)name)){
-			hnotice(3, "%s symbol '%s' (%d) node found [ver = %d]\n",
-				node->bind == SYMBOL_LOCAL ? "Local" : node->bind == SYMBOL_GLOBAL ?  "Global" : "Weak",
-				node->name, node->index, node->version);
-			return node;
-		}
-		sym = node;
-		node = node->next;
-	}
+	hinternal();
 
-	// create a symbol node
-	node = (symbol *) malloc(sizeof(symbol));
-	if(!node)  {
-		herror(true, "Out of memory!\n");
-	}
-	bzero(node, sizeof(symbol));
+	// // Check whether the symbol requested is already present
+	// node = PROGRAM(symbols);
+	// while(node) {
+	// 	if(!strcmp((const char *)node->name, (const char *)name)){
+	// 		hnotice(3, "%s symbol '%s' (%d) node found [ver = %d]\n",
+	// 			node->bind == SYMBOL_LOCAL ? "Local" : node->bind == SYMBOL_GLOBAL ?  "Global" : "Weak",
+	// 			node->name, node->index, node->version);
+	// 		return node;
+	// 	}
+	// 	sym = node;
+	// 	node = node->next;
+	// }
 
-	node->name = (char *) malloc(strlen((const char *) name) + 1);
-	strcpy(node->name, name);
-	//node->name = name;
-	node->type = type;
-	node->bind = bind;
-	node->size = size;
-	node->version = PROGRAM(version);
+	// // create a symbol node
+	// node = (symbol *) malloc(sizeof(symbol));
+	// if(!node)  {
+	// 	herror(true, "Out of memory!\n");
+	// }
+	// bzero(node, sizeof(symbol));
+
+	// node->name = (char *) malloc(strlen((const char *) name) + 1);
+	// strcpy(node->name, name);
+	// //node->name = name;
+	// node->type = type;
+	// node->bind = bind;
+	// node->size = size;
+	// node->version = PROGRAM(version);
 
 
-	if (bind == SYMBOL_LOCAL) {
-		// in case the symbol is local append after the last local symbol
-		// in the list
-		sym = PROGRAM(symbols);
-		while(sym) {
-			if(sym->next->bind != SYMBOL_LOCAL)
-				break;
-			sym = sym->next;
-		}
-		// index = sym->index + 1;
+	// if (bind == SYMBOL_LOCAL) {
+	// 	// in case the symbol is local append after the last local symbol
+	// 	// in the list
+	// 	sym = PROGRAM(symbols);
+	// 	while(sym) {
+	// 		if(sym->next->bind != SYMBOL_LOCAL)
+	// 			break;
+	// 		sym = sym->next;
+	// 	}
+	// 	// index = sym->index + 1;
 
-		node->next = sym->next;
-		sym->next = node;
+	// 	node->next = sym->next;
+	// 	sym->next = node;
 
-		// update the indexes of all the other symbols
-		/*sym = node;
-		while(sym) {
-			if(sym->duplicate) {
-				sym->index = idx - 1;
-				sym = sym->next;
-				continue;
-			}
+	// 	// update the indexes of all the other symbols
+	// 	/*sym = node;
+	// 	while(sym) {
+	// 		if(sym->duplicate) {
+	// 			sym->index = idx - 1;
+	// 			sym = sym->next;
+	// 			continue;
+	// 		}
 
-			sym->index = index++;
-			printf("%s - %d (t=%d, b=%d)\n", sym->name, sym->index, sym->type, sym->bind);
-			sym = sym->next;
-		}*/
-	}
+	// 		sym->index = index++;
+	// 		printf("%s - %d (t=%d, b=%d)\n", sym->name, sym->index, sym->type, sym->bind);
+	// 		sym = sym->next;
+	// 	}*/
+	// }
 
-	else if (bind == SYMBOL_GLOBAL) {
-		// in case the symbol is global adds it to the tail
-		// add to the symbol list (here, sym holds the last symbol yet)
-		sym->next = node;
-		node->index = sym->index + 1;
-	}
+	// else if (bind == SYMBOL_GLOBAL) {
+	// 	// in case the symbol is global adds it to the tail
+	// 	// add to the symbol list (here, sym holds the last symbol yet)
+	// 	sym->next = node;
+	// 	node->index = sym->index + 1;
+	// }
 
-	hnotice(3, "New %s symbol '%s' (%d) in '%s' node of type %d and size %d bytes has been created\n",
-		node->bind == SYMBOL_LOCAL ? "local" : node->bind == SYMBOL_GLOBAL ?  "global" : "weak", node->name, node->index, node->sec,
-		node->type, node->size);
+	// hnotice(3, "New %s symbol '%s' (%d) in '%s' node of type %d and size %d bytes has been created\n",
+	// 	node->bind == SYMBOL_LOCAL ? "local" : node->bind == SYMBOL_GLOBAL ?  "global" : "weak", node->name, node->index, node->sec,
+	// 	node->type, node->size);
 
-	return node;
+	// return node;
 }
 
 

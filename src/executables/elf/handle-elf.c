@@ -174,6 +174,7 @@ static void clone_relocations(int version, char *suffix) {
 				// WARNING: This offset *must* be updated in `adjust_relocations`!
 				// If this is not the case, abandon the ship.
 				clone->relocation.offset = rela->relocation.offset;
+				clone->relocation.addend = rela->relocation.addend;
 
 				clone->relocation.target_insn = instr;
 				ll_push(&instr->pointedby, clone);
@@ -267,125 +268,6 @@ static void adjust_relocations(symbol *symbols, int version, section *text) {
 }
 
 
-// static void clone_jump_tables(symbol *symbols, int version, section *text) {
-// 	section *rodata;
-// 	symbol *sym, *rela;
-// 	function *func;
-// 	insn_info *instr;
-
-// 	ll_node *ref_node;
-
-// 	unsigned int offset;
-
-// 	// Rather than creating as many read-only sections as the number of executable
-// 	// versions, we reuse the same '.rodata' section for all versions. Specifically,
-// 	// the new relocation entries will have offsets that fall outside of '.rodata's
-// 	// original boundaries. The proper size will be later computed in the emit step.
-// 	rodata = find_section_by_name((unsigned char *)".rodata", 0);
-
-// 	if (!rodata) {
-// 		hnotice(4, "Missing '.rodata' section, no relocation entries to clone\n");
-// 		return;
-// 	}
-
-// 	// We begin from the next byte after the end of '.rodata'
-// 	offset = rodata->sym->size;
-
-// 	// We order relocations in '.rodata' to '.text.xyz' according to their offsets
-// 	// from the beginning of '.rodata'
-// 	linked_list ordered = { NULL, NULL };
-
-// 	find_relocations(symbols, rodata, text->sym, &ordered);
-
-// 	// We now iteratively compare .rodata->.text.xyz relocations against all the
-// 	// known instructions in the IBR, to see if there's a match
-// 	while (!ll_empty(&ordered)) {
-// 		sym = ll_pop_first(&ordered);
-
-// 		if (sym->version > 0) {
-// 			continue;
-// 		}
-
-// 		for (func = PROGRAM(v_code)[version]; func; func = func->next) {
-// 			for (instr = func->begin_insn; instr; instr = instr->next) {
-
-// 				for (ref_node = instr->parent->reference.first; ref_node; ref_node = ref_node->next) {
-// 					rela = ref_node->elem;
-
-// 					// We check if the instruction refers the beginning of a jump table
-// 					if (rela->sec == sym->relocation.sec
-// 						  && rela->relocation.addend == sym->relocation.offset) {
-// 						// We *MIGHT* have found the beginning of a jump table.
-// 						// As such, the original symbol must be duplicated and its offset must be
-// 						// updated accordingly (since the entire jump table is duplicated)
-
-// 						rela = symbol_rela_clone(rela);
-// 						rela->version = version;
-
-// 						// rela->relocation.offset = instr->reference->relocation.offset;
-// 						rela->relocation.addend = offset;
-// 						// rela->relocation.type = instr->reference->relocation.type;
-// 						rela->relocation.sec = text;
-
-// 						ll_push(&instr->reference, rela);
-// 						rela->relocation.target_insn = instr;
-
-// 						hnotice(3, "Added new jumptable base address relocation in <%s + %x> to <%s + %x>\n",
-// 							rela->relocation.sec->name, rela->relocation.offset,
-// 								rela->name, rela->relocation.addend);
-// 					}
-
-// 					else if (instr->orig_addr == sym->relocation.addend + sym->relocation.sec->offset) {
-// 					}
-
-// 				}
-// 			}
-
-// 		}
-
-// 		offset += sizeof(char *);
-// 		rodata->sym->size += sizeof(char *);
-// 	}
-
-// 	hnotice(4, "Added new relocation entries in '.rodata' section (%d bytes)\n",
-// 		rodata->sym->size);
-// }
-
-
-// static void clone_func_relocation(int version, unsigned char *suffix) {
-// 	function *func, *target_func;
-// 	symbol *sym;
-// 	insn_info *instr;
-
-// 	unsigned char name[256];
-
-// 	for (func = PROGRAM(v_code)[version]; func; func = func->next) {
-// 		for (instr = func->begin_insn; instr; instr = instr->next) {
-// 			sym = instr->reference;
-
-// 			if (!IS_CALL(instr) && sym && sym->type == SYMBOL_FUNCTION) {
-// 				hnotice(3, "Found function '%s' relocation to the instruction '%s' at address <%#08llx>\n",
-// 					sym->name, instr->i.x86.mnemonic, instr->orig_addr);
-
-// 				bzero(name, sizeof(name));
-// 				strcpy(name, sym->name);
-// 				strcat(name, "_");
-// 				strcat(name, suffix);
-
-// 				for (target_func = PROGRAM(v_code)[version]; target_func; target_func = target_func->next) {
-// 					if (str_equal(target_func->name, name)) {
-// 						hnotice(3, "Updating relocation with reference to new function '%s'\n",
-// 							target_func->symbol->name);
-
-// 						symbol_instr_rela_create(target_func->symbol, instr, RELOC_ABS_32);
-// 						break;
-// 					}
-// 				}
-// 			}
-// 		}
-// 	}
-// }
-
 int switch_executable_version(int version) {
 	function *functions, *func;
 	section *texts, *text;
@@ -438,12 +320,10 @@ int switch_executable_version(int version) {
 		}
 
 		// Re-linking jump instructions
-		for (func = PROGRAM(v_code)[version]; func; func = func->next) {
-			link_jump_instructions(func);
-		}
+		link_jump_instructions();
 
 		// Re-creating a CFG
-		PROGRAM(blocks)[version] = block_graph_create(PROGRAM(v_code)[version]);
+		PROGRAM(blocks)[version] = block_graph_create();
 
 		// Update the executable versions array
 		PROGRAM(code) = PROGRAM(v_code)[version];
