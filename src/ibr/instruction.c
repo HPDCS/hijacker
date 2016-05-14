@@ -827,6 +827,7 @@ void link_jump_instructions(void) {
 	function *func, *prev;
 	insn_info *instr, *dest;
 
+	static unsigned int index = 0;
 	unsigned long long jmp_addr;
 
 	function *callee;
@@ -843,6 +844,8 @@ void link_jump_instructions(void) {
 		hnotice(2, "Resolve jumps/calls of function '%s'\n", func->name);
 
 		for (instr = func->begin_insn; instr; instr = instr->next) {
+
+			instr->index = index++;
 
 			hnotice(6, "Inspecting instruction %s at %#08llx\n",
 				instr->i.x86.mnemonic, instr->orig_addr);

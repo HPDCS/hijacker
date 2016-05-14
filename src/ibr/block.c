@@ -187,10 +187,10 @@ block *block_find(insn_info *instr) {
 	blk = root[PROGRAM(version)];
 
 	while(blk) {
-		if (blk->begin->orig_addr > instr->orig_addr) {
+		if (blk->begin->index > instr->index) {
 			blk = blk->left;
 		}
-		else if (blk->end->orig_addr < instr->orig_addr) {
+		else if (blk->end->index < instr->index) {
 			blk = blk->right;
 		}
 		else {
@@ -626,7 +626,7 @@ block *block_graph_create(void) {
 
 			// We've moved to a block which was already created during
 			// a previous iteration
-			if (instr->orig_addr > current_blk->end->orig_addr) {
+			if (instr->index > current_blk->end->index) {
 				current_blk = current_blk->next;
 
 				// Every instruction of the program must be mapped to its own block

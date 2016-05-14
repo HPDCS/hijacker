@@ -61,8 +61,8 @@ typedef enum {
 
 
 struct _instruction {
+	unsigned int index;
 	unsigned long   flags;
-	unsigned long long base_addr;
 	unsigned long long  orig_addr;
 	unsigned long long  new_addr;
 	unsigned int    size;
