@@ -57,7 +57,6 @@ static section *bss;
 static section *tbss;
 static section *tdata;
 
-
 /**
  * Check if the section has enough available space.
  * If the section cannot sustain the required space,
@@ -291,10 +290,16 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 			// must be filled up with the relative content
 			// TODO: it must be updated in order to support multiple .data sections
 			if (sym->secnum != SHN_COMMON) {
-				if (str_equal(sym->sec->name, ".data")) {
+				if (str_prefix(sym->sec->name, ".data")) {
 					// sym->offset = elf_write_data(data, sym->payload, sym->size);
 					sec = data;
 					shndx = data->index;
+
+					// We must write also the possible code associated to the variable
+					// in order to keep correctly aligned the section's size with its
+					// content. Here we pass a dummy pointer in order to make sure only
+					// the the section will increase its size
+					elf_write_data(sec, NULL, sym->size);
 				}
 				else if (str_equal(sym->sec->name, ".rodata")) {
 					// sym->offset = elf_write_data(rodata, sym->payload, sym->size);
@@ -340,12 +345,16 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 			break;
 
 		case SYMBOL_UNDEF:
-		default:
 			// Since they are undefined, it is not possible to infer whether
 			// local or global binding must be used, hence only the type will
 			// be updated leaving the bind unaltered
 			sym->type = STT_NOTYPE;
 			shndx = SHN_UNDEF;
+
+		default:
+			// Nothing to do here, we leave all the same
+			herror(false, "Symbol '%s' has a unknown type (%u) and bind (%u): nothing has been done\n",
+				sym->name, sym->type, sym->bind);
 		}
 
 		// Write the symbol name into the string_table and get the offset

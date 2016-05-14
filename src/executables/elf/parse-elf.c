@@ -812,6 +812,10 @@ void elf_create_map(void) {
 				break;
 
 			case SHT_RELA:
+				// if(str_prefix(sec_name(secndx), ".rela.text")) {
+				// 	// We need to include relocations toward unconventional text sections
+				// 	elf_rela_section(secndx);
+				// }
 				if(str_prefix(sec_name(secndx), ".rela.text")) {
 					// We need to include relocations toward unconventional text sections
 					elf_rela_section(secndx);
@@ -836,6 +840,10 @@ void elf_create_map(void) {
 			case SHT_DYNSYM:
 				elf_raw_section(secndx);
 				break;
+
+			default:
+				// Do nothing...
+			break;
 		}
 	}
 
