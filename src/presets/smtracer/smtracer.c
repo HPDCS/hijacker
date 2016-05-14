@@ -1543,7 +1543,13 @@ static size_t smt_trace_func(function *func, symbol *callfunc) {
       // Free unnecessary heap memory
       for (access = smt->candidates; access; access = temp) {
         temp = access->next;
-        free(access);
+
+        // FIXME: there is still a free corruption which affect `smt->candidates`
+        // once a new instruction will be added to the code. In particular the
+        // `calloc` in the `instruction_add` will return the same memory block
+        // freed in this step which, though, will be used again in the future by
+        // `smt_same_template` function.
+        // free(access);
       }
     }
 
