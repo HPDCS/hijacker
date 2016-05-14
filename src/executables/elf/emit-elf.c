@@ -52,10 +52,14 @@ static section *text[MAX_VERSIONS];
 static section *rela_text[MAX_VERSIONS];
 static section *rela_rodata;
 static section *rela_data;
+static section *rela_init_array;
+static section *rela_fini_array;
 static section *data;
 static section *bss;
 static section *tbss;
 static section *tdata;
+static section *init_array;
+static section *fini_array;
 
 /**
  * Check if the section has enough available space.
@@ -224,6 +228,7 @@ long elf_write_data(section *sec, void *buffer, int size) {
 
 	hdr = (Section_Hdr *) sec->header;
 
+	memset(sec->ptr, 0, size);
 	if (buffer != NULL) {
 		memcpy(sec->ptr, buffer, size);
 		hdump(4, "Data buffer dump", buffer, size);
@@ -541,7 +546,7 @@ unsigned long elf_write_code(section *sec, function *func) {
  * it builds the rela entry to be stored.
  *
  * @param sec Pointer to the section descriptor
- * @param index Is the symbol index within the symtab section, to which the relocation refers
+ * @param sym Is the symbol to which the relocation refers
  * @param addr The explicit address to which apply the relocation
  * @param addend Explicit addend to write in the RELA entry
  *
@@ -596,9 +601,9 @@ long elf_write_reloc(section *sec, symbol *sym, unsigned long long addr, long ad
 	// the same entries.
 	// sym->referenced = 0;
 
-	hnotice(4, "Written relocation entry at section '%s' + <%#08llx> "
-		"to symbol '%s' (%d) + <%llx>\n",
-		sec->name, addr, sym->name, sym->index, addend);
+	hnotice(4, "Written a new relocation entry from section '%s' + <%#08llx> "
+		"to symbol '%s' (%d) + <%lx>\n",
+		sym->relocation.sec->name, addr, sym->name, sym->index, addend);
 
 	return addr;
 }
@@ -877,6 +882,30 @@ static void elf_build(void) {
 			header_info(((Section_Hdr *) sym->sec->header), sh_addralign));
 	}
 
+	// ------------------------------------------------------
+	// INIT and FINI *_ARRAY SECTIONS
+	// Note: they contain relocations toward portion of code
+	// responsible to initialize and finalize arrays
+	// ------------------------------------------------------
+
+	sym = find_symbol_by_name(".init_array");
+	if (sym != NULL) {
+		init_array = elf_create_section(SHT_INIT_ARRAY, 0, SHF_ALLOC|SHF_WRITE);
+		elf_name_section(init_array, ".init_array");
+
+		set_hdr_info(init_array->header, sh_addralign,
+			header_info(((Section_Hdr *) sym->sec->header), sh_addralign));
+	}
+
+	sym = find_symbol_by_name(".fini_array");
+	if (sym != NULL) {
+		fini_array = elf_create_section(SHT_FINI_ARRAY, 0, SHF_ALLOC|SHF_WRITE);
+		elf_name_section(fini_array, ".fini_array");
+
+		set_hdr_info(fini_array->header, sh_addralign,
+			header_info(((Section_Hdr *) sym->sec->header), sh_addralign));
+	}
+
 	// [SE] Hackish...
 	// sym = find_symbol(".tbss");
 
@@ -940,6 +969,18 @@ static void elf_build(void) {
 				elf_name_section(rela, sec_name(sec->index));
 
 				rela_rodata = rela;
+			}
+			else if(str_equal(sec_name(targetndx), ".init_array")) {
+				set_hdr_info(rela->header, sh_info, init_array->index);
+				elf_name_section(rela, sec_name(sec->index));
+
+				rela_init_array = rela;
+			}
+			else if(str_equal(sec_name(targetndx), ".fini_array")) {
+				set_hdr_info(rela->header, sh_info, fini_array->index);
+				elf_name_section(rela, sec_name(sec->index));
+
+				rela_fini_array = rela;
 			}
 		}
 
@@ -1190,8 +1231,8 @@ static void elf_fill_sections(void) {
 	for (ver = 0; ver < PROGRAM(versions); ver++) {
 		switch_executable_version(ver);
 
-		update_instruction_addresses(ver);
-		update_jump_displacements(ver);
+		// update_instruction_addresses(ver);
+		// update_jump_displacements(ver);
 
 		// Even if functions belong to different '.text' original sections,
 		// they are all actually written into the same output text section
@@ -1316,6 +1357,30 @@ static void elf_fill_sections(void) {
 		else if (str_prefix(sym->relocation.sec->name, ".tdata")) {
 			hinternal();
 			// sec = rela_tdata;
+		}
+		else if (str_equal(sym->relocation.sec->name, ".init_array")) {
+			// Write only `.text` referiments
+			if (!str_equal(sym->name, ".text")) {
+				continue;
+			}
+
+			sec = rela_init_array;
+
+			// We must make room for the relocation by writing dummy data
+			// to the .init_array section
+			elf_write_data(init_array, NULL, 8);
+		}
+		else if (str_equal(sym->relocation.sec->name, ".fini_array")) {
+			// Write only `.text` referiments
+			if (!str_equal(sym->name, ".text")) {
+				continue;
+			}
+
+			sec = rela_fini_array;
+
+			// We must make room for the relocation by writing dummy data
+			// to the .fini_array section
+			elf_write_data(fini_array, NULL, 8);
 		}
 		else {
 			// herror(true, "Relocation to symbol '%s' has specified a non-valid section (%s): ignored\n",

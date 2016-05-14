@@ -123,6 +123,7 @@
 			printf("%*s", verb_level, " ");\
 			yellow_arrow();\
 			printf(__VA_ARGS__);\
+			fflush(stdout);\
 		}\
 	} while(0)
 
