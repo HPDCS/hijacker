@@ -1063,7 +1063,7 @@ void link_jump_instructions(void) {
  * @author Simone Economo
  */
 void update_instruction_addresses(int version) {
-	function *foo;
+	function *foo, *prev_foo;
 	insn_info *instr;
 
 	unsigned long long offset;
@@ -1078,9 +1078,21 @@ void update_instruction_addresses(int version) {
 	// Instruction addresses are recomputed from scratch starting from
 	// the very beginning of the code section.
 	offset = 0;
+	prev_foo = NULL;
 
-	for (foo = PROGRAM(v_code)[version]; foo; foo = foo->next) {
+	for (foo = PROGRAM(v_code)[version]; foo;  prev_foo = foo, foo = foo->next) {
 		foo_size = 0;
+
+		// Verify the case of multiple symbols pointing to the same code
+		// If there is an instruction shared with two of more functions
+		// a call to `find_func_by_instr` will return a non-NULL value.
+		// If this is the case, we must skip the update since it has been
+		// already done preaviously
+		if (functions_overlap(foo, prev_foo)) {
+			hnotice(3, "Function '%s' is an overloading of '%s'; no instructions are updated\n",
+				foo->name, prev_foo->name);
+			continue;
+		}
 
 		hnotice(3, "Updating instructions in function '%s'\n", foo->name);
 
