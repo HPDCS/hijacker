@@ -40,7 +40,7 @@ static void clone_text_sections(int version, char *suffix) {
 	function *func;
 	section *sec, *clone;
 
-	char name[256];
+	char *name;
 
 	// Currently, the only way to associate a function with its
 	// CODE section is by knowing the function itself. In other
@@ -63,6 +63,7 @@ static void clone_text_sections(int version, char *suffix) {
 			hinternal();
 		}
 
+		name = malloc(strlen(sec->name) + strlen(suffix) + 2);
 		bzero(name, sizeof(name));
 		strcpy(name, sec->name);
 		strcat(name, ".");
@@ -93,7 +94,7 @@ static void clone_relocations(int version, char *suffix) {
 
 	symbol *rela, *clone, *sym;
 
-	unsigned char name[256];
+	unsigned char *name;
 
 	for (func = PROGRAM(v_code)[version]; func; func = func->next) {
 		for (instr = func->begin_insn; instr; instr = instr->next) {
@@ -119,6 +120,7 @@ static void clone_relocations(int version, char *suffix) {
 					// sure that the function from the new version is referred,
 					// not the original one
 
+					name = malloc(strlen(rela->name) + strlen(suffix) + 2);
 					bzero(name, sizeof(name));
 					strcpy(name, rela->name);
 					strcat(name, "_");

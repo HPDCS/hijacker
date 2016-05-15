@@ -812,6 +812,10 @@ void elf_create_map(void) {
 				break;
 
 			case SHT_RELA:
+				// if(str_prefix(sec_name(secndx), ".rela.text")) {
+				// 	// We need to include relocations toward unconventional text sections
+				// 	elf_rela_section(secndx);
+				// }
 				if(str_prefix(sec_name(secndx), ".rela.text")) {
 					// We need to include relocations toward unconventional text sections
 					elf_rela_section(secndx);
@@ -825,6 +829,12 @@ void elf_create_map(void) {
 				else if(!strcmp(sec_name(secndx), ".rela.bss")) {
 					elf_rela_section(secndx);
 				}
+				else if(!strcmp(sec_name(secndx), ".rela.init_array")) {
+					elf_rela_section(secndx);
+				}
+				else if(!strcmp(sec_name(secndx), ".rela.fini_array")) {
+					elf_rela_section(secndx);
+				}
 				break;
 
 			case SHT_STRTAB:
@@ -835,6 +845,14 @@ void elf_create_map(void) {
 			case SHT_DYNAMIC:
 			case SHT_DYNSYM:
 				elf_raw_section(secndx);
+				break;
+
+			case SHT_INIT_ARRAY:
+			case SHT_FINI_ARRAY:
+				elf_raw_section(secndx);
+
+			default:
+				// Do nothing...
 				break;
 		}
 	}

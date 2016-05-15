@@ -20,6 +20,9 @@
 - la funzione di `shrink_section_size` tronca l'intera taglia di sezione nel caso un cui questa non contenga dati, nonostante sia impostata una taglia nell'header corrispondente
 - Problema nel caso in cui più funzioni aventi lo stesso nome risiedono come 'static' in file differenti, generando simboli LOCAL uguali che potrebbero essere rilocati direttamente a partire da `.text` per disambiguare i due
 - quando il simbolo è una sezione, il campo `offset` del simbolo non è coerente con il campo `offset` della sezione
+- verificare cosa succede instrumentando una libreria.a
+- gestire i casi di binding diverso da LOCAL, GLOBAL e WEAK, soprattutto verificare l'attuale politica per i WEAK; inoltre esiste il bind UNIQUE
+- esistono simboli ti tipo HIDDEN, controllare come li tratta hijacker
   
 Funzioni da controllare
 - switch_executable_version

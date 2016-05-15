@@ -273,7 +273,10 @@ symbol *symbol_create_from_ELF(Elf_Sym *elfsym) {
 			break;
 
 		default:
-			hinternal();
+			sym->bind = symbind;
+			herror(false, "Symbols '%s' has a reserved bind's type (%u); simply copied\n",
+				sym->name, symbind);
+			// hinternal();
 	}
 
 	sym->secnum = symbol_info(elfsym, st_shndx);
