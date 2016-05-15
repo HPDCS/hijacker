@@ -35,20 +35,24 @@
 // Number of general-purpose registers on x86-64
 #define SMT_VTABLE_SIZE 16
 
-// Basic structures
+
 typedef struct smt_access {
-  size_t counter;                 // Access count
+  size_t count;                   // Access count
   size_t index;                   // Index in the TLS buffer
 
   insn_info *insn;                // Instruction performing the access
 
-  bool instrumented;              // True if the access is logged
+  bool instrumented;              // True if the access was already logged
+  bool selected;                  // True if the access is selected by the engine
 
-  char vtable[SMT_VTABLE_SIZE];   // Version table for general-purpose registers
+  struct smt_access *original;    // Pointer to the equal original access
+
+  char vtable[SMT_VTABLE_SIZE];       // Version table for general-purpose registers
   float score;                    // Access instrumentation score
 
   struct smt_access *next;
 } smt_access;
+
 
 typedef struct {
   // Block-level features
@@ -65,6 +69,7 @@ typedef struct {
   size_t nrri;                // Number of candidate RRI memory instructions
   size_t ntotal;              // Total number of memory instructions
 } smt_data;
+
 
 extern void smt_init(void);
 
