@@ -837,9 +837,9 @@ void link_jump_instructions(void) {
 
 	for (prev = NULL, func = PROGRAM(v_code)[PROGRAM(version)]; func;
 	     prev = func, func = func->next) {
-		if (functions_overlap(prev, func)) {
-			continue;
-		}
+		// if (functions_overlap(prev, func)) {
+		// 	continue;
+		// }
 
 		hnotice(2, "Resolve jumps/calls of function '%s'\n", func->name);
 
@@ -1142,7 +1142,7 @@ void update_instruction_addresses(int version) {
 
 
 		for (alias = PROGRAM(symbols); alias != NULL; alias = alias->next) {
-			if (alias->sec != foo->symbol->sec)
+			if (alias->type != SYMBOL_FUNCTION || alias->sec != foo->symbol->sec)
 				continue;
 
 			if (alias->offset == foo->symbol->offset) {

@@ -23,6 +23,7 @@
 * @author Simone Economo
 */
 
+#include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
@@ -45,6 +46,9 @@
 // Maximum length for the name of the TLS buffer symbol
 #define BUFFER_NAME_LEN   (1<<6)
 
+// Length of a single bin in the score distribution
+#define SCORE_BIN_LENGTH  0.001
+
 // Experimental score triple to derive the instrumentation score
 // of a single memory access expression
 #define SCORE_1   1
@@ -65,6 +69,7 @@ static size_t chunk_size;
 static double acc_threshold;
 static bool use_stack;
 static bool simulated;
+static char *scorefile;
 
 
 inline static bool smt_is_relevant(insn_info *instr) {
@@ -1491,9 +1496,9 @@ static bool smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
         free(target);
         return false;
       } else {
-        // We are in simulation mode: the access is instrumented,
-        // but we keep memory of the fact that it were not
-        // selected by our engine
+        // We are in simulation mode: the access will be
+        // instrumented, but we keep memory of the fact that
+        // it is a duplicate access
         target->original = current;
         break;
       }
@@ -1640,9 +1645,12 @@ size_t smt_run(char *name, param **params, size_t numparams) {
   symbol *callfunc;
   function *func;
 
-  size_t count, func_count;
+  block *blk;
+  smt_data *smt;
+  size_t count, func_count, numbins, binindex, *bins;
+  FILE *scoredump;
 
-  if (numparams > 5) {
+  if (numparams > 6) {
     hinternal();
   }
 
@@ -1653,6 +1661,30 @@ size_t smt_run(char *name, param **params, size_t numparams) {
   acc_threshold       = atof(params[2]->value);
   use_stack           = !strcmp(params[3]->value, "true");
   simulated           = !strcmp(params[4]->value, "true");
+  scorefile           = params[5];
+
+  // Generate block score distribution
+  numbins = 1.0 / SCORE_BIN_LENGTH;
+  bins = calloc(numbins, sizeof(size_t));
+
+  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+    smt = blk->smtracer;
+
+    binindex = smt->score / SCORE_BIN_LENGTH;
+    binindex = binindex >= numbins ? numbins : binindex;
+
+    bins[binindex] += 1;
+  }
+
+  // Dump block score distribution to file
+  scoredump = fopen(scorefile, "w");
+
+  for (binindex = 0; binindex < numbins; binindex += 1) {
+    fwrite(scoredump, "%.03f %lu\n", SCORE_BIN_LENGTH * binindex, bins[binindex]);
+  }
+
+  fclose(scoredump);
+  free(bins);
 
   // A weak symbol is created that represents the user-defined function
   for (text = NULL, sec = PROGRAM(sections)[PROGRAM(version)]; sec; sec = sec->next) {

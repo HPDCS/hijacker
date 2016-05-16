@@ -178,38 +178,6 @@ long elf_write_string(section *sec, char *buffer) {
 	return (long)((char *)ptr - (char *)sec->payload);
 }
 
-
-/**
- * Writes a new data entry in the rodata section
- *
- * @param sec Data section to which write the entry
- * @param data Pointer to the buffer containing the data to be written
- * @param size Size of the buffer data to copy into the section
- *
- * @return The offset of the data written from section's beginning
- */
-// long elf_write_rodata(section *sec, void *buffer, int size) {
-// 	Section_Hdr *hdr;
-// 	void *ptr;
-
-// 	// check if section must be enlarged
-// 	check_section_size(sec, size);
-
-// 	hdr = (Section_Hdr *) sec->header;
-
-// 	memcpy(sec->ptr, buffer, size);
-// 	ptr = sec->ptr;
-// 	sec->ptr = (void *)((char *)sec->ptr + size);
-
-// 	hnotice(3, "Read-only data written into section '%s' [%d] at offset <%#08lx>\n",
-// 		sec->name, sec->index, ((char *)ptr - (char *)sec->payload));
-
-// 	hdump(4, "Data buffer dump", buffer, size);
-
-// 	return (long)((char *)ptr - (char *)sec->payload);
-// }
-
-
 /**
  * Writes a new data entry in an allocated data section
  *
@@ -239,7 +207,6 @@ long elf_write_data(section *sec, void *buffer, int size) {
 
 	hnotice(3, "Data written into section '%s' [%d] at offset <%#08lx>\n",
 		sec->name, sec->index, ((char *)ptr - (char *)sec->payload));
-
 
 	return (long)((char *)ptr - (char *)sec->payload);
 }
@@ -322,6 +289,7 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 
 		case SYMBOL_TLS:
 			if (str_equal(sym->sec->name, ".tdata")) {
+				// FIXME: Credo vada commentato...
 				sym->offset = elf_write_data(tdata, sym->payload, sym->size);
 				sec = tdata;
 				shndx = tdata->index;
@@ -504,20 +472,9 @@ unsigned long elf_write_code(section *sec, function *func) {
 				herror(true, "Architecture type not recognized!\n");
 		}
 
-		// old_offset = instr->new_addr;
-		// instr->new_addr = offset + written;
-
-		// // Check whether the instruction has been already emitted
-		// if (instr->written) {
-		// 	continue;
-		// }
-
-		// Write instruction
 		memcpy(sec->ptr, x86->insn, instr->size);
-		// instr->written = true;
 
 		sec->ptr = (void *)((char *)sec->ptr + instr->size);
-		// written += instr->size;
 
 		// For each relocation that apply to this instruction we have to rewrite them
 		// Write relocations within instruction
@@ -525,11 +482,6 @@ unsigned long elf_write_code(section *sec, function *func) {
 			rela = rela_node->elem;
 			rela->relocation.sec = text[PROGRAM(version)];
 
-			// hprint("Offset: %08llx, Orig: %08llx + %ld, New: %08llx + %ld\n",
-			// 	rela->relocation.offset, old_offset, rela->relocation.offset - old_offset, instr->new_addr, rela->relocation.offset - old_offset);
-
-			// addr = instr->new_addr + instr->opcode_size + displ;
-			// // addr = instr->new_addr + (rela->relocation.offset - old_offset);
 			addr = rela->relocation.offset;
 
 			hprint("In function '%s' from instruction <%llx> (<%llx>) to sym '%s'\n",
@@ -538,8 +490,6 @@ unsigned long elf_write_code(section *sec, function *func) {
 			elf_write_reloc(rela_text[PROGRAM(version)], rela, addr, rela->relocation.addend);
 		}
 	}
-
-	// func->symbol->size = written;
 
 	hnotice(3, "Function '%s' has been written at '%s' + %x with size %u\n",
 		func->name, sec->name, func->symbol->offset, func->symbol->size);
@@ -824,30 +774,18 @@ static void elf_build(void) {
 	elf_name_section(strtab, ".strtab");
 	elf_write_string(strtab, "");
 
-	// Create symbol table
-	// size = 0;
-
-	// for (sym = PROGRAM(symbols); sym; sym = sym->next) {
-	// 	if (sym->duplicate == false) {
-	// 		size += sym_size();
-	// 	}
-	// }
-
+	// Create the symbol table
 	symtab = elf_create_section(SHT_SYMTAB, 0, 0);
 	elf_name_section(symtab, ".symtab");
 
 	set_hdr_info(symtab->header, sh_entsize, sym_size());
 	set_hdr_info(symtab->header, sh_link, strtab->index);
 
-	// sym = (symbol *) malloc(sizeof(symbol));
-	// bzero(sym, sizeof(symbol));
-
 	// ------------------------------------------------------
 	// DATA SECTIONS
 	// ------------------------------------------------------
 
 	sym = find_symbol_by_name(".rodata");
-
 	if (sym) {
 		rodata = elf_create_section(SHT_PROGBITS, 0, SHF_ALLOC);
 		elf_name_section(rodata, ".rodata");
@@ -857,7 +795,6 @@ static void elf_build(void) {
 	}
 
 	sym = find_symbol_by_name(".data");
-
 	if (sym) {
 		data = elf_create_section(SHT_PROGBITS, 0, SHF_ALLOC|SHF_WRITE);
 		elf_name_section(data, ".data");
@@ -867,7 +804,6 @@ static void elf_build(void) {
 	}
 
 	sym = find_symbol_by_name(".bss");
-
 	if (sym) {
 		bss = elf_create_section(SHT_NOBITS, 0, SHF_ALLOC|SHF_WRITE);
 		elf_name_section(bss, ".bss");
@@ -877,7 +813,6 @@ static void elf_build(void) {
 	}
 
 	sym = find_symbol_by_name(".tdata");
-
 	if (sym) {
 		tdata = elf_create_section(SHT_PROGBITS, 0, SHF_ALLOC|SHF_WRITE|SHF_TLS);
 		elf_name_section(tdata, ".tdata");
@@ -887,7 +822,6 @@ static void elf_build(void) {
 	}
 
 	sym = find_symbol_by_name(".tbss");
-
 	if (sym) {
 		tbss = elf_create_section(SHT_NOBITS, 0, SHF_ALLOC|SHF_WRITE|SHF_TLS);
 		elf_name_section(tbss, ".tbss");
@@ -920,40 +854,6 @@ static void elf_build(void) {
 			header_info(((Section_Hdr *) sym->sec->header), sh_addralign));
 	}
 
-	// [SE] Hackish...
-	// sym = find_symbol(".tbss");
-
-	// if (sym) {
-	// 	section *tbss_orig = find_section_by_name(".tbss");
-
-	// 	tbss = elf_create_section(SHT_NOBITS, sym->size, SHF_ALLOC|SHF_WRITE|SHF_TLS);
-	// 	elf_name_section(tbss, ".tbss");
-	// 	tbss->type = SECTION_TLS;
-
-	// 	set_hdr_info(tbss->header, sh_addralign,
-	// 		header_info(((Section_Hdr *) tbss_orig->header), sh_addralign));
-
-	// 	for (sym = PROGRAM(symbols); sym; sym = sym->next) {
-	// 		if (sym->secnum == tbss_orig->index) {
-	// 			sym->secnum = tbss->index;
-	// 		}
-	// 	}
-	// }
-
-	// sym = find_symbol(".tdata");
-
-	// if (sym) {
-	// 	section *tdata_orig = find_section_by_name(".tdata");
-
-	// 	tdata = elf_create_section(SHT_PROGBITS, sym->size, SHF_ALLOC|SHF_WRITE|SHF_TLS);
-	// 	elf_name_section(tdata, ".tdata");
-	// 	tdata->type = SECTION_TLS;
-
-	// 	set_hdr_info(tdata->header, sh_addralign,
-	// 		header_info(((Section_Hdr *) tdata_orig->header), sh_addralign));
-	// }
-	// [/SE]
-
 	// ------------------------------------------------------
 	// NON RELA-TEXT SECTIONS
 	// ------------------------------------------------------
@@ -972,13 +872,13 @@ static void elf_build(void) {
 			set_hdr_info(rela->header, sh_entsize, rela_size());
 			set_hdr_info(rela->header, sh_link, symtab->index);
 
-			if (str_equal(sec_name(targetndx), ".data")) {
+			if (str_prefix(sec_name(targetndx), ".data")) {
 				set_hdr_info(rela->header, sh_info, data->index);
 				elf_name_section(rela, sec_name(sec->index));
 
 				rela_data = rela;
 			}
-			else if(str_equal(sec_name(targetndx), ".rodata")) {
+			else if(str_prefix(sec_name(targetndx), ".rodata")) {
 				set_hdr_info(rela->header, sh_info, rodata->index);
 				elf_name_section(rela, sec_name(sec->index));
 
@@ -1151,7 +1051,7 @@ static void elf_update_symbol_list(symbol *first) {
 			// (we skip the NULL section because it doesn't have a name)
 
 			for (sec = hijacked.sections->next; sec; sec = sec->next) {
-				if(str_equal(sym->name, sec->name)) {
+				if(sec->name != NULL && str_equal(sym->name, sec->name)) {
 					sym->sec = sec;
 					sym->secnum = sec->index;
 					// sec = sec->next;
@@ -1246,29 +1146,14 @@ static void elf_fill_sections(void) {
 	for (ver = 0; ver < PROGRAM(versions); ver++) {
 		switch_executable_version(ver);
 
-		// update_instruction_addresses(ver);
-		// update_jump_displacements(ver);
+		update_instruction_addresses(ver);
+		update_jump_displacements(ver);
 
 		// Even if functions belong to different '.text' original sections,
 		// they are all actually written into the same output text section
-		for (func = PROGRAM(v_code)[PROGRAM(version)]; func; prev_func = func, func = func->next) {
-			// hnotice(3, "Writing function '%s' (%d bytes) on section '%s' (version %d)\n",
-			// 	func->name, func->symbol->size, text[func->symbol->version]->name, func->symbol->version);
-
-			// Verify the case of multiple symbols pointing to the same code
-			// If there is an instruction shared with two of more functions
-			// a call to `find_func_by_instr` will return a non-NULL value.
-			// If this is the case, we must skip the update since it has been
-			// already done previously
-			if (functions_overlap(func, prev_func)) {
-				func->symbol->offset = prev_func->symbol->offset;
-				func->symbol->size = prev_func->symbol->size;
-
-				hnotice(3, "Function '%s' at <%#08llx> is an overloading of '%s'; no instructions are updated\n",
-					func->name, func->symbol->offset, prev_func->name);
-
-				continue;
-			}
+		for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
+			hnotice(3, "Writing function '%s' (%d bytes) on section '%s' (version %d)\n",
+				func->name, func->symbol->size, text[func->symbol->version]->name, func->symbol->version);
 
 			offset = elf_write_code(text[func->symbol->version], func);
 
@@ -1331,8 +1216,9 @@ static void elf_fill_sections(void) {
 
 			content = calloc(size, 1);
 
-			// This is to handle the case that hijacker will adds indirectly data to pre-existent sections
-			// i.e. in case of switch cases for different versions
+			// This is to handle the case that hijacker will adds indirectly
+			// data to pre-existent sections (i.e. in case of switch cases
+			// for different versions)
 			memcpy(content, sec->payload, sec_size(sec->index));
 			elf_write_data(rodata, content, size);
 		}
@@ -1374,10 +1260,6 @@ static void elf_fill_sections(void) {
 			continue;
 		}
 
-		/* if (str_prefix(sym->relocation.sec->name, ".text")) {
-			sec = rela_text[sym->version];
-		}
-		else */
 		if (str_prefix(sym->relocation.sec->name, ".rodata")) {
 			sec = rela_rodata;
 		}
@@ -1385,11 +1267,11 @@ static void elf_fill_sections(void) {
 			sec = rela_data;
 		}
 		else if (str_prefix(sym->relocation.sec->name, ".tdata")) {
-			hinternal();
 			// sec = rela_tdata;
+			hinternal();
 		}
 		else if (str_equal(sym->relocation.sec->name, ".init_array")) {
-			// Write only `.text` referiments
+			// Write only `.text` references
 			if (!str_equal(sym->name, ".text")) {
 				continue;
 			}
@@ -1413,19 +1295,11 @@ static void elf_fill_sections(void) {
 			elf_write_data(fini_array, NULL, 8);
 		}
 		else {
-			// herror(true, "Relocation to symbol '%s' has specified a non-valid section (%s): ignored\n",
-			// 	sym->name, sec->name);
+			// herror(true, "Relocation to symbol '%s' has specified a non-valid section (%s): ignored\n", sym->name, sec->name);
 			continue;
 		}
 
-		// Needed because of multiple '.text' input sections
-		// if (str_prefix(sym->name, ".text") && sym->relocation.target_insn) {
-		// 	offset = sym->relocation.target_insn->new_addr;
-		// } else {
-			offset = sym->relocation.addend;
-		// }
-
-		elf_write_reloc(sec, sym, sym->relocation.offset, offset);
+		elf_write_reloc(sec, sym, sym->relocation.offset, sym->relocation.addend);
 	}
 }
 

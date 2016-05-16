@@ -391,7 +391,7 @@ block *block_find(insn_info *instr);
 void block_link(block *from, block *to, block_edge_type type);
 void block_tree_dump(char *filename, char *mode);
 void block_graph_dump(function *func, char *filename, char *mode);
-block *block_graph_create();
+block *block_graph_create(void);
 void block_graph_visit(block_edge *edge, graph_visit *visit);
 
 

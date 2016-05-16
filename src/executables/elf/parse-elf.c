@@ -492,19 +492,18 @@ static void resolve_symbols(void) {
 					// adding the section's offset)
 					for (prev = NULL, curr = first; curr; prev = curr, curr = curr->next) {
 						if (func->begin_insn->orig_addr + func->symbol->sec->sym->offset
-							< curr->begin_insn->orig_addr + curr->symbol->sec->sym->offset) {
+						  <= curr->begin_insn->orig_addr + curr->symbol->sec->sym->offset) {
 							break;
 						}
 					}
 
-					// Check whether the current `func` is an alias
-					// of another one; if this is the case, just throw
-					// it away and skip the creation of the current
-					// function descriptor; the lone symbol is sufficient
-					// NOTE: `prev` is guaranteed to be the alias (if there
-					// is any) because of the total order of the function's
-					// list.
+					// Check whether the current `func` is an alias of another one;
+					// if this is the case, just throw it away and skip the creation
+					// of the current function descriptor; the symbol alone is sufficient.
+					// NOTE: `prev` is guaranteed to be the alias (if there is any)
+					// because of the way functions were appended to the list.
 					if (prev != NULL && func->begin_insn == prev->begin_insn) {
+						sym->func = prev;
 						free(func);
 						break;
 					}
@@ -518,7 +517,6 @@ static void resolve_symbols(void) {
 						func->next = curr;
 					}
 				}
-
 				break;
 
 			case SYMBOL_VARIABLE:
@@ -558,32 +556,12 @@ static void resolve_symbols(void) {
 		}
 	}
 
-	// for (instr = prev->begin_insn; instr->next; instr = instr->next);
-
-	for (func = first; func != NULL; func = func->next) {
-		hprint("Function '%s' (section '%s')\n", func->name, func->symbol->sec->name);
-	}
-
+	for (instr = prev->begin_insn; instr->next; instr = instr->next);
 	prev->end_insn = instr;
 
-	// // Update instruction addresses so to take into account
-	// // multiple '.text' sections
-	// for (prev = NULL, func = first; func; prev = func, func = func->next) {
-
-	// 	// Avoid updating instruction addresses multiple times.
-	// 	// This check is needed because in some cases (e.g., C++ files)
-	// 	// it is possible to have overlapping functions, that is functions
-	// 	// whose base addresses are the same.
-	// 	if (prev != NULL && func->orig_addr == prev->orig_addr) {
-	// 		continue;
-	// 	}
-
-	// 	for (instr = func->begin_insn; instr; instr = instr->next) {
-	// 		instr->orig_addr += func->symbol->sec->offset;
-	// 		instr->new_addr = instr->orig_addr;
-	// 	}
+	// for (func = first; func != NULL; func = func->next) {
+	// 	hprint("Function '%s' (section '%s')\n", func->name, func->symbol->sec->name);
 	// }
-
 
 
 	// // If this is a alias of an yet existing function
@@ -842,9 +820,11 @@ void elf_create_map(void) {
 		switch(sec_type(secndx)) {
 			case SHT_PROGBITS:
 				if(sec_test_flag(secndx, SHF_EXECINSTR)) {
+					// Filter out debug code sections
+					// FIXME: Se si decommentano hijacker crasha perché
+					// trova dei simboli di sezione senza la rispettiva
+					// sezione...
 					// if (str_prefix(sec_name(secndx), ".text")) {
-						// Filter out debug code sections
-						// FIXME: Eventually they should be taken into account
 						elf_code_section(secndx);
 					// }
 				} else {
@@ -866,27 +846,23 @@ void elf_create_map(void) {
 				break;
 
 			case SHT_RELA:
-				// if(str_prefix(sec_name(secndx), ".rela.text")) {
-				// 	// We need to include relocations toward unconventional text sections
-				// 	elf_rela_section(secndx);
-				// }
+				// We need to include relocations toward unconventional text/data sections
 				if(str_prefix(sec_name(secndx), ".rela.text")) {
-					// We need to include relocations toward unconventional text sections
 					elf_rela_section(secndx);
 				}
-				else if(!strcmp(sec_name(secndx), ".rela.data")) {
+				else if(str_prefix(sec_name(secndx), ".rela.data")) {
 					elf_rela_section(secndx);
 				}
-				else if(!strcmp(sec_name(secndx), ".rela.rodata")) {
+				else if(str_prefix(sec_name(secndx), ".rela.rodata")) {
 					elf_rela_section(secndx);
 				}
-				else if(!strcmp(sec_name(secndx), ".rela.bss")) {
+				else if(str_prefix(sec_name(secndx), ".rela.bss")) {
 					elf_rela_section(secndx);
 				}
-				else if(!strcmp(sec_name(secndx), ".rela.init_array")) {
+				else if(str_equal(sec_name(secndx), ".rela.init_array")) {
 					elf_rela_section(secndx);
 				}
-				else if(!strcmp(sec_name(secndx), ".rela.fini_array")) {
+				else if(str_equal(sec_name(secndx), ".rela.fini_array")) {
 					elf_rela_section(secndx);
 				}
 				break;
@@ -915,15 +891,14 @@ void elf_create_map(void) {
 	resolve_symbols();
 	resolve_relocation();
 
-	update_instruction_addresses(0);
-	update_jump_displacements(0);
+	// update_instruction_addresses(0);
+	// update_jump_displacements(0);
 
 	resolve_jumps();
 	resolve_blocks();
 
 	// Updates the binary representation's pointers
 
-	PROGRAM(rawdata) = 0;
 	PROGRAM(versions)++;
 
 	hnotice(1, "ELF parsing terminated\n");
