@@ -93,6 +93,7 @@ struct _instruction {
 
 	// struct _symbol *reference;
 	// struct _symbol *pointedby;
+	bool written;		// Tell if the current instruction has been currently emitted
 
 	// Parent instruction in the previous IBR version
 	struct _instruction *parent;
@@ -275,9 +276,11 @@ struct _function {
 	linked_list callto;      // List of functions that are called by this function
 	bool visited;            // True if the function was already met in the current visit
 
+	bool overload;
 	insn_info   *begin_insn;
 	insn_info   *end_insn;
 	symbol      *symbol;  // [DC] Added reference to the relative symbol
+
 	struct _function *next;
 };
 

@@ -353,6 +353,7 @@ static function *resolve_function_symbol(symbol *sym) {
 	function *func;
 	section *sec;
 	insn_info *instr;
+	unsigned int offset;
 
 	// Check if the section the symbol belongs to exists
 	// and is actually a section containing code
@@ -487,14 +488,28 @@ static void resolve_symbols(void) {
 
 				if (func) {
 					// We maintain an ordered list of functions according to their
-					// parent sections and their absolute addresses.
+					// parent sections and their *absolute* addresses (computed by
+					// adding the section's offset)
 					for (prev = NULL, curr = first; curr; prev = curr, curr = curr->next) {
-						if (func->symbol->sec == curr->symbol->sec &&
-						    func->begin_insn->orig_addr <= curr->begin_insn->orig_addr) {
+						if (func->begin_insn->orig_addr + func->symbol->sec->sym->offset
+							< curr->begin_insn->orig_addr + curr->symbol->sec->sym->offset) {
 							break;
 						}
 					}
 
+					// Check whether the current `func` is an alias
+					// of another one; if this is the case, just throw
+					// it away and skip the creation of the current
+					// function descriptor; the lone symbol is sufficient
+					// NOTE: `prev` is guaranteed to be the alias (if there
+					// is any) because of the total order of the function's
+					// list.
+					if (prev != NULL && func->begin_insn == prev->begin_insn) {
+						free(func);
+						break;
+					}
+
+					// Add the function to the list at the right place
 					if (prev == NULL) {
 						first = func;
 						func->next = curr;
@@ -543,7 +558,11 @@ static void resolve_symbols(void) {
 		}
 	}
 
-	for (instr = prev->begin_insn; instr->next; instr = instr->next);
+	// for (instr = prev->begin_insn; instr->next; instr = instr->next);
+
+	for (func = first; func != NULL; func = func->next) {
+		hprint("Function '%s' (section '%s')\n", func->name, func->symbol->sec->name);
+	}
 
 	prev->end_insn = instr;
 
@@ -563,6 +582,41 @@ static void resolve_symbols(void) {
 	// 		instr->orig_addr += func->symbol->sec->offset;
 	// 		instr->new_addr = instr->orig_addr;
 	// 	}
+	// }
+
+
+
+	// // If this is a alias of an yet existing function
+	// // we simply clone all its instructions
+	// if (find_func_from_addr(sym->offset) != NULL) {
+	// 	// We can use `clone_instruction_list` here without to be aware
+	// 	// of all the relocation
+	// 	instr = clone_instruction_list(instr);
+
+	// 	// This step will realign the instruction addresses to the bottom the the current
+	// 	// `.text` section. This is mandatory in order to avoid problems in the
+	// 	// reloction resolution step, which grounds on the original offset within
+	// 	// the code section to points correct instructions.
+	// 	for (offset = 0 ; instr; instr = instr->next, offset += instr->size) {
+	// 		instr->orig_addr = instr->new_addr = sec->sym->size + offset;
+
+	// 		switch(PROGRAM(insn_set)) {
+
+	// 			case X86_INSN:
+	// 				instr->i.x86.initial = instr->orig_addr;
+	// 				break;
+
+	// 			default:
+	// 				herror(true, "Instruction set not supported\n");
+	// 				break;
+	// 		}
+	// 	}
+
+	// 	sym->offset = sec->sym->size;
+
+	// 	// TODO: verificare che sia sicuro (e necessario) aggiornare il valore
+	// 	// di dimensione della sezione originale
+	// 	sec->sym->size += sym->size;
 	// }
 
 	PROGRAM(symbols) = sec->payload;

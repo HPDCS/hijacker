@@ -1069,9 +1069,10 @@ void update_instruction_addresses(int version) {
 	unsigned long long offset;
 	unsigned long long old_offset;
 	unsigned long long foo_size;
+	unsigned long long foo_offset;
 
 	ll_node *rela_node;
-	symbol *rela;
+	symbol *rela, *alias;
 
 	long long rela_offset;
 
@@ -1083,20 +1084,24 @@ void update_instruction_addresses(int version) {
 	for (foo = PROGRAM(v_code)[version]; foo;  prev_foo = foo, foo = foo->next) {
 		foo_size = 0;
 
-		// Verify the case of multiple symbols pointing to the same code
-		// If there is an instruction shared with two of more functions
-		// a call to `find_func_by_instr` will return a non-NULL value.
-		// If this is the case, we must skip the update since it has been
-		// already done preaviously
-		if (functions_overlap(foo, prev_foo)) {
-			hnotice(3, "Function '%s' is an overloading of '%s'; no instructions are updated\n",
-				foo->name, prev_foo->name);
-			continue;
-		}
+		// // Verify the case of multiple symbols pointing to the same code
+		// // If there is an instruction shared with two of more functions
+		// // a call to `find_func_by_instr` will return a non-NULL value.
+		// // If this is the case, we must skip the update since it has been
+		// // already done previously
+		// if (functions_overlap(foo, prev_foo)) {
+		// 	foo->symbol->offset = prev_foo->symbol->offset;
+		// 	foo->symbol->size = prev_foo->symbol->size;
+
+		// 	hnotice(3, "Function '%s' at <%#08llx> is an overloading of '%s'; no instructions are updated\n",
+		// 		foo->name, foo->symbol->offset, prev_foo->name);
+
+		// 	continue;
+		// }
 
 		hnotice(3, "Updating instructions in function '%s'\n", foo->name);
 
-		foo->symbol->offset = offset;
+		foo_offset = offset;
 
 		for (instr = foo->begin_insn; instr; instr = instr->next) {
 
@@ -1135,6 +1140,18 @@ void update_instruction_addresses(int version) {
 			}
 		}
 
+
+		for (alias = PROGRAM(symbols); alias != NULL; alias = alias->next) {
+			if (alias->sec != foo->symbol->sec)
+				continue;
+
+			if (alias->offset == foo->symbol->offset) {
+				alias->offset = foo_offset;
+				alias->size = foo_size;
+			}
+		}
+
+		foo->symbol->offset = foo_offset;
 		foo->symbol->size = foo_size;
 
 		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n",

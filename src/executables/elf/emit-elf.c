@@ -507,8 +507,14 @@ unsigned long elf_write_code(section *sec, function *func) {
 		// old_offset = instr->new_addr;
 		// instr->new_addr = offset + written;
 
+		// // Check whether the instruction has been already emitted
+		// if (instr->written) {
+		// 	continue;
+		// }
+
 		// Write instruction
 		memcpy(sec->ptr, x86->insn, instr->size);
+		// instr->written = true;
 
 		sec->ptr = (void *)((char *)sec->ptr + instr->size);
 		// written += instr->size;
@@ -526,14 +532,22 @@ unsigned long elf_write_code(section *sec, function *func) {
 			// // addr = instr->new_addr + (rela->relocation.offset - old_offset);
 			addr = rela->relocation.offset;
 
+			hprint("In function '%s' from instruction <%llx> (<%llx>) to sym '%s'\n",
+				func->name, instr->new_addr, instr->orig_addr, rela->name);
+
 			elf_write_reloc(rela_text[PROGRAM(version)], rela, addr, rela->relocation.addend);
 		}
 	}
 
 	// func->symbol->size = written;
 
-	hnotice(3, "Function '%s' has been written at '%s' + %u with size %u\n",
+	hnotice(3, "Function '%s' has been written at '%s' + %x with size %u\n",
 		func->name, sec->name, func->symbol->offset, func->symbol->size);
+
+	if (func->symbol->offset != offset) {
+		herror(false, "Offset non corrispondenti! foo->offset <%#08llx>; offset <%#08llx>\n",
+			func->symbol->offset, offset);
+	}
 
 	// FIXME: non sono sicuro che l'offset sia gestito correttamente
 	return offset;
@@ -1213,7 +1227,7 @@ static void elf_fill_sections(void) {
 	size_t ver;
 
 	symbol *sym;
-	function *func;
+	function *func, *prev_func;
 	section *sec;
 
 	unsigned long long offset;
@@ -1227,6 +1241,7 @@ static void elf_fill_sections(void) {
 	hnotice(2, "Fill text...\n");
 
 	offset = 0;
+	prev_func = NULL;
 
 	for (ver = 0; ver < PROGRAM(versions); ver++) {
 		switch_executable_version(ver);
@@ -1236,9 +1251,24 @@ static void elf_fill_sections(void) {
 
 		// Even if functions belong to different '.text' original sections,
 		// they are all actually written into the same output text section
-		for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
+		for (func = PROGRAM(v_code)[PROGRAM(version)]; func; prev_func = func, func = func->next) {
 			// hnotice(3, "Writing function '%s' (%d bytes) on section '%s' (version %d)\n",
 			// 	func->name, func->symbol->size, text[func->symbol->version]->name, func->symbol->version);
+
+			// Verify the case of multiple symbols pointing to the same code
+			// If there is an instruction shared with two of more functions
+			// a call to `find_func_by_instr` will return a non-NULL value.
+			// If this is the case, we must skip the update since it has been
+			// already done previously
+			if (functions_overlap(func, prev_func)) {
+				func->symbol->offset = prev_func->symbol->offset;
+				func->symbol->size = prev_func->symbol->size;
+
+				hnotice(3, "Function '%s' at <%#08llx> is an overloading of '%s'; no instructions are updated\n",
+					func->name, func->symbol->offset, prev_func->name);
+
+				continue;
+			}
 
 			offset = elf_write_code(text[func->symbol->version], func);
 
