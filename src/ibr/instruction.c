@@ -199,12 +199,6 @@ void parse_instruction_bytes(unsigned char *bytes, unsigned long int *pos, insn_
  * before or after the target one.
  */
 static inline void insert_insn_at(insn_info *target, insn_info *instr, insn_insert_mode mode) {
-	// insn_info *pivot;
-	// function *func;
-
-	// TODO: debug
-	/*hprint("ISTRUZIONE: '%s' <%#08lx> -- op_size=%d, disp_off=%d, jump_dest=%d, size=%d\n", x86->mnemonic, x86->addr,
-			x86->opcode_size, x86->disp_offset, x86->jump_dest, x86->insn_size);*/
 
 	if (mode == INSERT_BEFORE) {
 		instr->next = target;
@@ -226,16 +220,7 @@ static inline void insert_insn_at(insn_info *target, insn_info *instr, insn_inse
 		}
 
 		target->next = instr;
-		// pivot = target;
 	}
-
-	// Update instruction references
-	// since we are adding a new instruction, the shift amount
-	// is equal to the instruction's size
-	// update_instruction_addresses(pivot, instr->size);
-
-	//func = get_function(target);
-	//hnotice(4, "Inserted a new instruction node %s the instruction at offset <%#08lx> in function '%s'\n", mode == INSERT_AFTER ? "after" : "before", target->new_addr, func->symbol->name);
 }
 
 
@@ -320,7 +305,6 @@ int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size
 int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size) {
 	insn_info *instr;
 	unsigned long int pos = 0;
-	// unsigned int old_size;
 	int count;
 
 	hnotice(4, "Substituting target instruction at %#08llx with binary code\n", target->new_addr);
@@ -334,13 +318,6 @@ int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t
 	instr = target;
 
 	parse_instruction_bytes(binary, &pos, &instr);
-
-	// we have to update all the references
-	// delta shift should be the: d = (new size - old size) [signed, obviously]
-	// old_size = target->size;
-	// shift_instruction_addresses(instr, (size - old_size));
-
-	// count += insert_instructions_at(instr, binary + pos, size - pos, INSERT_AFTER, last);
 
 	hnotice(4, "Target instruction substituted with %d instructions\n", count);
 
@@ -569,13 +546,11 @@ void set_virtual_reference(insn_info *target, insn_info *virtual) {
 		ll_push(&virtual->targetof, jump);
 
 		if (jump->jumpto) {
-			// if (jump->jumpto == target) {
-				jump->jumpto = virtual;
+			jump->jumpto = virtual;
 
-				hnotice(3, "%s instruction at <%#08llx> (<%#08llx>) linked to virtual instruction at address <%#08llx> (<%#08llx>)\n",
-					IS_JUMP(jump) ? "Jump" : "Call",
-					jump->orig_addr, jump->new_addr, virtual->orig_addr, virtual->new_addr);
-			// }
+			hnotice(3, "%s instruction at <%#08llx> (<%#08llx>) linked to virtual instruction at address <%#08llx> (<%#08llx>)\n",
+				IS_JUMP(jump) ? "Jump" : "Call",
+				jump->orig_addr, jump->new_addr, virtual->orig_addr, virtual->new_addr);
 		}
 		else {
 			for(idx = 0; idx < jump->jumptable.size; ++idx) {
@@ -599,7 +574,6 @@ void set_virtual_reference(insn_info *target, insn_info *virtual) {
 		rela = ll_pop(&target->pointedby);
 
 		rela->relocation.target_insn = virtual;
-		// virtual->reference->relocation.offset = virtual->new_addr;
 
 		ll_push(&virtual->pointedby, rela);
 	}
@@ -1028,10 +1002,7 @@ void link_jump_instructions(void) {
 					// local function calls as relocation entities.
 					sym = callee->symbol;
 
-					// if (ll_empty(&instr->reference) || PROGRAM(version) > 0) {
-						// The instruction object will be bound to the proper symbol
-						symbol_instr_rela_create(sym, instr, RELOC_PCREL_32);
-					// }
+					symbol_instr_rela_create(sym, instr, RELOC_PCREL_32);
 				}
 
 				// CALL to local function detected, augment the intermediate representation
@@ -1133,9 +1104,7 @@ void update_instruction_addresses(int version) {
 				rela = rela_node->elem;
 				rela_offset = rela->relocation.addend;
 
-				// if (str_prefix(rela->name, ".text")) {
-					rela->relocation.addend += instr->new_addr - old_offset;
-				// }
+				rela->relocation.addend += instr->new_addr - old_offset;
 
 				hnotice(5, "Relocation to '%s' at old addend <%#08llx> updated to new addend <%lx>\n",
 					instr->i.x86.mnemonic, rela_offset, rela->relocation.addend);
@@ -1288,24 +1257,13 @@ static void shift_instruction_addresses(insn_info *target, int shift) {
 				continue;
 			}
 
-			// instr->i.x86.addr = instr->new_addr += shift;
 			instr->new_addr += shift;
-
-			// [SE] Updates the relocation entry to reflect the address shift
-			// if (instr->reference) {
-			// 	instr->reference->relocation.offset += shift;
-			// }
 
 			for (rela_node = instr->reference.first; rela_node; rela_node = rela_node->next) {
 				rela = rela_node->elem;
 
 				rela->relocation.offset += shift;
 			}
-
-			// [SE] TODO: Hackish way to check for relocation from .text to .rodata, find better one
-			// if (instr->pointedby && !strncmp((const char *)instr->pointedby->name, ".text", 5)) {
-			// 	instr->pointedby->relocation.addend += shift;
-			// }
 
 			for (rela_node = instr->reference.first; rela_node; rela_node = rela_node->next) {
 				rela = rela_node->elem;
@@ -1334,32 +1292,6 @@ static void shift_instruction_addresses(insn_info *target, int shift) {
 
 		foo = foo->next;
 	}
-
-	// update all the relocation that ref instructions
-	// beyond the one instrumented. (ie. in case of switch tables)
-	// hnotice(4, "Check relocation symbols\n");
-
-	/*sym = PROGRAM(symbols);
-	while(sym) {
-
-		// Looks for refrences which applies to .text section only
-		if(!strncmp((const char *)sym->name, ".text", 5)) {
-
-			// Update only those relocation beyond the code affected by current instrumentation and version
-			if(sym->relocation.addend > (long long)(target->new_addr - shift) && sym->version == PROGRAM(version)) {
-
-				sym->relocation.addend += shift;
-
-				printf("update .rela.rodata :: offset= %08llx, instr_addr= %08llx (%08llx), addend=%lx (%lx %+d), version=%d(%d)\n",
-					sym->relocation.offset, target->new_addr, target->new_addr - shift, sym->relocation.addend, sym->relocation.addend-shift, shift, sym->version, PROGRAM(version));
-
-				hnotice(6, "Relocation to symbol %d (%s) at offset %#08llx addend updated %#0lx (%+d)\n",
-					sym->index, sym->name, sym->position, sym->relocation.addend, shift);
-			}
-		}
-
-		sym = sym->next;
-	}*/
 }
 
 /**
@@ -1375,11 +1307,7 @@ static void shift_instruction_addresses(insn_info *target, int shift) {
 void update_jump_displacements(int version) {
 	function *foo;
 	insn_info *instr;
-	// insn_info *jumpto;
 
-	// unsigned int offset;
-
-	// unsigned int size;
 	unsigned int old_size; // [SE]
 
 	long delta;
@@ -1400,8 +1328,6 @@ void update_jump_displacements(int version) {
 		while(instr != NULL) {
 
 			if(IS_JUMP(instr) && instr->jumpto != NULL) {
-				// offset = x86->opcode_size;
-				// size = x86->insn_size - x86->opcode_size - x86->disp_size;
 				old_size = instr->size; // [SE]
 
 				// The expression (insn->new_addr + insn->size) gives the value of %rip.
@@ -1442,15 +1368,10 @@ void update_jump_displacements(int version) {
 								// Unconditional jump
 								bytes[0] = 0xe9;
 
-								// jump_displacement -= 3;
-								// memcpy(bytes+1, &jump_displacement, 4);
 							} else {
 								// Conditional jump
 								bytes[0] = 0x0f;
 								bytes[1] = 0x80 | (x86->opcode[0] & 0xf);
-
-								// jump_displacement -= 4;
-								// memcpy(bytes+2, &jump_displacement, 4);
 							}
 
 							hnotice(6, "Short jump at <%#08llx> (originally <%#08llx>) will be converted to a long jump:\n",
@@ -1461,9 +1382,6 @@ void update_jump_displacements(int version) {
 
 							substitute_instruction_with(instr, bytes, sizeof(bytes));
 
-							// x86 = &(instr->i.x86);
-							// offset = x86->opcode_size;
-							// size = x86->insn_size - x86->opcode_size;
 							delta = (instr->size - old_size);
 
 							// Updating the jump instruction will also change its size, thus the displacement
@@ -1481,7 +1399,6 @@ void update_jump_displacements(int version) {
 					}
 
 					set_jump_displacement(instr, instr->jumpto);
-					// memcpy((x86->insn + offset), &jump_displacement, size);
 
 					// hnotice(1, "Long jump displacement of instruction at address <%#08llx> updated to %#0llx\n",
 					// 	instr->new_addr, jump_displacement);
@@ -1499,41 +1416,3 @@ void update_jump_displacements(int version) {
 		foo = foo->next;
 	}
 }
-
-
-
-/**
- * Substitutes one instruction with another.
- * This function substitutes the instruction pointed to by the <em>target</em> instruction descriptor with
- * the bytes passed as argument as well. After new instruction is swapped, all the others are accordingly shifted to
- * the relative offset (positive or negative) introduced by the difference between the two sizes.
- * Note: This function will call the disassembly procedure in order to correctly parse the instruction bytes passed as
- * argument. This is a fundamental step to retrieve instruction's metadata, such as jump destination address,
- * displacement offset, opcode size and so on. Without these information future emit step will fail to correctly
- * relocates and links jump instructions together.
- *
- * @param target Target instruction's descriptor pointer.
- * @param insn Pointer to the descriptor of the instruction to substitute with.
- */
-// static void substitute_insn_with(insn_info *target, insn_info *instr) {
-
-// 	// we have to update all the references
-// 	// delta shift should be the: d = (old size - the new one) [signed, obviously]
-
-// 	// Copy addresses
-// 	instr->orig_addr = target->orig_addr;
-// 	instr->new_addr = target->new_addr;
-
-// 	// Update references
-// 	instr->prev = target->prev;
-// 	instr->next = target->next;
-// 	if(target->prev)
-// 		target->prev->next = instr;
-// 	if(target->next)
-// 		target->next->prev = instr;
-
-// 	// update_instruction_addresses(instr, (instr->size - target->size));
-
-// 	//func = get_function(target);
-// 	//hnotice(4, "Substituting instruction at address <%#08lx> in function '%s'\n", target->orig_addr, func->symbol->name);
-// }

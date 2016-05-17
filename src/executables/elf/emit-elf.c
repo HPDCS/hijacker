@@ -150,7 +150,6 @@ inline static long shrink_section_size(section *sec) {
  * to the empty string.
  */
 long elf_write_string(section *sec, char *buffer) {
-	// Section_Hdr *hdr;
 	int buflen;
 	void *ptr;
 
@@ -158,7 +157,6 @@ long elf_write_string(section *sec, char *buffer) {
 		return 0;
 	}
 
-	// hdr = (Section_Hdr *) sec->header;
 	buflen = strlen(buffer) + 1; // takes into account string terminator '\0'
 
 	// Check if section size must be enlarged
@@ -178,6 +176,7 @@ long elf_write_string(section *sec, char *buffer) {
 	return (long)((char *)ptr - (char *)sec->payload);
 }
 
+
 /**
  * Writes a new data entry in an allocated data section
  *
@@ -188,13 +187,10 @@ long elf_write_string(section *sec, char *buffer) {
  * @return The offset of the data written from section's beginning
  */
 long elf_write_data(section *sec, void *buffer, int size) {
-	// Section_Hdr *hdr;
 	void *ptr;
 
 	// Check if section must be enlarged
 	check_section_size(sec, size);
-
-	// hdr = (Section_Hdr *) sec->header;
 
 	memset(sec->ptr, 0, size);
 	if (buffer != NULL) {
@@ -228,7 +224,6 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 	Elf_Sym *entry;
 	Elf64_Sym *sym64;
 	Elf32_Sym *sym32;
-	// Section_Hdr *hdr;
 
 	section *sec;
 
@@ -239,7 +234,6 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 
 	// Build a new ELF symbol entry
 	entry = (Elf_Sym *) calloc(size, 1);
-	// hdr = (Section_Hdr *) symtable->header;
 
 	sec = NULL;
 	shndx = 0;
@@ -424,12 +418,8 @@ unsigned long elf_write_code(section *sec, function *func) {
 
 	size_t size;
 
-	// void *ptr;
-
 	ll_node *rela_node;
 	symbol *rela;
-
-	// int displ;
 
 	// Compute function size
 	size = 0;
@@ -454,11 +444,7 @@ unsigned long elf_write_code(section *sec, function *func) {
 		herror(true, "Instruction code not yet implemented...\n");
 	}
 
-	// ptr = sec->ptr;
-
 	for (instr = func->begin_insn; instr; instr = instr->next) {
-		// displ = 0;
-
 		switch(machine) {
 			case EM_X86_64:
 				x86 = &instr->i.x86;
@@ -471,6 +457,7 @@ unsigned long elf_write_code(section *sec, function *func) {
 				herror(true, "Architecture type not recognized!\n");
 		}
 
+		// Write instruction
 		memcpy(sec->ptr, x86->insn, instr->size);
 
 		sec->ptr = (void *)((char *)sec->ptr + instr->size);
@@ -743,7 +730,6 @@ static void elf_build(void) {
 
 	unsigned int targetndx;
 	symbol *sym;
-	// symbol *prev, *sym2;
 
 	function *func;
 
@@ -964,10 +950,6 @@ static void elf_build_eheader(void) {
 	hnotice(3, "Initializing ELF header...\n");
 
 	// Initialize the new elf's header descriptor
-	// ehsize = ehdr_size();
-	// hijacked.ehdr = (Elf_Hdr *) malloc(ehsize);
-	// bzero(hijacked.ehdr, ehsize);
-
 	ehdr = hijacked.ehdr;
 	eident = ehdr_info(ehdr, e_ident);
 

@@ -92,7 +92,7 @@ static void clone_relocations(int version, char *suffix) {
 
 	symbol *rela, *clone, *sym;
 
-	unsigned char *name;
+	char *name;
 
 	for (func = PROGRAM(v_code)[version]; func; func = func->next) {
 		for (instr = func->begin_insn; instr; instr = instr->next) {

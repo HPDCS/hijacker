@@ -56,22 +56,6 @@ function *find_func_from_instr(insn_info *target, insn_address_type type) {
 	}
 
 	return NULL;
-
-	// for (func = PROGRAM(v_code)[PROGRAM(version)], prev = NULL; func;
-	// 	   prev = func, func = func->next) {
-	// 	if (type == NEW_ADDR && func->begin_insn->new_addr > instr->new_addr) {
-	// 		return prev;
-	// 	}
-	// 	else if (type == ORIG_ADDR && func->begin_insn->orig_addr > instr->orig_addr) {
-	// 		return prev;
-	// 	}
-	// }
-
-	// // if (!func) {
-	// // 	return NULL;
-	// // }
-
-	// return prev;
 }
 
 
@@ -195,31 +179,6 @@ function *function_create_from_bytes(char *name, unsigned char *code, size_t siz
 	return func;
 }
 
-/**
- * Computes the size in bytes of a function by summing up the length of all the
- * instruction in its body.
- *
- * @param func Pointer to the function descriptor whose size has to be computed.
- *
- * @return Size in bytes of the passed function.
- */
-// static int get_function_size(function *func) {
-// 	insn_info *insn;
-// 	int size;
-
-// 	if(func == NULL)
-// 		return -1;
-
-// 	insn = func->begin_insn;
-// 	size = 0;
-// 	while(insn) {
-// 		size += insn->size;
-// 		insn = insn->next;
-// 	}
-
-// 	return size;
-// }
-
 
 /**
  * Clones a single function, producing a new function descriptor whose name
@@ -258,17 +217,9 @@ function * clone_function (function *func, char *suffix) {
 	size = strlen((const char *)func->name) + strlen(suffix) + 2; // one is \0, one is '_'
 	name = malloc(sizeof(char) * size);
 	bzero(name, size);
-	strcpy(name, (const char *)func->name);
-	strcat(name, "_");
-	strcat(name, suffix);
+	sprintf(name, "%s_%s", func->name, suffix);
 
 	clone->name = name;
-
-	// FIXME: E' realmente necessario?
-	// size = get_function_size(clone);
-	// if (size <= 0) {
-	// 	hinternal();
-	// }
 
 	// Create a new symbol
 	clone->symbol = symbol_create(name, func->symbol->type, func->symbol->bind,
@@ -306,49 +257,3 @@ function *clone_function_list(function *func, char *suffix) {
 
 	return head;
 }
-
-
-// FIXME: unire le funzionalità di parse_instruction_bytes() come catena di istruzioni e
-// la funzioe create_function_node()!!!
-/**
- * Create a function starting from an array of raw bytes that represents
- * its instructions. The returned function description will be filled
- *
- *
- */
-/*function *create_function(char *name, unsigned char *code, size_t size) {
-	insn_info *insn, *first;
-	function *func;
-	unsigned long long pos;
-
-	first = calloc(sizeof(insn_info), 1);
-	if(first == NULL) {
-		abort();
-	}
-
-	insn = first;
-	pos = 0;
-
-	func = create_function_node(name, first);
-	insn->new_addr = func->new_addr;
-
-	// Parse the instruction bytes provided in order to create a chain of
-	// instructions to append to the newly created function
-
-	// This will create the instrucion chain
-	while(pos < size) {
-
-		parse_instruction_bytes(code, &pos, &insn);
-
-		insn->orig_addr += pos;
-		insn->new_addr += pos;
-
-		insn->next = calloc(sizeof(insn_info), 1);
-
-		insn->next->new_addr = insn->new_addr;
-		insn->next->orig_addr = insn->orig_addr;
-		insn = insn->next;
-	}
-
-	return func;
-}*/

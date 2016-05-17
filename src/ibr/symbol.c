@@ -90,101 +90,6 @@ symbol *find_symbol_by_name(char *name) {
 }
 
 
-/**
- * Given the name of a symbol, the function checks whether it exists in the
- * symbol list and, in the positive case, it returns this symbol.
- * Otherwise the function will create a new symbol with the specified attributes.
- * Note that the attributes passed are only used if a new symbol has to be created
- * from scratch.
- *
- * @param name Pointer to the string that represents the symbol's name.
- * @param type Integer representing the constant for the internal symbol's type.
- * @param bind Integer representing the constant for the internal symbol's binding.
- * @param size Size in bytes of the symbol, if present.
- *
- * @return Pointer to a symbol descriptor matching the name requested.
- */
-// symbol *create_symbol_node(unsigned char *name, symbol_type type, symbol_bind bind, int size) {
-	// symbol *sym;
-	// symbol *node;
-	// unsigned int index;
-	//
-
-	// hinternal();
-
-	// // Check whether the symbol requested is already present
-	// node = PROGRAM(symbols);
-	// while(node) {
-	// 	if(!strcmp((const char *)node->name, (const char *)name)){
-	// 		hnotice(3, "%s symbol '%s' (%d) node found [ver = %d]\n",
-	// 			node->bind == SYMBOL_LOCAL ? "Local" : node->bind == SYMBOL_GLOBAL ?  "Global" : "Weak",
-	// 			node->name, node->index, node->version);
-	// 		return node;
-	// 	}
-	// 	sym = node;
-	// 	node = node->next;
-	// }
-
-	// // create a symbol node
-	// node = (symbol *) malloc(sizeof(symbol));
-	// if(!node)  {
-	// 	herror(true, "Out of memory!\n");
-	// }
-	// bzero(node, sizeof(symbol));
-
-	// node->name = (char *) malloc(strlen((const char *) name) + 1);
-	// strcpy(node->name, name);
-	// //node->name = name;
-	// node->type = type;
-	// node->bind = bind;
-	// node->size = size;
-	// node->version = PROGRAM(version);
-
-
-	// if (bind == SYMBOL_LOCAL) {
-	// 	// in case the symbol is local append after the last local symbol
-	// 	// in the list
-	// 	sym = PROGRAM(symbols);
-	// 	while(sym) {
-	// 		if(sym->next->bind != SYMBOL_LOCAL)
-	// 			break;
-	// 		sym = sym->next;
-	// 	}
-	// 	// index = sym->index + 1;
-
-	// 	node->next = sym->next;
-	// 	sym->next = node;
-
-	// 	// update the indexes of all the other symbols
-	// 	/*sym = node;
-	// 	while(sym) {
-	// 		if(sym->duplicate) {
-	// 			sym->index = idx - 1;
-	// 			sym = sym->next;
-	// 			continue;
-	// 		}
-
-	// 		sym->index = index++;
-	// 		printf("%s - %d (t=%d, b=%d)\n", sym->name, sym->index, sym->type, sym->bind);
-	// 		sym = sym->next;
-	// 	}*/
-	// }
-
-	// else if (bind == SYMBOL_GLOBAL) {
-	// 	// in case the symbol is global adds it to the tail
-	// 	// add to the symbol list (here, sym holds the last symbol yet)
-	// 	sym->next = node;
-	// 	node->index = sym->index + 1;
-	// }
-
-	// hnotice(3, "New %s symbol '%s' (%d) in '%s' node of type %d and size %d bytes has been created\n",
-	// 	node->bind == SYMBOL_LOCAL ? "local" : node->bind == SYMBOL_GLOBAL ?  "global" : "weak", node->name, node->index, node->sec,
-	// 	node->type, node->size);
-
-	// return node;
-// }
-
-
 symbol *symbol_create(char *name, symbol_type type, symbol_bind bind,
 	section *sec, size_t size) {
 	symbol *sym;
@@ -276,7 +181,6 @@ symbol *symbol_create_from_ELF(Elf_Sym *elfsym) {
 			sym->bind = symbind;
 			herror(false, "Symbols '%s' has a reserved bind's type (%u); simply copied\n",
 				sym->name, symbind);
-			// hinternal();
 	}
 
 	sym->secnum = symbol_info(elfsym, st_shndx);
@@ -294,9 +198,6 @@ symbol *symbol_create_from_ELF(Elf_Sym *elfsym) {
 	// refers to the offset within the section.
 	// This was breaking the generation of references in case of local calls.
 	// I don't know if it is safe to remove the "initial" field anyhow
-
-	// sym->initial = symbol_info(elfsym, st_value);
-	// sym->extra_flags = symbol_info(elfsym, st_info);
 
 	sym->version = PROGRAM(version);
 	sym->authentic = true;
@@ -320,8 +221,6 @@ void symbol_append(symbol *sym, symbol **head) {
 	// - If local, append to the last local symbol in the list;
 	// - If global, append to the end of the list.
 
-	// printf("SYMBOL TO ADD: %s %s %p\n", sym->name, symbol_bind_str[sym->bind], sym);
-
 	if (head == NULL) {
 		hinternal();
 	}
@@ -332,7 +231,6 @@ void symbol_append(symbol *sym, symbol **head) {
 		curr = *head;
 		prev = NULL;
 
-		// duplicate = find_symbol_by_name(sym->name);
 		for (duplicate = *head; duplicate != NULL; duplicate = duplicate->next) {
 			if (duplicate->name[0] == '\0')
 				continue;
@@ -409,57 +307,6 @@ symbol *symbol_check_shared(symbol *sym) {
 	return clone;
 }
 
-
-// symbol * clone_symbol (symbol *sym) {
-// 	symbol *clone;
-
-// 	clone = clone_symbol(sym);
-// 	sym = sym->next;
-
-// 	while(sym) {
-// 		clone->next = clone_symbol(sym);
-// 		clone = clone->next;
-// 		sym = sym->next;
-// 	}
-
-// 	return clone;
-// }
-
-
-/**
- * Clone the whole symbol list of the internal representation. This is done
- * in order to support future multiversioning of executable and object files.
- *
- * @return The pointer to the first symbol descriptor of the clone list
- */
-/*
-static symbol *clone_symbol_list (symbol *sym) {
-	symbol *clone, *head;
-
-	if(!sym)
-		return NULL;
-
-	head = clone = clone_symbol(sym);
-	sym = sym->next;
-
-	while(sym) {
-		clone->next = clone_symbol(sym);
-		clone = clone->next;
-		sym = sym->next;
-	}
-
-	//================ DEBUG ================//
-	hprint("Simboli copiati!\n");
-	sym = head;
-	while(sym) {
-		printf("Simbolo '%s' di tipo %d (%p)\n", sym->name, sym->type, sym);
-		sym = sym->next;
-	}
-	//=======================================//
-
-	return head;
-}
-*/
 
 void find_relocations(symbol *symbols, section *in, symbol *to, linked_list *list) {
 	symbol *sym, *other;
@@ -562,25 +409,6 @@ symbol *symbol_rela_create(symbol *sym, reloc_type type,
 		default:
 			hinternal();
 	}
-
-	// if(!strcmp((const char *)secname, ".text")) {
-
-	// 	// Relocatation applies in the .text section towards symbol 'sym'
-	// 	switch(sym->type) {
-	// 		case SYMBOL_SECTION:
-	// 			type = R_X86_64_32;
-	// 			break;
-
-	// 		default:
-	// 			type = R_X86_64_PC32;
-	// 	}
-	// } else if(!strcmp((const char *)secname, ".rodata")) {
-	// 	// Relocation applies in the .rodata section towards another section symbol
-	// 	type = R_X86_64_64;
-	// } else {
-	// 	// Default value
-	// 	type = R_X86_64_64;
-	// }
 
 	hnotice(3, "New RELA node [%s] has been created at '%s' + %lld to symbol '%s' + %ld\n",
 		reloc_type_str[type], rela->relocation.sec->name, rela->relocation.offset,
@@ -700,35 +528,16 @@ symbol *symbol_rela_clone(symbol *sym) {
 	clone->authentic = false;
 
 	return clone;
-
-	// clone->relocation.offset = sym->relocation.offset;
-	// clone->relocation.addend = sym->relocation.addend;
-	// clone->relocation.type = sym->relocation.type;
-	// clone->relocation.sec = sym->relocation.sec;
 }
-
 
 symbol *symbol_clone(symbol *sym, char *suffix) {
 	symbol *clone;
 	char *name;
-
 	size_t length;
 
 	if (sym == NULL) {
 		return NULL;
 	}
-
-	// // Allocates memory for the new descriptor
-	// clone = (symbol *) calloc(sizeof(symbol), 1);
-
-	// // Copies the original descriptor to the new one
-	// memcpy(clone, sym, sizeof(symbol));
-
-	// // Reset some fields
-	// clone->prev = clone->next = NULL;
-	// clone->duplicate = true;
-	// clone->referenced = true;
-	// clone->version = PROGRAM(version);
 
 	clone = symbol_check_shared(sym);
 	clone->version = PROGRAM(version);
@@ -742,20 +551,9 @@ symbol *symbol_clone(symbol *sym, char *suffix) {
 	length = strlen((const char *)sym->name) + strlen(suffix) + 2; // one is \0, one is '_'
 	name = malloc(sizeof(char) * length);
 	bzero(name, length);
-	strcpy(name, (const char *)sym->name);
-	strcat(name, "_");
-	strcat(name, suffix);
+	sprintf(name, "%s_%s", sym->name, suffix);
 
 	clone->name = name;
-
-	// clone = symbol_create(name, sym->type, sym->bind, sym->sec, sym->size);
-
-	// TODO: What to do with symbols that belong to non-defined sections?
-	// clone->secnum = sym->secnum;
-
-	// TODO: Se il simbolo è una funzione, bisogna clonare anche quella?
-
-	// memcpy(&clone->relocation, &sym->relocation, sizeof(struct _relocation));
 
 	return clone;
 }

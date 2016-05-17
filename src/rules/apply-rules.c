@@ -45,28 +45,9 @@
  * @param tagInject Pointer to the Ibject XML tag descriptor
  */
 static void apply_rule_link (char *filename) {
-	//~char *objname;
-	//~char *path;
 
 	hnotice(2, "Entering Inject scope: compiling and linking module '%s'\n", filename);
 
-	// Note that 'filename' is the assembly source
-	// therefore it must be firstly translated into
-	// a binary file in order to pass it to disassemble function
-
-	// Check if the file really exists and compile the assmbly into the 'bin' file
-	//~len = strlen(filename) + 1;
-
-	//~objname = malloc(len * sizeof(char));
-	//~strcpy(objname, filename);
-	//~objname[len-1] = 'o';
-
-	//~path = malloc(64 * sizeof(char));
-	//~bzero(path, 64 * sizeof(char));
-	//~strcpy(path, TEMP_PATH);
-	//~strcat(path, objname);
-
-	//~hnotice(6, "Compiling file in '%s'\n", path);
 	if(!file_exists(filename)) {
 		herror(true, "The XML rules file has specified a file that does not exists!\n");
 	}
@@ -222,10 +203,8 @@ static void apply_rule_addcall (Call *tagCall, insn_info *target) {
 
 			// Prepare the trampoline structure on the stack
 			trampoline_prepare(target, (unsigned char *)tagCall->function, where);
-
-			// Creates and adds a new CALL to the trampoline function with respect to the 'target' one
-			//add_call_instruction(target, (unsigned char *)"trampoline", where);
 		}
+
 	} else {
 		// Creates and adds a new CALL  with respect to the 'target' one
 		add_call_instruction(target, (unsigned char *)tagCall->function, where, &target);
@@ -523,13 +502,6 @@ void apply_rules(void) {
 			hnotice(1, "A new entry point has been detected to function'%s'\n", exec->entryPoint);
 			hijack_main(exec->entryPoint);
 		}
-
-		// if (version != 0 && instrumented) {
-			// [SE] If some actual instrumentation has been carried out, first update
-			// instruction addresses and then recompute jump displacements
-			// update_instruction_addresses(version);
-			// update_jump_displacements(version);
-		// }
 
 		hnotice(1, "Instrumentation of executable version %d terminated: %d instructions have been instrumented\n",
 			version, instrumented);
