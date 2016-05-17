@@ -44,7 +44,7 @@
  * @author Simone Economo
  */
 function *find_func_from_instr(insn_info *target, insn_address_type type) {
-	function *func, *prev;
+	function *func;
 	insn_info *instr;
 
 	for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
@@ -126,7 +126,7 @@ function *function_create_from_insn(char *name, insn_info *code, section *sec) {
 
 	func = (function *) calloc(sizeof(function), 1);
 
-	func->name = (char *) malloc(strlen((const char *) name) + 1);
+	func->name = malloc(strlen((const char *) name) + 1);
 	strcpy(func->name, name);
 
 	func->begin_insn = code;
@@ -169,7 +169,7 @@ function *function_create_from_insn(char *name, insn_info *code, section *sec) {
 function *function_create_from_bytes(char *name, unsigned char *code, size_t size, section *sec) {
 	insn_info *insn, *first;
 	function *func;
-	unsigned long long pos;
+	unsigned long pos;
 
 	first = calloc(sizeof(insn_info), 1);
 	insn = first;
@@ -262,7 +262,7 @@ function * clone_function (function *func, char *suffix) {
 	strcat(name, "_");
 	strcat(name, suffix);
 
-	clone->name = (unsigned char *)name;
+	clone->name = name;
 
 	// FIXME: E' realmente necessario?
 	// size = get_function_size(clone);

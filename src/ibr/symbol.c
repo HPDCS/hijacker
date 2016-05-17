@@ -77,10 +77,10 @@ symbol *find_symbol(size_t index) {
  *
  * @return Pointer to the symbol descriptor found, if any, or <em>NULL</em>.
  */
-symbol *find_symbol_by_name(unsigned char *name) {
+symbol *find_symbol_by_name(char *name) {
 	symbol *sym;
 
-	// TODO: Multiple symbols with the same name can exist!
+	// FIXME: Multiple symbols with the same name can exist!
 	for (sym = PROGRAM(symbols); sym; sym = sym->next) {
 		if (str_equal(sym->name, name) && sym->authentic)
 			return sym;
@@ -104,13 +104,13 @@ symbol *find_symbol_by_name(unsigned char *name) {
  *
  * @return Pointer to a symbol descriptor matching the name requested.
  */
-symbol *create_symbol_node(unsigned char *name, symbol_type type, symbol_bind bind, int size) {
-	symbol *sym;
-	symbol *node;
+// symbol *create_symbol_node(unsigned char *name, symbol_type type, symbol_bind bind, int size) {
+	// symbol *sym;
+	// symbol *node;
 	// unsigned int index;
 	//
 
-	hinternal();
+	// hinternal();
 
 	// // Check whether the symbol requested is already present
 	// node = PROGRAM(symbols);
@@ -182,7 +182,7 @@ symbol *create_symbol_node(unsigned char *name, symbol_type type, symbol_bind bi
 	// 	node->type, node->size);
 
 	// return node;
-}
+// }
 
 
 symbol *symbol_create(char *name, symbol_type type, symbol_bind bind,
@@ -191,7 +191,7 @@ symbol *symbol_create(char *name, symbol_type type, symbol_bind bind,
 
 	sym = (symbol *) calloc(sizeof(symbol), 1);
 
-	sym->name = (char *) malloc(strlen((const char *) name) + 1);
+	sym->name = malloc(strlen((const char *) name) + 1);
 	strcpy(sym->name, name);
 
 	sym->type = type;
@@ -212,8 +212,8 @@ symbol *symbol_create(char *name, symbol_type type, symbol_bind bind,
 	symbol_append(sym, &PROGRAM(symbols));
 
 	hnotice(3, "New %s/%s symbol '%s' (%d) in '%s' (%d) of size %d bytes has been created from scratch\n",
-		symbol_type_str[sym->type], symbol_bind_str[sym->bind],
-			sym->name, sym->index, (sym->sec ? sym->sec->name : "(none)"), sym->secnum, sym->size);
+		(char *)symbol_type_str[sym->type], (char *)symbol_bind_str[sym->bind],
+			sym->name, sym->index, (char *)(sym->sec ? sym->sec->name : "(none)"), sym->secnum, sym->size);
 
 	return sym;
 }
@@ -224,7 +224,7 @@ symbol *symbol_create_from_ELF(Elf_Sym *elfsym) {
 
 	sym = (symbol *) calloc(sizeof(symbol), 1);
 
-	sym->name = strtab(symbol_info(elfsym, st_name));
+	sym->name = (char *) strtab(symbol_info(elfsym, st_name));
 
 	symtype = ( ELF(is64) ? ELF64_ST_TYPE(symbol_info(elfsym, st_info)) : ELF32_ST_TYPE(symbol_info(elfsym, st_info)) );
 	symbind = ( ELF(is64) ? ELF64_ST_BIND(symbol_info(elfsym, st_info)) : ELF32_ST_BIND(symbol_info(elfsym, st_info)) );
@@ -340,7 +340,8 @@ void symbol_append(symbol *sym, symbol **head) {
 			if (str_equal(duplicate->name, sym->name)) {
 				// NOTE: In the future it would be posible to collapse two function symbols
 				// in the case they have the same byte footprint
-				char *new_name = malloc(256 * sizeof(char));
+				// 6: '_' + 4 digits + '\0'
+				char *new_name = malloc(strlen(sym->name) + 6);
 
 				sprintf(new_name, "%s_%d", sym->name, duplicate->index);
 				duplicate->name = new_name;

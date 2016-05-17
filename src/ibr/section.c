@@ -54,7 +54,7 @@ section *section_create(char *name, section_type type, void *payload) {
 
 	sec = (section *) calloc(sizeof(section), 1);
 
-	sec->name = (char *) malloc(strlen((const char *) name) + 1);
+	sec->name = malloc(strlen((const char *) name) + 1);
 	strcpy(sec->name, name);
 
 	sec->type = type;
@@ -147,7 +147,7 @@ inline section *find_section(unsigned int index) {
 }
 
 
-section *find_section_by_name(unsigned char *name, int version) {
+section *find_section_by_name(char *name, int version) {
 	section *sec;
 
 	for (sec = PROGRAM(sections)[version]; sec; sec = sec->next) {

@@ -317,7 +317,7 @@ int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size
  *
  * @return Number of newly inserted instructions.
  */
-int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size,insn_info **last) {
+int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size) {
 	insn_info *instr;
 	unsigned long int pos = 0;
 	// unsigned int old_size;
@@ -359,7 +359,7 @@ int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t
  * before, after or in place of the target one.
  * @param instr Pointer to the CALL instruction just created.
  */
-void add_call_instruction(insn_info *target, unsigned char *name, insn_insert_mode mode, insn_info **instr) {
+void add_call_instruction(insn_info *target, char *name, insn_insert_mode mode, insn_info **instr) {
 	section *sec;
 	symbol *sym;
 
@@ -401,7 +401,7 @@ void add_call_instruction(insn_info *target, unsigned char *name, insn_insert_mo
 }
 
 
-void add_jump_instruction(insn_info *target, unsigned char *name, insn_insert_mode mode, insn_info **instr) {
+void add_jump_instruction(insn_info *target, char *name, insn_insert_mode mode, insn_info **instr) {
 	section *sec;
 	symbol *sym;
 
@@ -698,7 +698,9 @@ static void resolve_jump_table(function *func, insn_info *instr) {
 	bool size_found;
 
 	backinstr = instr;
-	sym = sec = callee = NULL;
+	sym = NULL;
+	sec = NULL;
+	callee = NULL;
 	start = size = 0;
 
 	// Code for indirect jumps (very very unreliable!)
@@ -1135,7 +1137,7 @@ void update_instruction_addresses(int version) {
 					rela->relocation.addend += instr->new_addr - old_offset;
 				// }
 
-				hnotice(5, "Relocation to '%s' at old addend <%#08llx> updated to new addend <%#08llx>\n",
+				hnotice(5, "Relocation to '%s' at old addend <%#08llx> updated to new addend <%lx>\n",
 					instr->i.x86.mnemonic, rela_offset, rela->relocation.addend);
 			}
 		}
@@ -1457,7 +1459,7 @@ void update_jump_displacements(int version) {
 							hdump(6, "FROM", instr->i.x86.insn, instr->size);
 							hdump(6, "TO", bytes, sizeof(bytes));
 
-							substitute_instruction_with(instr, bytes, sizeof(bytes), &instr);
+							substitute_instruction_with(instr, bytes, sizeof(bytes));
 
 							// x86 = &(instr->i.x86);
 							// offset = x86->opcode_size;

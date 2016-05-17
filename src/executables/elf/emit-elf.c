@@ -115,7 +115,7 @@ inline static void check_section_size(section *sec, int span) {
  */
 inline static long shrink_section_size(section *sec) {
 	Section_Hdr *hdr;
-	long size, old_size;
+	long long size, old_size;
 
 	hdr = sec->header;
 	size = ((char *)sec->ptr - (char *)sec->payload);
@@ -150,7 +150,7 @@ inline static long shrink_section_size(section *sec) {
  * to the empty string.
  */
 long elf_write_string(section *sec, char *buffer) {
-	Section_Hdr *hdr;
+	// Section_Hdr *hdr;
 	int buflen;
 	void *ptr;
 
@@ -158,7 +158,7 @@ long elf_write_string(section *sec, char *buffer) {
 		return 0;
 	}
 
-	hdr = (Section_Hdr *) sec->header;
+	// hdr = (Section_Hdr *) sec->header;
 	buflen = strlen(buffer) + 1; // takes into account string terminator '\0'
 
 	// Check if section size must be enlarged
@@ -188,13 +188,13 @@ long elf_write_string(section *sec, char *buffer) {
  * @return The offset of the data written from section's beginning
  */
 long elf_write_data(section *sec, void *buffer, int size) {
-	Section_Hdr *hdr;
+	// Section_Hdr *hdr;
 	void *ptr;
 
 	// Check if section must be enlarged
 	check_section_size(sec, size);
 
-	hdr = (Section_Hdr *) sec->header;
+	// hdr = (Section_Hdr *) sec->header;
 
 	memset(sec->ptr, 0, size);
 	if (buffer != NULL) {
@@ -228,7 +228,7 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 	Elf_Sym *entry;
 	Elf64_Sym *sym64;
 	Elf32_Sym *sym32;
-	Section_Hdr *hdr;
+	// Section_Hdr *hdr;
 
 	section *sec;
 
@@ -239,7 +239,7 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 
 	// Build a new ELF symbol entry
 	entry = (Elf_Sym *) calloc(size, 1);
-	hdr = (Section_Hdr *) symtable->header;
+	// hdr = (Section_Hdr *) symtable->header;
 
 	sec = NULL;
 	shndx = 0;
@@ -420,16 +420,16 @@ unsigned long elf_write_code(section *sec, function *func) {
 
 	int machine;
 
-	unsigned long long old_offset, offset, addr, written;
+	unsigned long long old_offset, offset, addr;
 
 	size_t size;
 
-	void *ptr;
+	// void *ptr;
 
 	ll_node *rela_node;
 	symbol *rela;
 
-	int displ;
+	// int displ;
 
 	// Compute function size
 	size = 0;
@@ -446,7 +446,6 @@ unsigned long elf_write_code(section *sec, function *func) {
 	// Save the current content pointer in order to get the starting offset
 	// from which the function begins in the new '.text.xyz' section
 	offset = (unsigned long)((char *)sec->ptr - (char *)sec->payload);
-	written = 0;
 
 	// Get machine information
 	machine = ELF(is64) ? ELF(hdr)->header64.e_machine : ELF(hdr)->header32.e_machine;
@@ -455,17 +454,17 @@ unsigned long elf_write_code(section *sec, function *func) {
 		herror(true, "Instruction code not yet implemented...\n");
 	}
 
-	ptr = sec->ptr;
+	// ptr = sec->ptr;
 
 	for (instr = func->begin_insn; instr; instr = instr->next) {
-		displ = 0;
+		// displ = 0;
 
 		switch(machine) {
 			case EM_X86_64:
 				x86 = &instr->i.x86;
 
 				if (x86->disp != 0) {
-					displ = x86->disp_size;
+					// displ = x86->disp_size;
 				}
 				break;
 			default:
@@ -491,7 +490,7 @@ unsigned long elf_write_code(section *sec, function *func) {
 		}
 	}
 
-	hnotice(3, "Function '%s' has been written at '%s' + %x with size %u\n",
+	hnotice(3, "Function '%s' has been written at '%s' + %llx with size %u\n",
 		func->name, sec->name, func->symbol->offset, func->symbol->size);
 
 	if (func->symbol->offset != offset) {
@@ -740,7 +739,7 @@ static void elf_build(void) {
 
 	unsigned int ver;
 
-	unsigned char secname[SECNAME_SIZE];
+	char secname[SECNAME_SIZE];
 
 	unsigned int targetndx;
 	symbol *sym;
@@ -1011,7 +1010,7 @@ static void elf_update_symbol_list(symbol *first) {
 	symbol *sym, *prev;
 	section *sec;
 
-	size_t idx, local;
+	unsigned int idx, local;
 
 	idx = local = 0;
 
@@ -1119,7 +1118,7 @@ static void elf_update_symbol_list(symbol *first) {
 	// local symbols that will be output
 	set_hdr_info(symtab->header, sh_info, local);
 
-	hnotice(3, "%d total symbols registered (%d are local)\n", idx, local);
+	hnotice(3, "%u total symbols registered (%u are local)\n", idx, local);
 }
 
 
@@ -1196,7 +1195,7 @@ static void elf_fill_sections(void) {
 		if (str_equal(sec->name, ".data")) {
 			size = sym->size;
 
-			hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n",
+			hnotice(3, "Copying raw data of section '%s' [%d] (%u bytes)\n",
 				sec->name, sym->secnum, size);
 
 			content = calloc(size, 1);
@@ -1211,7 +1210,7 @@ static void elf_fill_sections(void) {
 		else if (str_equal(sec->name, ".rodata")) {
 			size = sym->size;
 
-			hnotice(3, "Copying raw data of section '%s' [%d] (%d bytes)\n",
+			hnotice(3, "Copying raw data of section '%s' [%d] (%u bytes)\n",
 				sec->name, sym->secnum, size);
 
 			content = calloc(size, 1);

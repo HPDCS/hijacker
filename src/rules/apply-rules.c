@@ -141,7 +141,7 @@ static void apply_rule_inject (char *filename, insn_info *target, insn_insert_mo
 	// TODO: verificare la correttezza del contenuto rispetto alle specifiche (architettura, sintassi, convenzioni, etc.)
 
 	if(where == SUBSTITUTE)
-		substitute_instruction_with(target, fcontent, fsize, &insn);
+		substitute_instruction_with(target, fcontent, fsize);
 	else
 		insert_instructions_at(target, fcontent, fsize, where, &insn);
 

@@ -65,9 +65,7 @@ static void clone_text_sections(int version, char *suffix) {
 
 		name = malloc(strlen(sec->name) + strlen(suffix) + 2);
 		bzero(name, sizeof(name));
-		strcpy(name, sec->name);
-		strcat(name, ".");
-		strcat(name, suffix);
+		sprintf(name, "%s.%s", sec->name, suffix);
 
 		clone = find_section_by_name(name, version);
 
@@ -122,9 +120,7 @@ static void clone_relocations(int version, char *suffix) {
 
 					name = malloc(strlen(rela->name) + strlen(suffix) + 2);
 					bzero(name, sizeof(name));
-					strcpy(name, rela->name);
-					strcat(name, "_");
-					strcat(name, suffix);
+					sprintf(name, "%s_%s", rela->name, suffix);
 
 					// We seek the correct function by its name
 					// (this should work, provided that cloning of functions
@@ -132,7 +128,7 @@ static void clone_relocations(int version, char *suffix) {
 					sym = find_symbol_by_name(name);
 
 					if (sym == NULL) {
-						hinternal();
+						herror(true, "Cannot find symbol '%s'\n", name);
 					}
 
 					clone = symbol_rela_clone(sym);
@@ -247,7 +243,7 @@ static void adjust_relocations(symbol *symbols, int version, section *text) {
 
 					rela2->relocation.addend = sec->sym->size;
 
-					hnotice(3, "Updated CODE->* relocation in <%s + %x> to <%s + %x>\n",
+					hnotice(3, "Updated CODE->* relocation in <%s + %llx> to <%s + %x>\n",
 						rela2->relocation.sec->name, rela2->relocation.offset,
 							rela2->name, rela2->relocation.addend);
 
@@ -262,7 +258,7 @@ static void adjust_relocations(symbol *symbols, int version, section *text) {
 			// FIXME: Is it safe to suppose that relocations are always 8 bytes long?
 			sec->sym->size += sizeof(char *);
 
-			hnotice(3, "Updated *->CODE relocation in <%s + %x> to <%s + %x>\n",
+			hnotice(3, "Updated *->CODE relocation in <%s + %llx> to <%s + %x>\n",
 				rela->relocation.sec->name, rela->relocation.offset,
 					rela->name, rela->relocation.addend);
 		}

@@ -217,7 +217,7 @@ struct _symbol {
 	symbol_bind bind;     /// The hijacker's local bind specification of the symbol
 
 	unsigned int index;   /// Symbol's index within the symbol table
-	unsigned char *name;  /// Pointer to the buffer holding the symbol's name
+	char *name;  /// Pointer to the buffer holding the symbol's name
 	unsigned int size;    /// Size of the symbol, could be zero (e.g. for SYMBOL_UNDEF)
 
 	unsigned int secnum;  /// Index of the section the symbol belongs to
@@ -265,7 +265,7 @@ struct _reloc {
 /* Functions */
 
 struct _function {
-	unsigned char   *name;
+	char   *name;
 
 	block *begin_blk;        // [SE]
 	block *end_blk;          // [SE]
@@ -306,7 +306,7 @@ extern const char *section_type_str[];
 struct _section {
 	section_type type;
 	unsigned int index;
-	unsigned char *name;
+	char *name;
 	unsigned long long offset;
 
 	void *payload;  // In-memory section contents
@@ -330,12 +330,11 @@ insn_info *find_last_insn(function *functions);
 void parse_instruction_bytes(unsigned char *bytes, unsigned long int *pos, insn_info **final);
 int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size,
 	insn_insert_mode mode, insn_info **last);
-int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size,
-	insn_info **last);
+int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size);
 insn_info *clone_instruction(insn_info *insn);
 insn_info *clone_instruction_list(insn_info *insn);
-void add_call_instruction(insn_info *target, unsigned char *func, insn_insert_mode mode, insn_info **instr);
-void add_jump_instruction(insn_info *target, unsigned char *name, insn_insert_mode mode, insn_info **instr);
+void add_call_instruction(insn_info *target, char *func, insn_insert_mode mode, insn_info **instr);
+void add_jump_instruction(insn_info *target, char *name, insn_insert_mode mode, insn_info **instr);
 void set_jumpto_reference(insn_info *jump, insn_info *target);
 void set_jumptable_entry(insn_info *jump, insn_info *entry, unsigned int idx);
 void set_virtual_reference(insn_info *target, insn_info *virtual);
@@ -347,8 +346,8 @@ void set_call_displacement(insn_info *jump, insn_info *target);
 /* symbol.c */
 
 symbol *find_symbol(size_t index);
-symbol *find_symbol_by_name(unsigned char *name);
-symbol *create_symbol_node(unsigned char *name, symbol_type type, symbol_bind bind, int size);
+symbol *find_symbol_by_name(char *name);
+symbol *create_symbol_node(char *name, symbol_type type, symbol_bind bind, int size);
 symbol *symbol_create(char *name, symbol_type type, symbol_bind bind,
 	section *sec, size_t size);
 symbol *symbol_create_from_ELF(Elf_Sym *elfsym);
@@ -376,7 +375,7 @@ function *clone_function_list(function *func, char *suffix);
 /* section.c */
 
 section *find_section(unsigned int idx);
-section *find_section_by_name(unsigned char *name, int version);
+section *find_section_by_name(char *name, int version);
 // reloc *find_reloc(section *sec, unsigned long offset);
 section *section_create(char *name, section_type type, void *payload);
 section *section_create_from_ELF(size_t index, section_type type);

@@ -329,7 +329,7 @@ static void elf_string_section(int secndx) {
 	pos = 0;
 	size = sec_size(secndx);
 
-	stringtab = (char *) malloc(sizeof(char) * size);
+	stringtab = malloc(sizeof(char) * size);
 
 	while(pos < size){
 		name = (sec_content(secndx) + pos);
