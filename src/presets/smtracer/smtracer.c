@@ -658,7 +658,11 @@ static void smt_compute_features(void) {
 void smt_init(void) {
   function *func;
   insn_info *instr;
+
   size_t count, highest;
+
+  block *blk;
+  smt_data *smt;
 
   // Detect the maximum size for the TLS buffer so that
   // no relevant access will be discarded due to lack of space
@@ -686,6 +690,17 @@ void smt_init(void) {
   // Block-level features are computed to later instrument basic blocks according
   // to user-defined blk_score_thresholds
   smt_compute_features();
+
+  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+    smt = blk->smtracer;
+
+    hnotice(2, "Block %u at <%#08llx> has score %0.3f\n",
+      blk->id, blk->begin->orig_addr, smt->score);
+
+    if (highest < smt->score) {
+      highest = smt->score;
+    }
+  }
 }
 
 static void smt_resolve_address(smt_access *access) {
@@ -1407,7 +1422,11 @@ static void smt_flush_accesses(unsigned int total, symbol *callfunc, insn_info *
       0x9c,
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+
+    // if (!ll_empty(&pivot->targetof) && !pivot->virtual) {
+    //   set_virtual_reference(pivot, current);
+    // }
   }
 
   // Load TLS storage

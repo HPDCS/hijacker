@@ -916,8 +916,6 @@ void elf_create_map(void) {
 	resolve_jumps();
 	resolve_blocks();
 
-	// Updates the binary representation's pointers
-
 	PROGRAM(versions)++;
 
 	hnotice(1, "ELF parsing terminated\n");

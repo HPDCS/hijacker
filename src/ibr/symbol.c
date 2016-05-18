@@ -472,9 +472,9 @@ symbol *symbol_instr_rela_create(symbol *sym, insn_info *insn, reloc_type type) 
 		case RELOC_PCREL_32:
 		case RELOC_PCREL_64:
 			// Recall that the addend is backward and -(a - b) == (b - a)
-			if (rela->relocation.addend == 0) {
+			// if (rela->relocation.addend == 0) {
 				rela->relocation.addend = (long)insn->opcode_size - (long)insn->size;
-			}
+			// }
 
 			break;
 

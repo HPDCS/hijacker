@@ -265,7 +265,7 @@ int elf_write_symbol(section *symtable, symbol *sym, section *strtable) {
 					// in order to keep correctly aligned the section's size with its
 					// content. Here we pass a dummy pointer in order to make sure only
 					// the the section will increase its size
-					elf_write_data(sec, NULL, sym->size);
+					// elf_write_data(sec, NULL, sym->size);
 				}
 				else if (str_equal(sym->sec->name, ".rodata")) {
 					// sym->offset = elf_write_data(rodata, sym->payload, sym->size);
@@ -784,6 +784,9 @@ static void elf_build(void) {
 		data = elf_create_section(SHT_PROGBITS, 0, SHF_ALLOC|SHF_WRITE);
 		elf_name_section(data, ".data");
 
+		// FIXME: In case of multiple data section, the alignment is
+		// not computed on the maximum value but on the value of
+		// `.data`
 		set_hdr_info(data->header, sh_addralign,
 			header_info(((Section_Hdr *) sym->sec->header), sh_addralign));
 	}
@@ -1047,29 +1050,6 @@ static void elf_update_symbol_list(symbol *first) {
 
 			if (sec == NULL) {
 				// No section is found, so we skip it...
-
-				// TODO: da abilitare un supporto dinamico per il multitext
-				// if(1) {
-				// 	// se è stata richiesta la creazione di tutte le sezioni originali
-				// 	// allora viene creata una nuova sezione a partire dal file originale
-
-				// 	sec = PROGRAM(sections);
-				// 	while(sec) {
-				// 		if(!strcmp(sym->name, (char *)sec->name)) {
-
-				// 			elf_create_section(sec->type, sec->size, sec->flags);
-				// 			sym->secnum = sec->index;
-				// 			//sym->index = sec->index;
-				// 			sec = sec->next;
-
-				// 			hnotice(4, "Updated the section symbol index to %d\n", sym->secnum);
-				// 			break;
-				// 		}
-
-				// 		sec = sec->next;
-				// 	}
-				// }
-
 				hnotice(4, "Section '%s' will be ignored\n", sym->name);
 
 				sym->version = -1;
@@ -1174,18 +1154,21 @@ static void elf_fill_sections(void) {
 			continue;
 		}
 
-		if (str_equal(sec->name, ".data")) {
+		if (str_prefix(sec->name, ".data")) {
 			size = sym->size;
 
 			hnotice(3, "Copying raw data of section '%s' [%d] (%u bytes)\n",
 				sec->name, sym->secnum, size);
 
+			// This is to handle the case that hijacker will indirectly
+			// add data to pre-existent sections (e.g., in case of
+			// switch cases for different versions)
+			// NOTE: Do not remove these lines! Otherwise, it can be
+			// the case that `elf_write_data` segfaults since size >
+			// sec_size(sec->index)!
 			content = calloc(size, 1);
-
-			// This is to handle the case that hijacker will adds data to
-			// pre-existent sections (e.g., in case of switch cases for
-			// different versions)
 			memcpy(content, sec->payload, sec_size(sec->index));
+
 			elf_write_data(data, content, size);
 		}
 
@@ -1195,13 +1178,17 @@ static void elf_fill_sections(void) {
 			hnotice(3, "Copying raw data of section '%s' [%d] (%u bytes)\n",
 				sec->name, sym->secnum, size);
 
+			// This is to handle the case that hijacker will indirectly
+			// add data to pre-existent sections (e.g., in case of
+			// switch cases for different versions)
+			// NOTE: Do not remove these lines! Otherwise, it can be
+			// the case that `elf_write_data` segfaults since size >
+			// sec_size(sec->index)!
 			content = calloc(size, 1);
 
-			// This is to handle the case that hijacker will adds indirectly
-			// data to pre-existent sections (i.e. in case of switch cases
-			// for different versions)
 			memcpy(content, sec->payload, sec_size(sec->index));
-			elf_write_data(rodata, content, size);
+
+			elf_write_data(rodata, sec->payload, size);
 		}
 
 		else if (str_equal(sec->name, ".bss")) {
