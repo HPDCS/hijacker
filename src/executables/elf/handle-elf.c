@@ -73,6 +73,15 @@ static void clone_text_sections(int version, char *suffix) {
 		}
 
 		func->symbol->sec = clone;
+
+		ll_node *alias_node;
+		symbol *alias;
+
+		for (alias_node = func->alias.first; alias_node; alias_node = alias_node->next) {
+			alias = alias_node->elem;
+
+			alias->sec = clone;
+		}
 	}
 }
 
