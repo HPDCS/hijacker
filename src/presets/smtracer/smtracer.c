@@ -1594,7 +1594,6 @@ static size_t smt_instrument_func(function *func, symbol *callfunc) {
     // Free unnecessary heap memory
     for (access = smt->candidates; access; access = temp) {
       temp = access->next;
-
       free(access);
     }
   }
