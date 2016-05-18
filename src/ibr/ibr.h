@@ -277,6 +277,8 @@ struct _function {
 	bool visited;            // True if the function was already met in the current visit
 
 	bool overload;
+	linked_list alias;		// A list of possible aliases of this function
+
 	insn_info   *begin_insn;
 	insn_info   *end_insn;
 	symbol      *symbol;  // [DC] Added reference to the relative symbol

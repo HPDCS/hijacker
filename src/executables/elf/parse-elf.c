@@ -506,6 +506,8 @@ static void resolve_symbols(void) {
 					// because of the way functions were appended to the list.
 					if (prev != NULL && func->begin_insn == prev->begin_insn) {
 
+						ll_push(&(prev->alias), sym);
+
 						// // The alias function's instructions must be cloned
 						// func->begin_insn = clone_instruction_list(prev->begin_insn);
 
@@ -514,8 +516,10 @@ static void resolve_symbols(void) {
 						// The alias symbol must to point the concrete function's
 						// descriptor
 						sym->func = prev;
+						sym->offset = prev->symbol->offset;
 
-						hprint("Alias '%s' of '%s'\n", func->name, prev->name);
+						hprint("Alias '%s' of '%s' at offset <%llx>\n",
+							func->name, prev->name, sym->offset);
 
 						free(func);
 						break;

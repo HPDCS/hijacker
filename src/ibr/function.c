@@ -211,6 +211,7 @@ function * clone_function (function *func, char *suffix) {
 	clone->begin_blk = clone->end_blk = clone->source = NULL;
 	clone->calledfrom.first = clone->calledfrom.last = NULL;
 	clone->callto.first = clone->callto.last = NULL;
+	memset(&clone->alias, 0, sizeof(clone->alias));
 
 	// Compose the function name
 	// size = strlen((const char *)func->name) + strlen(suffix) + 2; // one is \0, one is '_'
@@ -225,6 +226,23 @@ function * clone_function (function *func, char *suffix) {
 	clone->symbol = symbol_create(name, func->symbol->type, func->symbol->bind,
 		func->symbol->sec, func->symbol->size);
 
+	// If the function has aliases, they must cloned as well
+	ll_node *alias_node;
+	symbol *alias;
+
+	for (alias_node = func->alias.first; alias_node; alias_node = alias_node->next) {
+		alias = alias_node->elem;
+
+		// Clone the symbol alias
+		name = add_suffix(alias->name, "_", suffix);
+		alias = symbol_create(name, alias->type, alias->bind, alias->sec, alias->size);
+
+		alias->func = clone;
+
+		// Adds it the the list
+		ll_push(&clone->alias, alias);
+	}
+	
 	clone->symbol->func = clone;
 
 	// hnotice(4, "Function '%s' (%d bytes) cloned\n", clone->name, clone->symbol->size);

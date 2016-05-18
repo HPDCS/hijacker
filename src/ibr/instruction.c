@@ -1125,6 +1125,15 @@ void update_instruction_addresses(int version) {
 		foo->symbol->offset = foo_offset;
 		foo->symbol->size = foo_size;
 
+		// If this function has any alias will update them as well
+		ll_node *alias_node;
+		symbol *alias;
+		for (alias_node = foo->alias.first; alias_node; alias_node = alias_node->next) {
+			alias = alias_node->elem;
+			alias->offset = foo_off;
+			alias->size = foo_size;
+		}
+
 		hnotice(4, "Function '%s' updated to <%#08llx> (%d bytes)\n",
 			foo->symbol->name, foo->begin_insn->new_addr, foo->symbol->size);
 	}
