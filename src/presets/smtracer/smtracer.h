@@ -47,8 +47,8 @@ typedef struct smt_access {
 
   struct smt_access *original;    // Pointer to the equal original access
 
-  char vtable[SMT_VTABLE_SIZE];       // Version table for general-purpose registers
-  float score;                    // Access instrumentation score
+  char vtable[SMT_VTABLE_SIZE];   // Version table for general-purpose registers
+  double score;                   // Access instrumentation score
 
   struct smt_access *next;
 } smt_access;
@@ -58,9 +58,9 @@ typedef struct {
   // Block-level features
   block *lheader;             // Closest loop header
   unsigned int cycles;        // Number of joined program cycles
-  float memratio;             // Memory sensitivity
+  double memratio;            // Memory sensitivity
 
-  float score;                // Relative score ranging in [0,1]
+  double score;               // Relative score ranging in [0,1]
 
   smt_access *candidates;     // Candidates list
 
