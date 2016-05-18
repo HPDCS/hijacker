@@ -239,7 +239,9 @@ void symbol_append(symbol *sym, symbol **head) {
 				// NOTE: In the future it would be posible to collapse two function symbols
 				// in the case they have the same byte footprint
 				// 6: '_' + 4 digits + '\0'
-				char *new_name = malloc(strlen(sym->name) + 6);
+				int name_length = strlen(sym->name) + 6;
+				char *new_name = malloc(name_length);
+				bzero(new_name, name_length);
 
 				sprintf(new_name, "%s_%d", sym->name, duplicate->index);
 				duplicate->name = new_name;
@@ -470,7 +472,10 @@ symbol *symbol_instr_rela_create(symbol *sym, insn_info *insn, reloc_type type) 
 		case RELOC_PCREL_32:
 		case RELOC_PCREL_64:
 			// Recall that the addend is backward and -(a - b) == (b - a)
-			rela->relocation.addend = (long)insn->opcode_size - (long)insn->size;
+			if (rela->relocation.addend == 0) {
+				rela->relocation.addend = (long)insn->opcode_size - (long)insn->size;
+			}
+
 			break;
 
 		// case RELOCATE_ABSOLUTE_32:
@@ -533,7 +538,6 @@ symbol *symbol_rela_clone(symbol *sym) {
 symbol *symbol_clone(symbol *sym, char *suffix) {
 	symbol *clone;
 	char *name;
-	size_t length;
 
 	if (sym == NULL) {
 		return NULL;
@@ -548,10 +552,7 @@ symbol *symbol_clone(symbol *sym, char *suffix) {
 	clone->relocation.sec = sym->relocation.sec;
 
 	// Compose the symbol name
-	length = strlen((const char *)sym->name) + strlen(suffix) + 2; // one is \0, one is '_'
-	name = malloc(sizeof(char) * length);
-	bzero(name, length);
-	sprintf(name, "%s_%s", sym->name, suffix);
+	name = add_suffix(sym->name, "_", suffix);
 
 	clone->name = name;
 

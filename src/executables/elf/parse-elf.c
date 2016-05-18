@@ -491,8 +491,10 @@ static void resolve_symbols(void) {
 					// parent sections and their *absolute* addresses (computed by
 					// adding the section's offset)
 					for (prev = NULL, curr = first; curr; prev = curr, curr = curr->next) {
-						if (func->begin_insn->orig_addr + func->symbol->sec->sym->offset
-						  <= curr->begin_insn->orig_addr + curr->symbol->sec->sym->offset) {
+						// NOTE: if the check is '<=' then `curr` will hold a possible alias
+						// otherwise in case of '<' (strict check) `prev` will do
+						if (func->begin_insn->orig_addr + func->symbol->sec->offset
+							< curr->begin_insn->orig_addr + curr->symbol->sec->offset) {
 							break;
 						}
 					}
@@ -503,7 +505,18 @@ static void resolve_symbols(void) {
 					// NOTE: `prev` is guaranteed to be the alias (if there is any)
 					// because of the way functions were appended to the list.
 					if (prev != NULL && func->begin_insn == prev->begin_insn) {
+
+						// // The alias function's instructions must be cloned
+						// func->begin_insn = clone_instruction_list(prev->begin_insn);
+
+						// hprint("Cloned alias '%s' of '%s'\n", func->name, prev->name);
+
+						// The alias symbol must to point the concrete function's
+						// descriptor
 						sym->func = prev;
+
+						hprint("Alias '%s' of '%s'\n", func->name, prev->name);
+
 						free(func);
 						break;
 					}
@@ -597,6 +610,14 @@ static void resolve_symbols(void) {
 	// 	sec->sym->size += sym->size;
 	// }
 
+	// for (sym = sec->payload; sym != NULL; sym = sym->next) {
+	// 	hprint("Symbol '%s'\n", sym->name);
+	// }
+
+	// for (func = first; func != NULL; func = func->next) {
+	// 	hprint("Function $llx in '%s'\n", func->name, func->symbol->sec->name);
+	// }
+
 	PROGRAM(symbols) = sec->payload;
 	PROGRAM(code) = first;
 	PROGRAM(v_code)[0] = first;
@@ -675,13 +696,11 @@ static void resolve_relocation(void) {
 				// The relocation applies to an instruction, so it is a CODE->*
 				// kind of relocation ({where}->{to})
 
-				// addr = rel->sec->offset + rel->offset;
 				addr = rel->offset;
-
 				func = find_func_cool(rel->sec, addr);
 
 				if (!func) {
-					hinternal();
+					herror(true, "No function found at address <%llx>\n", addr);
 				}
 
 				instr = find_insn_cool(func->begin_insn, addr);

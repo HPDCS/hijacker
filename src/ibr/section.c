@@ -181,14 +181,14 @@ section *section_clone(section *sec, char *suffix) {
 	clone->next = NULL;
 
 	// Compose the section name
-	length = strlen((const char *)sec->name) + strlen(suffix) + 2; // one is \0, one is '_'
-	name = malloc(sizeof(char) * length);
-	bzero(name, length);
-	strcpy(name, (const char *)sec->name);
-	strcat(name, ".");
-	strcat(name, suffix);
+	// // 2: '.' + '\0'
+	// length = strlen(sec->name) + strlen(suffix) + 2;
+	// name = malloc(length);
+	// bzero(name, length);
+	// sprintf(name, "%s.%s", sec->name, suffix);
+	name = add_suffix(sec->name, ".", suffix);
 
-	clone->name = (unsigned char *)name;
+	clone->name = name;
 
 	// Create a new symbol
 	clone->sym = symbol_create(name, SYMBOL_SECTION, SYMBOL_LOCAL, clone, sec->sym->size);

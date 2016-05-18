@@ -63,10 +63,8 @@ static void clone_text_sections(int version, char *suffix) {
 			hinternal();
 		}
 
-		name = malloc(strlen(sec->name) + strlen(suffix) + 2);
-		bzero(name, sizeof(name));
+		name = calloc(sizeof(char), strlen(sec->name) + strlen(suffix) + 2);
 		sprintf(name, "%s.%s", sec->name, suffix);
-
 		clone = find_section_by_name(name, version);
 
 		if (clone == NULL) {
@@ -118,9 +116,10 @@ static void clone_relocations(int version, char *suffix) {
 					// sure that the function from the new version is referred,
 					// not the original one
 
-					name = malloc(strlen(rela->name) + strlen(suffix) + 2);
-					bzero(name, sizeof(name));
-					sprintf(name, "%s_%s", rela->name, suffix);
+					// name = malloc(strlen(rela->name) + strlen(suffix) + 2);
+					// bzero(name, sizeof(name));
+					// sprintf(name, "%s_%s", rela->name, suffix);
+					name = add_suffix(rela->name, "_", suffix);
 
 					// We seek the correct function by its name
 					// (this should work, provided that cloning of functions
@@ -128,7 +127,21 @@ static void clone_relocations(int version, char *suffix) {
 					sym = find_symbol_by_name(name);
 
 					if (sym == NULL) {
-						herror(true, "Cannot find symbol '%s'\n", name);
+						herror(false, "Cannot find symbol '%s'\n", name);
+
+						sym = find_symbol_by_name(rela->name);
+						if (sym == NULL) {
+							hinternal();
+						}
+
+						// It is reasonable that this is is function alias which is not in
+						// the function list because it was not be cloned in the clone
+						// function list step. Here we create a new symbol on-the-fly, to
+						// represent it.
+						clone = symbol_create(name, sym->type, sym->bind, sym->sec, sym->size);
+						clone->func = sym->func;
+						sym = clone;
+						herror(false, "Created a new function alias '%s'\n");
 					}
 
 					clone = symbol_rela_clone(sym);

@@ -129,9 +129,9 @@ function *function_create_from_insn(char *name, insn_info *code, section *sec) {
 
 	for (prev = NULL, curr = PROGRAM(v_code)[PROGRAM(version)]; curr;
 		prev = curr, curr = curr->next) {
-		if (prev && prev->symbol->sec == sec && curr->symbol->sec != sec) {
-			break;
-		}
+		// if (prev && prev->symbol->sec == sec && curr->symbol->sec != sec) {
+		// 	break;
+		// }
 	}
 
 	prev->next = func;
@@ -193,7 +193,6 @@ function *function_create_from_bytes(char *name, unsigned char *code, size_t siz
 function * clone_function (function *func, char *suffix) {
 	function *clone;
 	char *name;
-	int size;
 
 	if (!func) {
 		return NULL;
@@ -214,16 +213,17 @@ function * clone_function (function *func, char *suffix) {
 	clone->callto.first = clone->callto.last = NULL;
 
 	// Compose the function name
-	size = strlen((const char *)func->name) + strlen(suffix) + 2; // one is \0, one is '_'
-	name = malloc(sizeof(char) * size);
-	bzero(name, size);
-	sprintf(name, "%s_%s", func->name, suffix);
+	// size = strlen((const char *)func->name) + strlen(suffix) + 2; // one is \0, one is '_'
+	// name = malloc(sizeof(char) * size);
+	// bzero(name, size);
+	// sprintf(name, "%s_%s", func->name, suffix);
+	name = add_suffix(func->name, "_", suffix);
 
 	clone->name = name;
 
 	// Create a new symbol
 	clone->symbol = symbol_create(name, func->symbol->type, func->symbol->bind,
-		func->symbol->sec, size);
+		func->symbol->sec, func->symbol->size);
 
 	clone->symbol->func = clone;
 
@@ -243,13 +243,13 @@ function * clone_function (function *func, char *suffix) {
 function *clone_function_list(function *func, char *suffix) {
 	function *clone, *head;
 
-	if(!func)
+	if(func == NULL)
 		return NULL;
 
 	head = clone = clone_function(func, suffix);
 	func = func->next;
 
-	while(func) {
+	while(func != NULL) {
 		clone->next = clone_function(func, suffix);
 		clone = clone->next;
 		func = func->next;

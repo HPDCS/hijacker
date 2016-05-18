@@ -223,3 +223,18 @@ void *ll_pop_first(linked_list *list) {
 
 	return elem;
 }
+
+char *add_suffix(char *base, char *delim, char *suffix) {
+	char *new_string;
+	int length;
+
+	length = strlen(base) + strlen(suffix) + strlen(delim) + 1;
+	
+	// Create a zero'ed destination buffer
+	new_string = malloc(length);
+	bzero(new_string, length);
+	
+	sprintf(new_string, "%s%s%s", base, delim, suffix);
+
+	return new_string;
+}
