@@ -127,6 +127,9 @@ static void clone_relocations(int version, char *suffix) {
 					sym = find_symbol_by_name(name);
 
 					if (sym == NULL) {
+						// TODO: This is a gigantic hack to clone function aliases
+						// which is not duplicated by `switch_executable_version`,
+						// since there is no concrete function's descriptor associated
 						herror(false, "Cannot find symbol '%s'\n", name);
 
 						sym = find_symbol_by_name(rela->name);
@@ -134,14 +137,15 @@ static void clone_relocations(int version, char *suffix) {
 							hinternal();
 						}
 
-						// It is reasonable that this is is function alias which is not in
+						// It is reasonable that this is a function alias which is not in
 						// the function list because it was not be cloned in the clone
 						// function list step. Here we create a new symbol on-the-fly, to
 						// represent it.
 						clone = symbol_create(name, sym->type, sym->bind, sym->sec, sym->size);
 						clone->func = sym->func;
+						clone->offset = sym->offset;
 						sym = clone;
-						herror(false, "Created a new function alias '%s'\n");
+						herror(false, "Created a new function alias '%s'\n", sym->name);
 					}
 
 					clone = symbol_rela_clone(sym);
