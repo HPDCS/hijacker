@@ -45,17 +45,17 @@
 // Maximum length for the name of the TLS buffer symbol
 #define BUFFER_NAME_LEN   (1<<6)
 
-// Length of a single bin in the score distribution
-#define SCORE_BIN_PRECISION  1000
-
-// Length of a single bin in the score distribution
-#define SCORE_BIN_LENGTH  10
+// // Length of a single bin in the block scores distribution
+// #define SCORE_BIN_LENGTH     10
+// // Maximum length precision for a single block score bin
+// #define SCORE_BIN_PRECISION  1000
 
 // Experimental score triple to derive the instrumentation score
 // of a single memory access expression
-#define SCORE_1   1
-#define SCORE_2   3
-#define SCORE_3   5
+#define SCORE_1       1
+#define SCORE_2       3
+#define SCORE_3       5
+#define SCORE_EQUAL   11
 
 
 // Globals
@@ -68,7 +68,7 @@ static size_t tls_buffer_size;
 // Parameters
 static double blk_score_threshold;
 static size_t chunk_size;
-static double acc_threshold;
+static double max_overhead;
 static bool use_stack;
 static bool simulated;
 static char *scorefile;
@@ -106,22 +106,25 @@ inline static bool smt_is_relevant(insn_info *instr) {
   return is_relevant;
 }
 
-inline static bool smt_is_flushpoint(insn_info *instr, function *func) {
-  bool is_flushpoint;
 
-  // A flushpoint is a call to a local function plus the first instruction of the
-  // last basic block for the current function
+// inline static bool smt_is_flushpoint(insn_info *instr, function *func) {
+//   bool is_flushpoint;
 
-  is_flushpoint = IS_CALL(instr);
-  is_flushpoint = is_flushpoint && (instr->jumpto || instr->jumptable.size > 0);
-  is_flushpoint = is_flushpoint || instr == func->end_blk->begin;
+//   // A flushpoint is a call to a local function plus the first instruction of the
+//   // last basic block for the current function
 
-  return is_flushpoint;
-}
+//   is_flushpoint = IS_CALL(instr);
+//   is_flushpoint = is_flushpoint && (instr->jumpto || instr->jumptable.size > 0);
+//   is_flushpoint = is_flushpoint || instr == func->end_blk->begin;
+
+//   return is_flushpoint;
+// }
+
 
 inline static size_t smt_absdiff_imm(smt_access *target, smt_access *current) {
   return abs(target->insn->i.x86.disp - current->insn->i.x86.disp);
 }
+
 
 inline static size_t smt_absdiff_sym(smt_access *target, smt_access *current) {
   symbol *target_sym, *current_sym;
@@ -149,6 +152,7 @@ inline static size_t smt_absdiff_sym(smt_access *target, smt_access *current) {
   return chunk_size;
 }
 
+
 inline static bool smt_same_breg(smt_access *target, smt_access *current) {
   bool same;
   insn_info_x86 *target_x86, *current_x86;
@@ -165,6 +169,7 @@ inline static bool smt_same_breg(smt_access *target, smt_access *current) {
 
   return false;
 }
+
 
 inline static bool smt_same_ireg(smt_access *target, smt_access *current) {
   bool same;
@@ -187,6 +192,7 @@ inline static bool smt_same_ireg(smt_access *target, smt_access *current) {
   return false;
 }
 
+
 static bool smt_same_template(smt_access *target, smt_access *current) {
   symbol *target_sym, *current_sym;
 
@@ -206,12 +212,14 @@ static bool smt_same_template(smt_access *target, smt_access *current) {
   }
 }
 
+
 static inline bool smt_is_irr(smt_access *access) {
   return (instr_reference_weak(access->insn) != NULL);
 }
 
-static double smt_likelihood_irr(smt_access *target, smt_access *current) {
-  double score;
+
+static size_t smt_distance_irr(smt_access *target, smt_access *current) {
+  size_t score;
 
   score = 0;
 
@@ -227,11 +235,16 @@ static double smt_likelihood_irr(smt_access *target, smt_access *current) {
     }
   }
 
+  if (score == 0) {
+    score += SCORE_EQUAL;
+  }
+
   return score;
 }
 
-static double smt_likelihood_rri(smt_access *target, smt_access *current) {
-  double score;
+
+static size_t smt_distance_rri(smt_access *target, smt_access *current) {
+  size_t score;
 
   score = 0;
 
@@ -251,8 +264,13 @@ static double smt_likelihood_rri(smt_access *target, smt_access *current) {
     score += SCORE_1;
   }
 
+  if (score == 0) {
+    score += SCORE_EQUAL;
+  }
+
   return score;
 }
+
 
 static bool smt_equal(smt_access *target, smt_access *current) {
   bool same;
@@ -335,6 +353,38 @@ static bool smt_equal(smt_access *target, smt_access *current) {
 
   return false;
 }
+
+
+static inline double smt_compute_variety(size_t ncandidates, size_t ntotal) {
+  if (ntotal == 1) {
+    return 0.0;
+  }
+  else {
+    return (ncandidates - 1) / (ntotal - 1);
+  }
+}
+
+
+// static inline double smt_compute_overhead(double min_accuracy, double variety) {
+//   if (variety <= 0.0) {
+//     return (min_accuracy < 1.0 ? 0.0 : 1.0);
+//   }
+//   else {
+//     return pow(min_accuracy, 1 / variety);
+//   }
+// }
+
+
+static inline double smt_compute_accuracy(double max_overhead, double variety) {
+  if (max_overhead <= 0.0) {
+    return 0.0;
+  }
+  else {
+    return pow(max_overhead, variety);
+  }
+}
+
+
 
 static void smt_tls_init(void) {
   symbol *sym;
@@ -421,239 +471,245 @@ static void smt_tls_init(void) {
   tls_buffer_sym->secnum = tbss_sec->index;
 }
 
-static bool smt_collect_loop_headers(void *elem, void *data) {
-  block_edge *edge = elem;
-  linked_list *headers = data;
 
-  if (edge->to->visited == false && edge->to->type == BLOCK_LOOP_HEADER) {
-    ll_push(headers, edge->to);
-  }
+// static bool smt_collect_loop_headers(void *elem, void *data) {
+//   block_edge *edge = elem;
+//   linked_list *headers = data;
 
-  return true;
-}
+//   if (edge->to->visited == false && edge->to->type == BLOCK_LOOP_HEADER) {
+//     ll_push(headers, edge->to);
+//   }
 
-static bool smt_discover_loop_body(void *elem, void *data) {
-  block_edge *edge = elem;
-  block *header = data;
+//   return true;
+// }
 
-  smt_data *smt;
 
-  smt = edge->from->smtracer;
+// static bool smt_discover_loop_body(void *elem, void *data) {
+//   block_edge *edge = elem;
+//   block *header = data;
 
-  // Stop the visit as soon as we're exiting the cycle
-  if (edge->to == header && edge->dir == EDGE_NEXT) {
-    return false;
-  }
+//   smt_data *smt;
 
-  // If the current block hasn't been visited yet, register its loop header
-  if (edge->from->visited == false && edge->from != header) {
-    smt->lheader = header;
-  }
+//   smt = edge->from->smtracer;
 
-  // Do not enter inner loops, it will be done in a dedicated visit
-  if (edge->from->type == BLOCK_LOOP_HEADER && edge->from != header) {
-    return false;
-  }
+//   // Stop the visit as soon as we're exiting the cycle
+//   if (edge->to == header && edge->dir == EDGE_NEXT) {
+//     return false;
+//   }
 
-  return true;
-}
+//   // If the current block hasn't been visited yet, register its loop header
+//   if (edge->from->visited == false && edge->from != header) {
+//     smt->lheader = header;
+//   }
 
-static void smt_compute_cycles(void) {
-  linked_list headers;
-  block *blk, *header;
-  smt_data *smt;
-  function *func;
-  ll_node *caller, *called;
+//   // Do not enter inner loops, it will be done in a dedicated visit
+//   if (edge->from->type == BLOCK_LOOP_HEADER && edge->from != header) {
+//     return false;
+//   }
 
-  // First step: collect loop headers
-  hnotice(3, "Collecting loop headers...\n");
+//   return true;
+// }
 
-  ll_init(&headers);
 
-  for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
-    graph_visit visit = {
-      .payload   = &headers,
-      .policy    = VISIT_DEPTH,
-      .dir       = VISIT_FORWARD,
-      .pre_func  = smt_collect_loop_headers,
-      .post_func = NULL
-    };
+// static void smt_compute_cycles(void) {
+//   linked_list headers;
+//   block *blk, *header;
+//   smt_data *smt;
+//   function *func;
+//   ll_node *caller, *called;
 
-    block_graph_visit(func->source->in.first->elem, &visit);
-  }
+//   // First step: collect loop headers
+//   hnotice(3, "Collecting loop headers...\n");
 
-  // Second step: discover loop bodies
-  hnotice(3, "Discovering loop bodies...\n");
+//   ll_init(&headers);
 
-  while (!ll_empty(&headers)) {
-    header = ll_pop(&headers);
+//   for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
+//     graph_visit visit = {
+//       .payload   = &headers,
+//       .policy    = VISIT_DEPTH,
+//       .dir       = VISIT_FORWARD,
+//       .pre_func  = smt_collect_loop_headers,
+//       .post_func = NULL
+//     };
 
-    block_edge edge = { EDGE_INIT, EDGE_NEXT, header, NULL };
-    graph_visit visit = {
-      .payload   = header,
-      .policy    = VISIT_DEPTH,
-      .dir       = VISIT_BACKWARD,
-      .pre_func  = smt_discover_loop_body,
-      .post_func = NULL
-    };
+//     block_graph_visit(func->source->in.first->elem, &visit);
+//   }
 
-    block_graph_visit(&edge, &visit);
-  }
+//   // Second step: discover loop bodies
+//   hnotice(3, "Discovering loop bodies...\n");
 
-  // Third step: compute the number of cycles a block participates to
-  hnotice(3, "Computing cycles feature...\n");
+//   while (!ll_empty(&headers)) {
+//     header = ll_pop(&headers);
 
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
+//     block_edge edge = { EDGE_INIT, EDGE_NEXT, header, NULL };
+//     graph_visit visit = {
+//       .payload   = header,
+//       .policy    = VISIT_DEPTH,
+//       .dir       = VISIT_BACKWARD,
+//       .pre_func  = smt_discover_loop_body,
+//       .post_func = NULL
+//     };
 
-    // A loop header participates in its own loop
-    if (blk->type == BLOCK_LOOP_HEADER) {
-      smt->cycles += 1;
-    }
+//     block_graph_visit(&edge, &visit);
+//   }
 
-    header = smt->lheader;
-    while (header) {
-      smt->cycles += 1;
-      header = ((smt_data *)header->smtracer)->lheader;
-    }
+//   // Third step: compute the number of cycles a block participates to
+//   hnotice(3, "Computing cycles feature...\n");
 
-    hnotice(6, "Block #%u participates to %u cycles...\n", blk->id, smt->cycles);
-  }
+//   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+//     smt = blk->smtracer;
 
-  // Fourth step: ride CALL instructions to see if some blocks actually
-  // participate to a higher number of cycles across function calls
-  hnotice(3, "Extending cycle feature to block across different functions...\n");
+//     // A loop header participates in its own loop
+//     if (blk->type == BLOCK_LOOP_HEADER) {
+//       smt->cycles += 1;
+//     }
 
-  unsigned int hottest;
-  linked_list queue = { NULL, NULL };
+//     header = smt->lheader;
+//     while (header) {
+//       smt->cycles += 1;
+//       header = ((smt_data *)header->smtracer)->lheader;
+//     }
 
-  for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
-    if (func->calledfrom.first == NULL) {
-      ll_push(&queue, func);
-    }
-  }
+//     hnotice(6, "Block #%u participates to %u cycles...\n", blk->id, smt->cycles);
+//   }
 
-  while(!ll_empty(&queue)) {
-    func = ll_pop(&queue);
-    hottest = 0;
+//   // Fourth step: ride CALL instructions to see if some blocks actually
+//   // participate to a higher number of cycles across function calls
+//   hnotice(3, "Extending cycle feature to block across different functions...\n");
 
-    if (func->visited == true) {
-      continue;
-    } else {
-      func->visited = true;
-    }
+//   unsigned int hottest;
+//   linked_list queue = { NULL, NULL };
 
-    for (caller = func->calledfrom.first; caller; caller = caller->next) {
-      blk = caller->elem;
-      smt = blk->smtracer;
+//   for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
+//     if (func->calledfrom.first == NULL) {
+//       ll_push(&queue, func);
+//     }
+//   }
 
-      hnotice(4, "Caller block #%u for function '%s' participates to %u cycles\n",
-        blk->id, func->name, smt->cycles);
+//   while(!ll_empty(&queue)) {
+//     func = ll_pop(&queue);
+//     hottest = 0;
 
-      if (hottest < smt->cycles) {
-        hottest = smt->cycles;
-      }
-    }
+//     if (func->visited == true) {
+//       continue;
+//     } else {
+//       func->visited = true;
+//     }
 
-    hnotice(4, "Cycle feature will be extended by %u in func '%s'\n",
-      hottest, func->name);
+//     for (caller = func->calledfrom.first; caller; caller = caller->next) {
+//       blk = caller->elem;
+//       smt = blk->smtracer;
 
-    for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
-      smt = blk->smtracer;
+//       hnotice(4, "Caller block #%u for function '%s' participates to %u cycles\n",
+//         blk->id, func->name, smt->cycles);
 
-      smt->cycles += hottest;
-    }
+//       if (hottest < smt->cycles) {
+//         hottest = smt->cycles;
+//       }
+//     }
 
-    for (called = func->callto.first; called; called = called->next) {
-      ll_push(&queue, called->elem);
-    }
-  }
+//     hnotice(4, "Cycle feature will be extended by %u in func '%s'\n",
+//       hottest, func->name);
 
-  for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
-    func->visited = false;
-  }
-}
+//     for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
+//       smt = blk->smtracer;
 
-static void smt_compute_memratio(void) {
-  block *blk;
-  smt_data *smt;
+//       smt->cycles += hottest;
+//     }
 
-  insn_info *pivot;
-  bool is_relevant;
+//     for (called = func->callto.first; called; called = called->next) {
+//       ll_push(&queue, called->elem);
+//     }
+//   }
 
-  size_t memcount, highest;
+//   for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
+//     func->visited = false;
+//   }
+// }
 
-  highest = 0;
 
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
-    memcount = 0;
+// static void smt_compute_memratio(void) {
+//   block *blk;
+//   smt_data *smt;
 
-    for (pivot = blk->begin; pivot != blk->end->next; pivot = pivot->next) {
-      is_relevant = smt_is_relevant(pivot);
+//   insn_info *pivot;
+//   bool is_relevant;
 
-      if (is_relevant) {
-        memcount += 1;
-      }
-    }
+//   size_t memcount, highest;
 
-    smt->memratio = memcount * memcount / blk->length;
+//   highest = 0;
 
-    if (highest < memcount) {
-      highest = memcount;
-    }
-  }
+//   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+//     smt = blk->smtracer;
+//     memcount = 0;
 
-  highest = highest > 0 ? highest : 1;
+//     for (pivot = blk->begin; pivot != blk->end->next; pivot = pivot->next) {
+//       is_relevant = smt_is_relevant(pivot);
 
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
+//       if (is_relevant) {
+//         memcount += 1;
+//       }
+//     }
 
-    smt->memratio /= highest;
-  }
-}
+//     smt->memratio = memcount * memcount / blk->length;
 
-static void smt_compute_features(void) {
-  block *blk;
-  smt_data *smt;
-  float highest;
+//     if (highest < memcount) {
+//       highest = memcount;
+//     }
+//   }
 
-  // Blocks are augmented with extra information
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    hnotice(6, "Allocating memory for smtracer at block #%u\n", blk->id);
+//   highest = highest > 0 ? highest : 1;
 
-    blk->smtracer = calloc(sizeof(smt_data), 1);
-  }
+//   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+//     smt = blk->smtracer;
 
-  // Features are computed
-  smt_compute_cycles();
-  smt_compute_memratio();
+//     smt->memratio /= highest;
+//   }
+// }
 
-  // The total absolute score is computed for each block
-  highest = 0;
 
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
+// static void smt_compute_features(void) {
+//   block *blk;
+//   smt_data *smt;
+//   float highest;
 
-    smt->score = (smt->cycles + 1) * smt->memratio;
+//   // Blocks are augmented with extra information
+//   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+//     hnotice(6, "Allocating memory for smtracer at block #%u\n", blk->id);
 
-    if (highest < smt->score) {
-      highest = smt->score;
-    }
-  }
+//     blk->smtracer = calloc(sizeof(smt_data), 1);
+//   }
 
-  // The total relative score is computed based on the highest absolute one
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
+//   // Features are computed
+//   smt_compute_cycles();
+//   smt_compute_memratio();
 
-    if (highest <= 0) {
-      smt->score = 1.0;
-    }
-    else {
-      smt->score /= highest;
-    }
-  }
-}
+//   // The total absolute score is computed for each block
+//   highest = 0;
+
+//   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+//     smt = blk->smtracer;
+
+//     smt->score = (smt->cycles + 1) * smt->memratio;
+
+//     if (highest < smt->score) {
+//       highest = smt->score;
+//     }
+//   }
+
+//   // The total relative score is computed based on the highest absolute one
+//   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+//     smt = blk->smtracer;
+
+//     if (highest <= 0) {
+//       smt->score = 1.0;
+//     }
+//     else {
+//       smt->score /= highest;
+//     }
+//   }
+// }
+
 
 void smt_init(void) {
   function *func;
@@ -682,26 +738,230 @@ void smt_init(void) {
 
   tls_buffer_size = highest;
 
+  // Blocks are augmented with extra information
+  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+    hnotice(6, "Allocating memory for smtracer at block #%u\n", blk->id);
+
+    blk->smtracer = calloc(sizeof(smt_data), 1);
+  }
+
   // The application's IBR is augmented with TLS-enabling sections and symbols
   // that allow the instrumented logic to store data into the application's
   // address space
   smt_tls_init();
 
-  // Block-level features are computed to later instrument basic blocks according
-  // to user-defined blk_score_thresholds
-  smt_compute_features();
+  // // Block-level features are computed to later instrument basic blocks according
+  // // to user-defined blk_score_thresholds
+  // smt_compute_features();
 
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
+  // for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+  //   smt = blk->smtracer;
 
-    hnotice(2, "Block %u at <%#08llx> has score %0.3f\n",
-      blk->id, blk->begin->orig_addr, smt->score);
+  //   hnotice(2, "Block %u at <%#08llx> has score %0.3f\n",
+  //     blk->id, blk->begin->orig_addr, smt->score);
 
-    if (highest < smt->score) {
-      highest = smt->score;
+  //   if (highest < smt->score) {
+  //     highest = smt->score;
+  //   }
+  // }
+}
+
+
+static void smt_update_vtable(insn_info *instr, char *vtable) {
+  insn_info_x86 *x86;
+
+  x86 = &instr->i.x86;
+
+  if (x86->dest_is_reg == true) {
+    if (x86->reg_dest >= SMT_VTABLE_SIZE) {
+      hinternal();
     }
+
+    vtable[x86->reg_dest] += 1;
   }
 }
+
+
+static smt_access *smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
+  smt_data *smt;
+  smt_access *target, *current, *prev;
+
+  smt = blk->smtracer;
+
+  // Access meta-data is created to compare the current access
+  // with the accesses already in the history
+  target = calloc(sizeof(smt_access), 1);
+
+  memcpy(target->vtable, vtable, sizeof(target->vtable));
+
+  target->count = 1;
+  target->nequiv = 1;
+  target->insn = instr;
+
+  target->instrumented = false;
+  target->selected = false;
+  target->frozen = false;
+
+  // Check the current list of candidates for duplicates
+  for (prev = NULL, current = smt->candidates; current;
+       prev = current, current = current->next) {
+
+    if (smt_equal(target, current)) {
+      current->nequiv += 1;
+      target->original = current;
+      prev = current;
+      break;
+    }
+  }
+
+  if (target->original != NULL && simulated == false) {
+    // Increment the access count of the original access
+    // (the duplicate is not linked to the chain of accesses
+    // since we're not in simulation mode)
+    target->original->count += 1;
+  }
+  else {
+    // Append the access to the list of candidates, including
+    // duplicates (we're in simulation mode)
+    if (smt->candidates == NULL) {
+      smt->candidates = target;
+    } else {
+      target->next = prev->next;
+      prev->next = target;
+    }
+  }
+
+  return target;
+}
+
+
+static void smt_detect_accesses(block *blk) {
+  insn_info *instr;
+
+  char vtable[SMT_VTABLE_SIZE];
+
+  smt_data *smt;
+  smt_access *target, *current;
+
+  unsigned int i, j;
+
+  smt = blk->smtracer;
+
+  // ------------------------------------------------------------
+  // Find candidate accesses
+  // ------------------------------------------------------------
+
+  // We reset the general-purpose version table at the beginning
+  // of a new basic block, as well as the number of
+  memset(vtable, '\0', sizeof(vtable));
+
+  for (instr = blk->begin; instr != blk->end->next; instr = instr->next) {
+
+    // Update the general-purpose register version table, if necessary
+    smt_update_vtable(instr, vtable);
+
+    // Check if the access is relevant and create an access entry
+    if (smt_is_relevant(instr)) {
+      hnotice(4, "Resolving instruction '%s' at <%#08llx>\n",
+        instr->i.x86.mnemonic, instr->orig_addr);
+
+      // The total number of relevant accesses is always
+      // incremented, regardless of whether the current access
+      // is a candidate or not
+      smt->ntotal += 1;
+
+      target = smt_resolve_access(blk, instr, vtable);
+
+      if (target->original != NULL) {
+        hnotice(5, "Found duplicate '%s' at <%#08llx>\n",
+          target->original->insn->i.x86.mnemonic, target->original->insn->orig_addr);
+
+        if (simulated == false) {
+          free(target);
+        }
+      }
+      else {
+        hnotice(5, "Found candidate '%s' at <%#08llx>\n",
+          target->insn->i.x86.mnemonic, target->insn->orig_addr);
+
+        // Updating counters for duplicate accesses is wrong,
+        // since they don't contribute to the instrumentation
+        // discipline (despite being actually instrumented)
+        smt->ncandidates += 1;
+
+        if (smt_is_irr(target)) {
+          smt->nirr += 1;
+        } else {
+          smt->nrri += 1;
+        }
+      }
+    }
+
+  }
+
+  // ------------------------------------------------------------
+  // Compute candidate access scores
+  // ------------------------------------------------------------
+
+  // We maintain a symmetric matrix of distances between any
+  // expression in the block, but we only compare those that
+  // belong to the same template class (i.e., RRI vs. IRR)
+  double distance[smt->ncandidates][smt->ncandidates];
+
+  memset(distance, '\0',
+    sizeof(double) * smt->ncandidates * smt->ncandidates);
+
+  // We don't compute distances for duplicate accesses, since
+  // they don't contribute to the instrumentation discipline
+  // (despite being actually instrumented)
+  for (i = 0, target = smt->candidates; target; target = target->next, ++i) {
+    if (target->original != NULL) {
+      continue;
+    }
+
+    for (j = 0, current = smt->candidates; current; current = current->next, ++j) {
+      if (current->original != NULL) {
+        continue;
+      }
+
+      if (target == current || distance[i][j] > 0) {
+        // If distance[i][j] is greater than zero, then we have
+        // already computed the dual case previously
+        continue;
+      }
+
+      if (smt_same_template(target, current)) {
+        if (smt_is_irr(target)) {
+          distance[i][j] += smt_distance_irr(target, current);
+        } else {
+          distance[i][j] += smt_distance_rri(target, current);
+        }
+      }
+
+      // The dual case is equivalent, so let's reuse this result
+      // to speed-up future iterations of this algorithm
+      distance[j][i] = distance[i][j];
+
+      // Compute cumulated distances (note that distance[i][j]
+      // and distance[j][i] will never be summed up)
+      target->score += distance[i][j];
+      current->score += distance[i][j];
+    }
+
+    // Compute average distances
+    if (smt_is_irr(target)) {
+      target->score /= smt->nirr;
+    } else {
+      target->score /= smt->nrri;
+    }
+
+    target->score *= target->nequiv;
+
+    hnotice(4, "Access score for '%s' at <%#08llx> is '%0.2f'\n",
+      target->insn->i.x86.mnemonic, target->insn->orig_addr, target->score);
+  }
+}
+
 
 static void smt_resolve_address(smt_access *access) {
   insn_info *pivot, *current;
@@ -926,6 +1186,7 @@ static void smt_resolve_address(smt_access *access) {
   }
 }
 
+
 static void smt_instrument_access(block *blk, smt_access *access) {
   insn_info *pivot, *current, *first;
   symbol *ref;
@@ -1051,311 +1312,212 @@ static void smt_instrument_access(block *blk, smt_access *access) {
   }
 }
 
-static size_t smt_log_accesses(block *blk, size_t *nextindex) {
-  smt_data *smt;
+
+static inline smt_access *smt_pick_next_access(smt_access *candidates) {
   smt_access *access, *highest;
 
-  double overhead;
-  size_t ninstr, cinstr, index;
+  // Find the next access to instrument according to its score
+  for (highest = NULL, access = candidates; access; access = access->next) {
+    if (access->original != NULL) {
+      // While in simulation mode, duplicate accesses will have
+      // an average score equal to 0. This is a problem when
+      // another original (i.e., not having a duplicate) access
+      // has score 0. To avoid confusion between them, we skip
+      // all the duplicates.
+      continue;
+    }
+    else if (access->frozen == true) {
+      // We avoid instrumenting accesses which are similar to
+      // others already chosen. They may be chosen at a later
+      // stage, provided that there's still room for them
+      // in the overhead bag.
+      continue;
+    }
+    else if (access->instrumented == true) {
+      // We clearly don't want to instrument the same access
+      // many times...
+      continue;
+    }
+    else if (highest == NULL) {
+      // The first intercepted access is the first occurring
+      // access which hasn't been instrumented yet and that is
+      // a feasible choice (i.e., not a duplicate, nor frozen).
+      highest = access;
+    }
+    else {
+      // We have a found a better feasible choice along the way
+      // (notice that we use strict inequality here, since our
+      // bias is the instructions order within the basic block)
+      highest = (access->score > highest->score) ? access : highest;
+    }
+  }
+
+  if (highest == NULL) {
+    return NULL;
+  }
+
+  // Now that we have found a feasible candidate, we freeze all
+  // similar expressions...
+  for (access = candidates; access; access = access->next) {
+    if (access == highest) {
+      // Nice bugs will arise if we freeze the next chosen
+      // candidate! ;)
+      continue;
+    }
+    if (smt_same_template(highest, access) == false) {
+      // Accesses belonging to different templates cannot be
+      // compared, so we skip them
+      continue;
+    }
+    else if (smt_is_irr(highest) == true
+             && smt_distance_irr(highest, access) != SCORE_EQUAL) {
+      continue;
+    }
+    else if (smt_is_irr(highest) == false
+             && smt_distance_rri(highest, access) != SCORE_EQUAL) {
+      continue;
+    }
+    else {
+      access->frozen = true;
+    }
+  }
+
+  return highest;
+}
+
+
+static size_t smt_log_accesses(block *blk) {
+  smt_data *smt;
+  smt_access *access;
+
+  double variety, accuracy;
+  size_t nchosen, index;
 
   smt = blk->smtracer;
 
-  index = *nextindex;
+  // We compute the percentage overhead as a function of the
+  // number of candidates and the user-defined accuracy
+  variety = smt_compute_variety(smt->ncandidates, smt->ntotal);
+  // overhead = smt_compute_overhead(min_accuracy, variety);
+  accuracy = smt_compute_accuracy(max_overhead, variety);
 
-  // We compute the percentage overhead as a function of
-  // the number of candidates and the user-defined accuracy
-  if (smt->ntotal == 1) {
-    // The overhead is 1 only if the accuracy is 1
-    overhead = (acc_threshold < 1) ? 0 : 1;
-  } else {
-    // The overhead depends on the total number of expressions
-    // vs. total number of candidates
-    overhead = pow(acc_threshold, (smt->ntotal - 1) / (smt->ncandidates - 1));
-  }
+  // The number of accesses that is actually instrumented is
+  // computed using the number of candidates and the overhead
+  // (notice that we use `floor` because `overhead` is a maximum,
+  // hence we cannot exceed that value.)
+  nchosen = ceil(max_overhead * smt->ncandidates);
 
-  // The number of accesses that is actually instrumented
-  // is computed using the number of candidates and the
-  // overhead
-  ninstr = ceil(overhead * smt->ncandidates);
+  // Index in the TLS buffer (block-level scope)
+  index = 0;
 
-  // Keep instrumenting until there's no more space left
-  // in our bag full of overhead...
-  for (cinstr = 0; cinstr < ninstr; cinstr += 1) {
-    highest = NULL;
+  hnotice(3, "Accuracy: %.02f; Max overhead: %.02f; Variety: %.02f; (block %u)\n",
+    accuracy, max_overhead, variety, blk->id);
 
-    // Find the next access to instrument according to its score
-    for (access = smt->candidates; access; access = access->next) {
-      if (access->original != NULL) {
-        // While in simulation mode, duplicate accesses will
-        // have an average score equal to 0. This is a problem
-        // when another original (i.e., not having a duplicate)
-        // access has score 0.
-        // To avoid confusion between the two, we skip duplicates.
-        continue;
+  // while (index < nchosen) {
+  //   smt_access *highest;
+
+  //   for (access = highest = smt->candidates; access; access = access->next) {
+  //     if (access->nequiv > highest->nequiv && access->instrumented == false) {
+  //       highest = access;
+  //     }
+  //   }
+
+  //   if (highest->nequiv == 1) {
+  //     break;
+  //   }
+
+  //   highest->selected = true;
+  //   highest->instrumented = true;
+  //   highest->index = index;
+
+  //   smt_instrument_access(blk, highest);
+
+  //   hnotice(4, "Instrumented access '%s' at <%#08llx> (index = %lu)\n",
+  //     highest->insn->i.x86.mnemonic, highest->insn->orig_addr, index);
+
+  //   index += 1;
+  // }
+
+  // Keep instrumenting until there's no more overhead left...
+  // (note that we instrument no more than `nchosen` accesses.)
+  while (index < nchosen) {
+    access = smt_pick_next_access(smt->candidates);
+
+    if (access == NULL) {
+      // There's still space in the bag, so unfreeze all accesses
+      for (access = smt->candidates; access; access = access->next) {
+        access->frozen = false;
       }
-      if (highest == NULL && access->instrumented == false) {
-        // The first intercepted access is the first occurring
-        // access which hasn't been instrumented yet
-        highest = access;
-      }
-      if (highest != NULL && access->instrumented == false) {
-        // NOTE: strict inequality, since our bias is toward the
-        // first occurring access within the basic block
-        if (access->score > highest->score) {
-          highest = access;
-        }
-      }
+
+      continue;
     }
 
-    if (highest == NULL) {
-      // There are no more accesses to instrument
-      // NOTE: it should never happen
-      hinternal();
-      break;
-    }
+    access->selected = true;
+    access->instrumented = true;
+    access->index = index;
 
-    highest->selected = true;
-    highest->instrumented = true;
-    highest->index = index++;
+    smt_instrument_access(blk, access);
 
-    smt_instrument_access(blk, highest);
+    hnotice(4, "Instrumented access '%s' at <%#08llx> (index = %lu)\n",
+      access->insn->i.x86.mnemonic, access->insn->orig_addr, index);
 
-    hnotice(3, "Instrumented access '%s' at <%#08llx> (cinstr = %lu)\n",
-      highest->insn->i.x86.mnemonic, highest->insn->orig_addr, cinstr);
+    index += 1;
   }
 
   if (simulated == true) {
     // In simulation mode we instrument all the remaining accesses,
-    // which are the union of duplicate accesses and original
-    // non-instrumented ones. In doing this, we keep track of the
-    // fact that they were not selected.
+    // which are the union of all duplicate accesses and original
+    // non-instrumented ones (possibly frozen). In doing this, we
+    // keep track of the fact that they were not selected.
     for (access = smt->candidates; access; access = access->next) {
       if (access->instrumented == true) {
+        // Already-instrumented accesses aren't selected again
         continue;
       }
-
-      if (access->original != NULL && access->original->instrumented == true) {
+      else if (access->original != NULL && access->original->instrumented == true) {
         // Duplicate of an original instrumented access, so it is
         // logically instrumented by our engine.
         if (access->original->original != NULL) {
           hinternal();
         }
         access->selected = true;
-      } else {
-        // Original, non-instrumented access, which is not logically
-        // instrumented by our engine (boooo!)
+      }
+      else {
+        // Original, non-instrumented access, which is *not* logically
+        // instrumented by our engine
         access->selected = false;
       }
 
       access->instrumented = true;
-      access->index = index++;
+      access->index = index;
 
       smt_instrument_access(blk, access);
 
-      hnotice(3, "Instrumented simulated access '%s' at <%#08llx> (cinstr = %lu)\n",
-        access->insn->i.x86.mnemonic, access->insn->orig_addr, cinstr);
+      hnotice(4, "Instrumented simulated access '%s' at <%#08llx> (index = %lu)\n",
+        access->insn->i.x86.mnemonic, access->insn->orig_addr, index);
+
+      index += 1;
     }
   }
 
-  // Update the next index prior to the next invocation
-  *nextindex = index;
+  if (index > smt->ntotal) {
+    // We can instrument at most the entirety of memory accesses
+    // within the basic block...
+    hinternal();
+  }
 
-  hnotice(2, "Total instrumented candidates: %lu; Total candidates: %lu; Total: %lu\n",
-    ninstr, smt->ncandidates, smt->ntotal);
+  hnotice(2, "Instrumented candidates: %lu; Chosen candidates: %lu; "
+    "Total candidates: %lu; Total accesses: %lu\n",
+    index, nchosen, smt->ncandidates, smt->ntotal);
 
-  return cinstr;
+  return index;
 }
 
-static void smt_update_vtable(insn_info *instr, char *vtable) {
-  insn_info_x86 *x86;
-
-  x86 = &instr->i.x86;
-
-  if (x86->dest_is_reg == true) {
-    if (x86->reg_dest >= SMT_VTABLE_SIZE) {
-      hinternal();
-    }
-
-    vtable[x86->reg_dest] += 1;
-  }
-}
-
-static smt_access *smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
-  smt_data *smt;
-  smt_access *target, *current, *prev;
-
-  smt = blk->smtracer;
-
-  // Access meta-data is created to compare the current access
-  // with the accesses already in the history
-  target = calloc(sizeof(smt_access), 1);
-
-  memcpy(target->vtable, vtable, sizeof(target->vtable));
-
-  target->count = 1;
-  target->insn = instr;
-  target->instrumented = false;
-
-  // Check the current list of candidates for duplicates
-  for (prev = NULL, current = smt->candidates; current;
-       prev = current, current = current->next) {
-
-    if (smt_equal(target, current)) {
-      target->original = current;
-      prev = current;
-      break;
-    }
-  }
-
-  if (target->original != NULL && simulated == false) {
-    // Increment the access count of the original access
-    // (the duplicate is not linked to the chain of accesses
-    // since we're not in simulation mode)
-    target->original->count += 1;
-  }
-  else {
-    // Append the access to the list of candidates, including
-    // duplicates (we're in simulation mode)
-    if (smt->candidates == NULL) {
-      smt->candidates = target;
-    } else {
-      target->next = prev->next;
-      prev->next = target;
-    }
-  }
-
-  return target;
-}
-
-static void smt_resolve_candidates(block *blk) {
-  insn_info *instr;
-
-  char vtable[SMT_VTABLE_SIZE];
-
-  smt_data *smt;
-  smt_access *target, *current;
-
-  unsigned int i, j;
-
-  smt = blk->smtracer;
-
-  // ------------------------------------------------------------
-  // Find candidate accesses
-  // ------------------------------------------------------------
-
-  // We reset the general-purpose version table at the beginning
-  // of a new basic block, as well as the number of
-  memset(vtable, '\0', sizeof(vtable));
-
-  for (instr = blk->begin; instr != blk->end->next; instr = instr->next) {
-
-    // Update the general-purpose register version table, if necessary
-    smt_update_vtable(instr, vtable);
-
-    // Check if the access is relevant and create an access entry
-    if (smt_is_relevant(instr)) {
-      hnotice(3, "Resolving instruction '%s' at <%#08llx>\n",
-        instr->i.x86.mnemonic, instr->orig_addr);
-
-      // The total number of relevant accesses is always
-      // incremented, regardless of whether the current access
-      // is a candidate or not
-      smt->ntotal += 1;
-
-      target = smt_resolve_access(blk, instr, vtable);
-
-      if (target->original != NULL) {
-        hnotice(3, "Found duplicate '%s' at <%#08llx>\n",
-          target->original->insn->i.x86.mnemonic, target->original->insn->orig_addr);
-
-        if (simulated == false) {
-          free(target);
-        }
-      }
-      else {
-        hnotice(3, "Found candidate '%s' at <%#08llx>\n",
-          target->insn->i.x86.mnemonic, target->insn->orig_addr);
-
-        // Updating counters for duplicate accesses is wrong,
-        // since they don't contribute to the instrumentation
-        // discipline (despite being actually instrumented)
-        smt->ncandidates += 1;
-
-        if (smt_is_irr(target)) {
-          smt->nirr += 1;
-        } else {
-          smt->nrri += 1;
-        }
-      }
-    }
-
-  }
-
-  // ------------------------------------------------------------
-  // Compute candidate access scores
-  // ------------------------------------------------------------
-
-  // We maintain a symmetric matrix of distances between any
-  // expression in the block, but we only compare those that
-  // belong to the same template class (i.e., RRI vs. IRR)
-  double distance[smt->ncandidates][smt->ncandidates];
-
-  memset(distance, '\0',
-    sizeof(double) * smt->ncandidates * smt->ncandidates);
-
-  // We don't compute distances for duplicate accesses, since
-  // they don't contribute to the instrumentation discipline
-  // (despite being actually instrumented)
-  for (i = 0, target = smt->candidates; target; target = target->next, ++i) {
-    if (target->original != NULL) {
-      continue;
-    }
-
-    for (j = 0, current = smt->candidates; current; current = current->next, ++j) {
-      if (current->original != NULL) {
-        continue;
-      }
-
-      if (target == current || distance[i][j] > 0) {
-        // If distance[i][j] is greater than zero, then we have
-        // already computed the dual case previously
-        continue;
-      }
-
-      if (smt_same_template(target, current)) {
-        if (smt_is_irr(target)) {
-          distance[i][j] += smt_likelihood_irr(target, current);
-        } else {
-          distance[i][j] += smt_likelihood_rri(target, current);
-        }
-      }
-
-      // The dual case is equivalent, so let's reuse this result
-      // to speed-up future iterations of this algorithm
-      distance[j][i] = distance[i][j];
-
-      // Compute cumulated distances (note that distance[i][j]
-      // and distance[j][i] will never be summed up)
-      target->score += distance[i][j];
-      current->score += distance[i][j];
-    }
-
-    // Compute average distances
-    if (smt_is_irr(target)) {
-      target->score /= smt->nirr;
-    } else {
-      target->score /= smt->nrri;
-    }
-
-    hnotice(3, "Access score for '%s' at <%#08llx> is '%0.2f'\n",
-      target->insn->i.x86.mnemonic, target->insn->orig_addr, target->score);
-  }
-}
 
 static void smt_flush_accesses(unsigned int total, symbol *callfunc, insn_info *pivot) {
   insn_info *current;
 
-  current = NULL;
+  current = pivot;
 
   // Protect old register values
   // ---------------------------
@@ -1394,39 +1556,39 @@ static void smt_flush_accesses(unsigned int total, symbol *callfunc, insn_info *
     // };
 
     unsigned char instr[86] = {
-      0xf2, 0x0f, 0x11, 0x3c, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x34, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x2c, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x24, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x1c, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x14, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x0c, 0x24,
+      0x9c,
+      0x50,
+      0x51,
+      0x52,
+      0x56,
+      0x57,
+      0x41, 0x50,
+      0x41, 0x51,
+      0x41, 0x52,
+      0x41, 0x53,
       0x48, 0x83, 0xec, 0x10,
       0xf2, 0x0f, 0x11, 0x04, 0x24,
       0x48, 0x83, 0xec, 0x10,
-      0x41, 0x53,
-      0x41, 0x52,
-      0x41, 0x51,
-      0x41, 0x50,
-      0x57,
-      0x56,
-      0x52,
-      0x51,
-      0x50,
-      0x9c,
+      0xf2, 0x0f, 0x11, 0x0c, 0x24,
+      0x48, 0x83, 0xec, 0x10,
+      0xf2, 0x0f, 0x11, 0x14, 0x24,
+      0x48, 0x83, 0xec, 0x10,
+      0xf2, 0x0f, 0x11, 0x1c, 0x24,
+      0x48, 0x83, 0xec, 0x10,
+      0xf2, 0x0f, 0x11, 0x24, 0x24,
+      0x48, 0x83, 0xec, 0x10,
+      0xf2, 0x0f, 0x11, 0x2c, 0x24,
+      0x48, 0x83, 0xec, 0x10,
+      0xf2, 0x0f, 0x11, 0x34, 0x24,
+      0x48, 0x83, 0xec, 0x10,
+      0xf2, 0x0f, 0x11, 0x3c, 0x24,
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_AFTER, &current);
 
-    // if (!ll_empty(&pivot->targetof) && !pivot->virtual) {
-    //   set_virtual_reference(pivot, current);
-    // }
+    if (!ll_empty(&pivot->targetof) && !pivot->virtual) {
+      set_virtual_reference(pivot, current);
+    }
   }
 
   // Load TLS storage
@@ -1437,7 +1599,7 @@ static void smt_flush_accesses(unsigned int total, symbol *callfunc, insn_info *
       0x64, 0x48, 0x8b, 0x3c, 0x25, 0x00, 0x00, 0x00, 0x00
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+    insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
   }
 
   // Displace to TLS buffer
@@ -1448,7 +1610,7 @@ static void smt_flush_accesses(unsigned int total, symbol *callfunc, insn_info *
       0x48, 0x8d, 0xbf, 0x00, 0x00, 0x00, 0x00
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+    insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
 
     symbol_instr_rela_create(tls_buffer_sym, current, RELOC_TLSREL_32);
   }
@@ -1463,7 +1625,7 @@ static void smt_flush_accesses(unsigned int total, symbol *callfunc, insn_info *
 
     *(uint32_t *)(instr + 3) = total;
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+    insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
   }
 
   // Store user-defined routine address
@@ -1494,7 +1656,7 @@ static void smt_flush_accesses(unsigned int total, symbol *callfunc, insn_info *
       0xe8, 0x00, 0x00, 0x00, 0x00
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
+    insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
 
     symbol_instr_rela_create(callfunc, current, RELOC_PCREL_32);
   }
@@ -1536,113 +1698,120 @@ static void smt_flush_accesses(unsigned int total, symbol *callfunc, insn_info *
     // };
 
     unsigned char instr[86] = {
-      0x9d,
-      0x58,
-      0x59,
-      0x5a,
-      0x5e,
-      0x5f,
-      0x41, 0x58,
-      0x41, 0x59,
-      0x41, 0x5a,
-      0x41, 0x5b,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x04, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x0c, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x14, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x1c, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x24, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x2c, 0x24,
+      0xf2, 0x0f, 0x10, 0x3c, 0x24,
       0x48, 0x83, 0xc4, 0x10,
       0xf2, 0x0f, 0x10, 0x34, 0x24,
       0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x3c, 0x24,
+      0xf2, 0x0f, 0x10, 0x2c, 0x24,
+      0x48, 0x83, 0xc4, 0x10,
+      0xf2, 0x0f, 0x10, 0x24, 0x24,
+      0x48, 0x83, 0xc4, 0x10,
+      0xf2, 0x0f, 0x10, 0x1c, 0x24,
+      0x48, 0x83, 0xc4, 0x10,
+      0xf2, 0x0f, 0x10, 0x14, 0x24,
+      0x48, 0x83, 0xc4, 0x10,
+      0xf2, 0x0f, 0x10, 0x0c, 0x24,
+      0x48, 0x83, 0xc4, 0x10,
+      0xf2, 0x0f, 0x10, 0x04, 0x24,
+      0x48, 0x83, 0xc4, 0x10,
+      0x41, 0x5b,
+      0x41, 0x5a,
+      0x41, 0x59,
+      0x41, 0x58,
+      0x5f,
+      0x5e,
+      0x5a,
+      0x59,
+      0x58,
+      0x9d,
     };
 
-    insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, NULL);
+    insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
   }
+
+  // TODO: Potrebbe servire aggiornare il puntatore dell'istruzione che
+  // sancisce fine del basic block, qualora essa cambi?
+
 }
 
-static size_t smt_instrument_func(function *func, symbol *callfunc) {
-  block *blk;
+static size_t smt_instrument_block(block *blk, symbol *callfunc) {
   smt_data *smt;
-
-  size_t count, index;
-
-  insn_info *instr;
   smt_access *access, *temp;
 
-  // ------------------------------------------------------------
-  // Logging
-  // ------------------------------------------------------------
-  // Relevant accesses are logged, the set of candidate instructions
-  // is created, access scores are computed and lastly some relevant
-  // accesses are eventually discarded depending on the user-defined
-  // accuracy value
+  size_t count;
 
-  // Total number of instrumented accesses for this function
+  smt = blk->smtracer;
+
+  // ----------------------------------------------------------
+  // Logging
+  // ----------------------------------------------------------
+  // Relevant accesses are logged, the set of candidate
+  // instructions is created, access scores are computed and
+  // lastly some relevant accesses are eventually discarded
+  // depending on the user-defined accuracy value
+
+  // Number of instrumented instructions in this basic block
   count = 0;
 
-  // Index in the TLS buffer (function-level scope)
-  index = 0;
+  hnotice(2, "Instrumenting block #%u (score %f [mode: %s])\n",
+    blk->id, smt->score, simulated == true ? "simulated" : "real");
 
-  for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
-    smt = blk->smtracer;
+  // Relevant accesses are detected and the set of candidate
+  // instructions is created alongside
+  smt_detect_accesses(blk);
 
-    if (smt->score < blk_score_threshold && simulated == false) {
-      // When not in simulation mode, irrelevant blocks are skipped
-      continue;
-    }
+  // A subset of relevant accesses is actually instrumented
+  // according to the requested accuracy factor
+  count = smt_log_accesses(blk);
 
-    hnotice(2, "Instrumenting block #%u (score %f [mode: %s])\n",
-      blk->id, smt->score, simulated == true ? "simulated" : "real");
+  hnotice(2, "Instrumented %lu instructions in block #%u\n",
+    count, blk->id);
 
-    // Relevant accesses are detected and the set of candidate
-    // instructions is created
-    smt_resolve_candidates(blk);
+  if (count == 0) {
+    // We don't need to do anything since the block were not
+    // instrumented at all
+    return 0;
+  }
 
-    // A subset of relevant accesses is actually instrumented
-    // according to the requested accuracy factor
-    count += smt_log_accesses(blk, &index);
+  // ----------------------------------------------------------
+  // Flushing
+  // ----------------------------------------------------------
+  // Instrumented accesses which were temporarily stored in the
+  // TLS buffer are passed to an external user-defined function
+  // which consumes them; points in the code in which calls to
+  // this function are placed are referred to as `flushpoints`
+  // and coincide with the next instruction after the last
+  // instrumented access of the current basic block.
 
-    // Free unnecessary heap memory
-    for (access = smt->candidates; access; access = temp) {
-      temp = access->next;
-
-      free(access);
+  for (access = smt->candidates; access; access = access->next) {
+    if (access->next == NULL) {
+      break;
     }
   }
 
-  // ------------------------------------------------------------
-  // Flushing
-  // ------------------------------------------------------------
-  // Instrumented accesses which were temporarily stored into the
-  // TLS buffer are passed to an external user-defined function
-  // which consumes them; the point in the code in which calls to
-  // this function are placed are referred to as `flushpoints`
+  if (access == NULL) {
+    // Something is wrong, we expect at least one access since
+    // `count` is strictly greater than 0
+    hinternal();
+  }
 
-  for (instr = func->begin_insn; instr; instr = instr->next) {
+  hnotice(2, "Found flushpoint '%s' at <%#08llx>\n",
+    access->insn->i.x86.mnemonic, access->insn->orig_addr);
 
-    if (smt_is_flushpoint(instr, func)) {
-      hnotice(2, "Found flushpoint '%s' at <%#08llx>\n",
-        instr->i.x86.mnemonic, instr->orig_addr);
+  // The user-defined routine is called with two arguments:
+  // 1) the base address of the application-wise TLS buffer
+  // 2) the total number of accesses logged in this block
+  smt_flush_accesses(count, callfunc, access->insn);
 
-      if (count > 0) {
-        // The user-defined routine is called with two arguments:
-        // 1) the base address of the application-wise TLS buffer
-        // 2) the total number of accesses logged in this function
-        smt_flush_accesses(count, callfunc, instr);
-      }
-    }
+  // Free unnecessary heap memory
+  for (access = smt->candidates; access; access = temp) {
+    temp = access->next;
+    free(access);
   }
 
   return count;
 }
+
 
 size_t smt_run(char *name, param **params, size_t numparams) {
   section *sec, *text;
@@ -1653,7 +1822,7 @@ size_t smt_run(char *name, param **params, size_t numparams) {
   block *blk;
   smt_data *smt;
 
-  size_t instrumented, count;
+  size_t count, funccount, blkcount;
 
   unsigned long numbins, numblks, binindex, *bins;
   FILE *scoredump;
@@ -1670,53 +1839,53 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 
   blk_score_threshold = atof(params[0]->value);
   chunk_size          = 1 << (atoi(params[1]->value));
-  acc_threshold       = atof(params[2]->value);
+  max_overhead        = atof(params[2]->value);
   scorefile           = params[3]->value;
   use_stack           = str_equal(params[4]->value, "true");
   simulated           = str_equal(params[5]->value, "true");
 
-  // ------------------------------------------------------------
-  // Generate block score distribution
-  // ------------------------------------------------------------
+  // // ------------------------------------------------------------
+  // // Generate block score distribution
+  // // ------------------------------------------------------------
 
-  numbins = 1 * SCORE_BIN_PRECISION / SCORE_BIN_LENGTH;
-  numblks = 0;
-  bins = calloc(numbins * sizeof(size_t), 1);
+  // numbins = 1 * SCORE_BIN_PRECISION / SCORE_BIN_LENGTH;
+  // numblks = 0;
+  // bins = calloc(numbins * sizeof(size_t), 1);
 
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
+  // for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+  //   smt = blk->smtracer;
 
-    binindex = smt->score * (SCORE_BIN_PRECISION / SCORE_BIN_LENGTH);
-    // This check is needed to cover the case of a block score = 1.0
-    // (it will certainly happen at least once on all runs, since
-    // the score is computed relative to the maximum absolute value)
-    binindex = binindex >= numbins ? numbins-1 : binindex;
+  //   binindex = smt->score * (SCORE_BIN_PRECISION / SCORE_BIN_LENGTH);
+  //   // This check is needed to cover the case of a block score = 1.0
+  //   // (it will certainly happen at least once on all runs, since
+  //   // the score is computed relative to the maximum absolute value)
+  //   binindex = binindex >= numbins ? numbins-1 : binindex;
 
-    bins[binindex] += 1;
-    numblks += 1;
-  }
+  //   bins[binindex] += 1;
+  //   numblks += 1;
+  // }
 
-  scoredump = fopen(scorefile, "w");
+  // scoredump = fopen(scorefile, "w");
 
-  if (scoredump == NULL) {
-    hinternal();
-  }
+  // if (scoredump == NULL) {
+  //   hinternal();
+  // }
 
-  for (binindex = 0; binindex < numbins; binindex += 1) {
-    fprintf(scoredump, "%lu %.05f %.05f\n",
-      binindex,
-      (double) binindex * SCORE_BIN_LENGTH / SCORE_BIN_PRECISION,
-      (double) bins[binindex] / numblks);
-  }
+  // for (binindex = 0; binindex < numbins; binindex += 1) {
+  //   fprintf(scoredump, "%lu %.05f %.05f\n",
+  //     binindex,
+  //     (double) binindex * SCORE_BIN_LENGTH / SCORE_BIN_PRECISION,
+  //     (double) bins[binindex] / numblks);
+  // }
 
-  fclose(scoredump);
-  free(bins);
+  // fclose(scoredump);
+  // free(bins);
 
   // ------------------------------------------------------------
   // Instrument the program
   // ------------------------------------------------------------
 
-  // A weak symbol is created that represents the user-defined function
+  // A weak symbol is created for the user-defined function
   for (text = NULL, sec = PROGRAM(sections)[PROGRAM(version)]; sec; sec = sec->next) {
     if (sec->type == SECTION_CODE) {
       text = sec;
@@ -1732,17 +1901,30 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 
   // We now iterate on all functions and basic blocks to instrument
   // a representative fraction of memory accesses
-  instrumented = 0;
+  count = 0;
 
   for (prev = NULL, func = PROGRAM(v_code)[PROGRAM(version)]; func;
        prev = func, func = func->next) {
 
-    if (functions_overlap(func, prev)) {
-      continue;
+    // if (functions_overlap(func, prev)) {
+    //   continue;
+    // }
+
+    funccount = 0;
+
+    for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
+      smt = blk->smtracer;
+
+      // if (smt->score < blk_score_threshold && simulated == false) {
+      //   // When not in simulation mode, irrelevant blocks are skipped
+      //   continue;
+      // }
+
+      blkcount = smt_instrument_block(blk, callfunc);
+      funccount += blkcount;
     }
 
-    count = smt_instrument_func(func, callfunc);
-    instrumented += count;
+    count += funccount;
 
     // FIXME: Currently, we don't support programs compiled
     // without `-mno-red-zone`, so for now we skip the rest
@@ -1753,7 +1935,7 @@ size_t smt_run(char *name, param **params, size_t numparams) {
     // we protect the stack in order to prevent errors resulting
     // from the infamous 😈 Red Area 😈
 
-    if (count > 0 && ll_empty(&func->callto)) {
+    if (funccount > 0 && ll_empty(&func->callto)) {
       // Protect the stack
       // -----------------
       // SUB $0x80, %rsp
@@ -1766,7 +1948,7 @@ size_t smt_run(char *name, param **params, size_t numparams) {
         INSERT_AFTER, NULL);
     }
 
-    if (count > 0 && ll_empty(&func->callto)) {
+    if (funccount > 0 && ll_empty(&func->callto)) {
       // Unprotect the stack
       // -------------------
       // ADD $0x80, %rsp
@@ -1781,5 +1963,5 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 
   }
 
-  return instrumented;
+  return count;
 }

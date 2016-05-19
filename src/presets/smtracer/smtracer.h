@@ -37,37 +37,38 @@
 
 
 typedef struct smt_access {
-  size_t count;                   // Access count
   size_t index;                   // Index in the TLS buffer
-
-  insn_info *insn;                // Instruction performing the access
-
-  bool instrumented;              // True if the access was already logged
-  bool selected;                  // True if the access is selected by the engine
-
-  struct smt_access *original;    // Pointer to the equal original access
+  size_t count;                   // Access count
+  size_t nequiv;                  // Number of equivalent accesses
+  double score;                   // Access instrumentation score
 
   char vtable[SMT_VTABLE_SIZE];   // Version table for general-purpose registers
-  double score;                   // Access instrumentation score
+  struct smt_access *original;    // Pointer to the original access
+  insn_info *insn;                // Instruction performing the access
+
+  bool instrumented;              // True if the access was already picked in
+                                  // a previous iteration of the engine
+  bool selected;                  // True if the access would be selected by the
+                                  // engine in a non-simulated run
+  bool frozen;                    // True if the access is temporarily frozen
+                                  // and is therefore ignored by the engine
 
   struct smt_access *next;
 } smt_access;
 
 
 typedef struct {
-  // Block-level features
-  block *lheader;             // Closest loop header
-  unsigned int cycles;        // Number of joined program cycles
-  double memratio;            // Memory sensitivity
-
-  double score;               // Relative score ranging in [0,1]
-
   smt_access *candidates;     // Candidates list
 
   size_t ncandidates;         // Total number of candidate memory instructions
   size_t nirr;                // Number of candidate IRR memory instructions
   size_t nrri;                // Number of candidate RRI memory instructions
   size_t ntotal;              // Total number of memory instructions
+
+  double score;               // Relative score ranging in [0,1]
+  // unsigned int cycles;        // Number of joined program cycles
+  // block *lheader;             // Closest loop header
+  // double memratio;            // Memory sensitivity
 } smt_data;
 
 
