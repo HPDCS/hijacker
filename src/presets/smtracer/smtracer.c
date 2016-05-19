@@ -46,10 +46,10 @@
 #define BUFFER_NAME_LEN   (1<<6)
 
 // Length of a single bin in the score distribution
-#define SCORE_BIN_PRECISION  1000
+#define SCORE_BIN_LENGTH      10
 
-// Length of a single bin in the score distribution
-#define SCORE_BIN_LENGTH  10
+// Maximum length precision for a single score bin
+#define SCORE_BIN_PRECISION  1000
 
 // Experimental score triple to derive the instrumentation score
 // of a single memory access expression
@@ -1056,11 +1056,11 @@ static size_t smt_log_accesses(block *blk, size_t *nextindex) {
   smt_access *access, *highest;
 
   double overhead;
-  size_t ninstr, cinstr, index;
+  size_t ninstr, cinstr, index, previndex;
 
   smt = blk->smtracer;
 
-  index = *nextindex;
+  index = previndex = *nextindex;
 
   // We compute the percentage overhead as a function of
   // the number of candidates and the user-defined accuracy
@@ -1085,26 +1085,28 @@ static size_t smt_log_accesses(block *blk, size_t *nextindex) {
 
     // Find the next access to instrument according to its score
     for (access = smt->candidates; access; access = access->next) {
+
       if (access->original != NULL) {
         // While in simulation mode, duplicate accesses will
         // have an average score equal to 0. This is a problem
         // when another original (i.e., not having a duplicate)
-        // access has score 0.
-        // To avoid confusion between the two, we skip duplicates.
+        // access has score 0. To avoid confusion between them,
+        // we skip all duplicates.
         continue;
       }
-      if (highest == NULL && access->instrumented == false) {
+      else if (highest == NULL && access->instrumented == false) {
         // The first intercepted access is the first occurring
         // access which hasn't been instrumented yet
         highest = access;
       }
-      if (highest != NULL && access->instrumented == false) {
+      else if (highest != NULL && access->instrumented == false) {
         // NOTE: strict inequality, since our bias is toward the
         // first occurring access within the basic block
         if (access->score > highest->score) {
           highest = access;
         }
       }
+
     }
 
     if (highest == NULL) {
@@ -1130,20 +1132,21 @@ static size_t smt_log_accesses(block *blk, size_t *nextindex) {
     // non-instrumented ones. In doing this, we keep track of the
     // fact that they were not selected.
     for (access = smt->candidates; access; access = access->next) {
+
       if (access->instrumented == true) {
         continue;
       }
-
-      if (access->original != NULL && access->original->instrumented == true) {
+      else if (access->original != NULL && access->original->instrumented == true) {
         // Duplicate of an original instrumented access, so it is
         // logically instrumented by our engine.
         if (access->original->original != NULL) {
           hinternal();
         }
         access->selected = true;
-      } else {
-        // Original, non-instrumented access, which is not logically
-        // instrumented by our engine (boooo!)
+      }
+      else {
+        // Original, non-instrumented access, which is *not* logically
+        // instrumented by our engine
         access->selected = false;
       }
 
@@ -1163,7 +1166,7 @@ static size_t smt_log_accesses(block *blk, size_t *nextindex) {
   hnotice(2, "Total instrumented candidates: %lu; Total candidates: %lu; Total: %lu\n",
     ninstr, smt->ncandidates, smt->ntotal);
 
-  return cinstr;
+  return (index - previndex);
 }
 
 static void smt_update_vtable(insn_info *instr, char *vtable) {
@@ -1737,9 +1740,9 @@ size_t smt_run(char *name, param **params, size_t numparams) {
   for (prev = NULL, func = PROGRAM(v_code)[PROGRAM(version)]; func;
        prev = func, func = func->next) {
 
-    if (functions_overlap(func, prev)) {
-      continue;
-    }
+    // if (functions_overlap(func, prev)) {
+    //   continue;
+    // }
 
     count = smt_instrument_func(func, callfunc);
     instrumented += count;
