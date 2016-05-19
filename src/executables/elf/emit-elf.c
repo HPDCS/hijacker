@@ -1121,6 +1121,17 @@ static void elf_fill_sections(void) {
 			// Update the symbol offset in the new '.text' section as well as
 			// its size...
 			func->symbol->offset = offset;
+
+			// If this function has any alias will update them as well
+			ll_node *alias_node;
+			symbol *alias;
+
+			for (alias_node = func->alias.first; alias_node; alias_node = alias_node->next) {
+				alias = alias_node->elem;
+
+				alias->offset = offset;
+				alias->size = func->symbol->size;
+			}
 		}
 	}
 

@@ -214,10 +214,6 @@ function * clone_function (function *func, char *suffix) {
 	clone->alias.first = clone->alias.last = NULL;
 
 	// Compose the function name
-	// size = strlen((const char *)func->name) + strlen(suffix) + 2; // one is \0, one is '_'
-	// name = malloc(sizeof(char) * size);
-	// bzero(name, size);
-	// sprintf(name, "%s_%s", func->name, suffix);
 	name = add_suffix(func->name, "_", suffix);
 
 	clone->name = name;
@@ -239,7 +235,7 @@ function * clone_function (function *func, char *suffix) {
 
 		alias_clone->func = clone;
 
-		// Adds it the the list
+		// Add it to the list
 		ll_push(&clone->alias, alias_clone);
 	}
 
