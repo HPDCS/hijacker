@@ -854,11 +854,11 @@ void link_jump_instructions(void) {
 					// the effective jump address
 					switch (PROGRAM(insn_set)) {
 						case X86_INSN:
-							if (instr->i.x86.jump_dest == 0) {
+							jmp_addr = instr->orig_addr + instr->size + instr->i.x86.jump_dest;
+							if (jmp_addr == instr->orig_addr) {
 								// We expect a non-null embedded offset...
 								hinternal();
 							}
-							jmp_addr = instr->orig_addr + instr->size + instr->i.x86.jump_dest;
 							break;
 						default:
 							hinternal();
