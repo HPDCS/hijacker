@@ -53,9 +53,10 @@
 
 // Experimental score triple to derive the instrumentation score
 // of a single memory access expression
-#define SCORE_1   1
-#define SCORE_2   3
-#define SCORE_3   5
+#define SCORE_1       1
+#define SCORE_2       3
+#define SCORE_3       5
+#define SCORE_EQUAL   11
 
 
 // Globals
@@ -106,6 +107,7 @@ inline static bool smt_is_relevant(insn_info *instr) {
   return is_relevant;
 }
 
+
 inline static bool smt_is_flushpoint(insn_info *instr, function *func) {
   bool is_flushpoint;
 
@@ -119,9 +121,11 @@ inline static bool smt_is_flushpoint(insn_info *instr, function *func) {
   return is_flushpoint;
 }
 
+
 inline static size_t smt_absdiff_imm(smt_access *target, smt_access *current) {
   return abs(target->insn->i.x86.disp - current->insn->i.x86.disp);
 }
+
 
 inline static size_t smt_absdiff_sym(smt_access *target, smt_access *current) {
   symbol *target_sym, *current_sym;
@@ -149,6 +153,7 @@ inline static size_t smt_absdiff_sym(smt_access *target, smt_access *current) {
   return chunk_size;
 }
 
+
 inline static bool smt_same_breg(smt_access *target, smt_access *current) {
   bool same;
   insn_info_x86 *target_x86, *current_x86;
@@ -165,6 +170,7 @@ inline static bool smt_same_breg(smt_access *target, smt_access *current) {
 
   return false;
 }
+
 
 inline static bool smt_same_ireg(smt_access *target, smt_access *current) {
   bool same;
@@ -187,6 +193,7 @@ inline static bool smt_same_ireg(smt_access *target, smt_access *current) {
   return false;
 }
 
+
 static bool smt_same_template(smt_access *target, smt_access *current) {
   symbol *target_sym, *current_sym;
 
@@ -206,9 +213,11 @@ static bool smt_same_template(smt_access *target, smt_access *current) {
   }
 }
 
+
 static inline bool smt_is_irr(smt_access *access) {
   return (instr_reference_weak(access->insn) != NULL);
 }
+
 
 static double smt_likelihood_irr(smt_access *target, smt_access *current) {
   double score;
@@ -227,8 +236,13 @@ static double smt_likelihood_irr(smt_access *target, smt_access *current) {
     }
   }
 
+  if (score == 0) {
+    score += SCORE_EQUAL;
+  }
+
   return score;
 }
+
 
 static double smt_likelihood_rri(smt_access *target, smt_access *current) {
   double score;
@@ -251,8 +265,13 @@ static double smt_likelihood_rri(smt_access *target, smt_access *current) {
     score += SCORE_1;
   }
 
+  if (score == 0) {
+    score += SCORE_EQUAL;
+  }
+
   return score;
 }
+
 
 static bool smt_equal(smt_access *target, smt_access *current) {
   bool same;
@@ -335,6 +354,38 @@ static bool smt_equal(smt_access *target, smt_access *current) {
 
   return false;
 }
+
+
+static inline double smt_compute_variety(size_t ncandidates, size_t ntotal) {
+  if (ntotal == 1) {
+    return 0.0;
+  }
+  else {
+    return (ncandidates - 1) / (ntotal - 1);
+  }
+}
+
+
+static inline double smt_compute_max_overhead(double accuracy, double variety) {
+  if (variety <= 0.0) {
+    return (accuracy < 1.0 ? 0.0 : 1.0);
+  }
+  else {
+    return pow(accuracy, 1 / variety);
+  }
+}
+
+
+static inline double smt_compute_min_accuracy(double overhead, double variety) {
+  if (variety <= 0.0) {
+    return (overhead > 0.0 ? 1.0 : 0.0);
+  }
+  else {
+    return pow(overhead, variety);
+  }
+}
+
+
 
 static void smt_tls_init(void) {
   symbol *sym;
@@ -421,6 +472,7 @@ static void smt_tls_init(void) {
   tls_buffer_sym->secnum = tbss_sec->index;
 }
 
+
 static bool smt_collect_loop_headers(void *elem, void *data) {
   block_edge *edge = elem;
   linked_list *headers = data;
@@ -431,6 +483,7 @@ static bool smt_collect_loop_headers(void *elem, void *data) {
 
   return true;
 }
+
 
 static bool smt_discover_loop_body(void *elem, void *data) {
   block_edge *edge = elem;
@@ -457,6 +510,7 @@ static bool smt_discover_loop_body(void *elem, void *data) {
 
   return true;
 }
+
 
 static void smt_compute_cycles(void) {
   linked_list headers;
@@ -574,6 +628,7 @@ static void smt_compute_cycles(void) {
   }
 }
 
+
 static void smt_compute_memratio(void) {
   block *blk;
   smt_data *smt;
@@ -612,6 +667,7 @@ static void smt_compute_memratio(void) {
     smt->memratio /= highest;
   }
 }
+
 
 static void smt_compute_features(void) {
   block *blk;
@@ -654,6 +710,7 @@ static void smt_compute_features(void) {
     }
   }
 }
+
 
 void smt_init(void) {
   function *func;
@@ -702,6 +759,7 @@ void smt_init(void) {
     }
   }
 }
+
 
 static void smt_resolve_address(smt_access *access) {
   insn_info *pivot, *current;
@@ -926,6 +984,7 @@ static void smt_resolve_address(smt_access *access) {
   }
 }
 
+
 static void smt_instrument_access(block *blk, smt_access *access) {
   insn_info *pivot, *current, *first;
   symbol *ref;
@@ -1051,89 +1110,139 @@ static void smt_instrument_access(block *blk, smt_access *access) {
   }
 }
 
-static size_t smt_log_accesses(block *blk, size_t *nextindex) {
-  smt_data *smt;
+
+static inline smt_access *smt_pick_next_access(smt_access *candidates) {
   smt_access *access, *highest;
 
-  double overhead;
-  size_t ninstr, cinstr, index, previndex;
-
-  smt = blk->smtracer;
-
-  index = previndex = *nextindex;
-
-  // We compute the percentage overhead as a function of
-  // the number of candidates and the user-defined accuracy
-  if (smt->ntotal == 1) {
-    // The overhead is 1 only if the accuracy is 1
-    overhead = (acc_threshold < 1) ? 0 : 1;
-  } else {
-    // The overhead depends on the total number of expressions
-    // vs. total number of candidates
-    overhead = pow(acc_threshold, (smt->ntotal - 1) / (smt->ncandidates - 1));
+  // Find the next access to instrument according to its score
+  for (highest = NULL, access = candidates; access; access = access->next) {
+    if (access->original != NULL) {
+      // While in simulation mode, duplicate accesses will have
+      // an average score equal to 0. This is a problem when
+      // another original (i.e., not having a duplicate) access
+      // has score 0. To avoid confusion between them, we skip
+      // all the duplicates.
+      continue;
+    }
+    else if (access->frozen == true) {
+      // We avoid instrumenting accesses which are similar to
+      // others already chosen. They may be chosen at a later
+      // stage, provided that there's still room for them
+      // in the overhead bag.
+      continue;
+    }
+    else if (access->instrumented == true) {
+      // We clearly don't want to instrument the same access
+      // many times...
+      continue;
+    }
+    else if (highest == NULL) {
+      // The first intercepted access is the first occurring
+      // access which hasn't been instrumented yet and that is
+      // a feasible choice (i.e., not a duplicate, nor frozen).
+      highest = access;
+    }
+    else {
+      // We have a found a better feasible choice along the way
+      // (notice that we use strict inequality here, since our
+      // bias is the instructions order within the basic block)
+      highest = (access->score > highest->score) ? access : highest;
+    }
   }
 
-  // The number of accesses that is actually instrumented
-  // is computed using the number of candidates and the
-  // overhead
-  ninstr = ceil(overhead * smt->ncandidates);
+  if (highest == NULL) {
+    return NULL;
+  }
 
-  // Keep instrumenting until there's no more space left
-  // in our bag full of overhead...
-  for (cinstr = 0; cinstr < ninstr; cinstr += 1) {
-    highest = NULL;
+  // Now that we have found a feasible candidate, we freeze all
+  // similar expressions...
+  for (access = candidates; access; access = access->next) {
+    if (access == highest) {
+      // Nice bugs will arise if we freeze the next chosen
+      // candidate! ;)
+      continue;
+    }
+    if (smt_same_template(highest, access) == false) {
+      // Accesses belonging to different templates cannot be
+      // compared, so we skip them
+      continue;
+    }
+    else if (smt_is_irr(highest) == true
+             && smt_likelihood_irr(highest, access) != SCORE_EQUAL) {
+      continue;
+    }
+    else if (smt_is_irr(highest) == false
+             && smt_likelihood_rri(highest, access) != SCORE_EQUAL) {
+      continue;
+    }
+    else {
+      access->frozen = true;
+    }
+  }
 
-    // Find the next access to instrument according to its score
-    for (access = smt->candidates; access; access = access->next) {
+  return highest;
+}
 
-      if (access->original != NULL) {
-        // While in simulation mode, duplicate accesses will
-        // have an average score equal to 0. This is a problem
-        // when another original (i.e., not having a duplicate)
-        // access has score 0. To avoid confusion between them,
-        // we skip all duplicates.
-        continue;
+
+static size_t smt_log_accesses(block *blk, size_t *nextindex) {
+  smt_data *smt;
+  smt_access *access;
+
+  double variety, overhead;
+  size_t index, previndex, ninstr, cinstr;
+
+  smt = blk->smtracer;
+  index = previndex = *nextindex;
+
+  // We compute the percentage overhead as a function of the
+  // number of candidates and the user-defined accuracy
+  variety = smt_compute_variety(smt->ncandidates, smt->ntotal);
+  overhead = smt_compute_max_overhead(acc_threshold, variety);
+
+  // The number of accesses that is actually instrumented is
+  // computed using the number of candidates and the overhead
+  // (notice that we use `floor` because `overhead` is a maximum,
+  // hence we cannot exceed that value.)
+  ninstr = floor(overhead * smt->ncandidates);
+  cinstr = 0;
+
+  hnotice(3, "Accuracy: %.02f; Overhead: %.02f; Variety: %.02f; Pickable: %u (block %u)\n",
+    acc_threshold, overhead, variety, ninstr, blk->id);
+
+  // Keep instrumenting until there's no more overhead left...
+  // (note that we can instrument no more than `ninstr` accesses.)
+  while (cinstr < ninstr) {
+    access = smt_pick_next_access(smt->candidates);
+
+    if (access == NULL) {
+      // There's still space in the bag, so we unfreeze all accesses
+      for (access = smt->candidates; access; access = access->next) {
+        access->frozen = false;
       }
-      else if (highest == NULL && access->instrumented == false) {
-        // The first intercepted access is the first occurring
-        // access which hasn't been instrumented yet
-        highest = access;
-      }
-      else if (highest != NULL && access->instrumented == false) {
-        // NOTE: strict inequality, since our bias is toward the
-        // first occurring access within the basic block
-        if (access->score > highest->score) {
-          highest = access;
-        }
-      }
 
+      continue;
     }
 
-    if (highest == NULL) {
-      // There are no more accesses to instrument
-      // NOTE: it should never happen
-      hinternal();
-      break;
-    }
+    access->selected = true;
+    access->instrumented = true;
+    access->index = index++;
 
-    highest->selected = true;
-    highest->instrumented = true;
-    highest->index = index++;
-
-    smt_instrument_access(blk, highest);
+    smt_instrument_access(blk, access);
 
     hnotice(3, "Instrumented access '%s' at <%#08llx> (cinstr = %lu)\n",
-      highest->insn->i.x86.mnemonic, highest->insn->orig_addr, cinstr);
+      access->insn->i.x86.mnemonic, access->insn->orig_addr, cinstr);
+
+    cinstr += 1;
   }
 
   if (simulated == true) {
     // In simulation mode we instrument all the remaining accesses,
-    // which are the union of duplicate accesses and original
-    // non-instrumented ones. In doing this, we keep track of the
-    // fact that they were not selected.
+    // which are the union of all duplicate accesses and original
+    // non-instrumented ones (possibly frozen). In doing this, we
+    // keep track of the fact that they were not selected.
     for (access = smt->candidates; access; access = access->next) {
-
       if (access->instrumented == true) {
+        // Already-instrumented accesses aren't selected again
         continue;
       }
       else if (access->original != NULL && access->original->instrumented == true) {
@@ -1169,6 +1278,7 @@ static size_t smt_log_accesses(block *blk, size_t *nextindex) {
   return (index - previndex);
 }
 
+
 static void smt_update_vtable(insn_info *instr, char *vtable) {
   insn_info_x86 *x86;
 
@@ -1182,6 +1292,7 @@ static void smt_update_vtable(insn_info *instr, char *vtable) {
     vtable[x86->reg_dest] += 1;
   }
 }
+
 
 static smt_access *smt_resolve_access(block *blk, insn_info *instr, char *vtable) {
   smt_data *smt;
@@ -1197,7 +1308,10 @@ static smt_access *smt_resolve_access(block *blk, insn_info *instr, char *vtable
 
   target->count = 1;
   target->insn = instr;
+
   target->instrumented = false;
+  target->selected = false;
+  target->frozen = false;
 
   // Check the current list of candidates for duplicates
   for (prev = NULL, current = smt->candidates; current;
@@ -1229,6 +1343,7 @@ static smt_access *smt_resolve_access(block *blk, insn_info *instr, char *vtable
 
   return target;
 }
+
 
 static void smt_resolve_candidates(block *blk) {
   insn_info *instr;
@@ -1355,6 +1470,7 @@ static void smt_resolve_candidates(block *blk) {
   }
 }
 
+
 static void smt_flush_accesses(unsigned int total, symbol *callfunc, insn_info *pivot) {
   insn_info *current;
 
@@ -1427,9 +1543,9 @@ static void smt_flush_accesses(unsigned int total, symbol *callfunc, insn_info *
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_BEFORE, &current);
 
-    // if (!ll_empty(&pivot->targetof) && !pivot->virtual) {
-    //   set_virtual_reference(pivot, current);
-    // }
+    if (!ll_empty(&pivot->targetof) && !pivot->virtual) {
+      set_virtual_reference(pivot, current);
+    }
   }
 
   // Load TLS storage
@@ -1646,6 +1762,7 @@ static size_t smt_instrument_func(function *func, symbol *callfunc) {
 
   return count;
 }
+
 
 size_t smt_run(char *name, param **params, size_t numparams) {
   section *sec, *text;
