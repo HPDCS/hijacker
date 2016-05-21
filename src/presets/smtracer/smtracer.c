@@ -47,7 +47,6 @@
 
 // Length of a single bin in the score distribution
 #define SCORE_BIN_LENGTH      10
-
 // Maximum length precision for a single score bin
 #define SCORE_BIN_PRECISION  1000
 
@@ -69,7 +68,7 @@ static size_t tls_buffer_size;
 // Parameters
 static double blk_score_threshold;
 static size_t chunk_size;
-static double acc_threshold;
+static double max_overhead;
 static bool use_stack;
 static bool simulated;
 static char *scorefile;
@@ -108,18 +107,18 @@ inline static bool smt_is_relevant(insn_info *instr) {
 }
 
 
-inline static bool smt_is_flushpoint(insn_info *instr, function *func) {
-  bool is_flushpoint;
+// inline static bool smt_is_flushpoint(insn_info *instr, function *func) {
+//   bool is_flushpoint;
 
-  // A flushpoint is a call to a local function plus the first instruction of the
-  // last basic block for the current function
+//   // A flushpoint is a call to a local function plus the first instruction of the
+//   // last basic block for the current function
 
-  is_flushpoint = IS_CALL(instr);
-  is_flushpoint = is_flushpoint && (instr->jumpto || instr->jumptable.size > 0);
-  is_flushpoint = is_flushpoint || instr == func->end_blk->begin;
+//   is_flushpoint = IS_CALL(instr);
+//   is_flushpoint = is_flushpoint && (instr->jumpto || instr->jumptable.size > 0);
+//   is_flushpoint = is_flushpoint || instr == func->end_blk->begin;
 
-  return is_flushpoint;
-}
+//   return is_flushpoint;
+// }
 
 
 inline static size_t smt_absdiff_imm(smt_access *target, smt_access *current) {
@@ -219,7 +218,7 @@ static inline bool smt_is_irr(smt_access *access) {
 }
 
 
-static size_t smt_likelihood_irr(smt_access *target, smt_access *current) {
+static size_t smt_distance_irr(smt_access *target, smt_access *current) {
   size_t score;
 
   score = 0;
@@ -244,7 +243,7 @@ static size_t smt_likelihood_irr(smt_access *target, smt_access *current) {
 }
 
 
-static size_t smt_likelihood_rri(smt_access *target, smt_access *current) {
+static size_t smt_distance_rri(smt_access *target, smt_access *current) {
   size_t score;
 
   score = 0;
@@ -366,22 +365,22 @@ static inline double smt_compute_variety(size_t ncandidates, size_t ntotal) {
 }
 
 
-static inline double smt_compute_max_overhead(double accuracy, double variety) {
-  if (variety <= 0.0) {
-    return (accuracy < 1.0 ? 0.0 : 1.0);
-  }
-  else {
-    return pow(accuracy, 1 / variety);
-  }
-}
+// static inline double smt_compute_overhead(double min_accuracy, double variety) {
+//   if (variety <= 0.0) {
+//     return (min_accuracy < 1.0 ? 0.0 : 1.0);
+//   }
+//   else {
+//     return pow(min_accuracy, 1 / variety);
+//   }
+// }
 
 
-static inline double smt_compute_min_accuracy(double overhead, double variety) {
-  if (variety <= 0.0) {
-    return (overhead > 0.0 ? 1.0 : 0.0);
+static inline double smt_compute_accuracy(double max_overhead, double variety) {
+  if (max_overhead <= 0.0) {
+    return 0.0;
   }
   else {
-    return pow(overhead, variety);
+    return pow(max_overhead, variety);
   }
 }
 
@@ -926,9 +925,9 @@ static void smt_detect_accesses(block *blk) {
 
       if (smt_same_template(target, current)) {
         if (smt_is_irr(target)) {
-          distance[i][j] += smt_likelihood_irr(target, current);
+          distance[i][j] += smt_distance_irr(target, current);
         } else {
-          distance[i][j] += smt_likelihood_rri(target, current);
+          distance[i][j] += smt_distance_rri(target, current);
         }
       }
 
@@ -1364,11 +1363,11 @@ static inline smt_access *smt_pick_next_access(smt_access *candidates) {
       continue;
     }
     else if (smt_is_irr(highest) == true
-             && smt_likelihood_irr(highest, access) != SCORE_EQUAL) {
+             && smt_distance_irr(highest, access) != SCORE_EQUAL) {
       continue;
     }
     else if (smt_is_irr(highest) == false
-             && smt_likelihood_rri(highest, access) != SCORE_EQUAL) {
+             && smt_distance_rri(highest, access) != SCORE_EQUAL) {
       continue;
     }
     else {
@@ -1384,7 +1383,7 @@ static size_t smt_log_accesses(block *blk) {
   smt_data *smt;
   smt_access *access;
 
-  double variety, overhead;
+  double variety, accuracy;
   size_t nchosen, index;
 
   smt = blk->smtracer;
@@ -1392,23 +1391,20 @@ static size_t smt_log_accesses(block *blk) {
   // We compute the percentage overhead as a function of the
   // number of candidates and the user-defined accuracy
   variety = smt_compute_variety(smt->ncandidates, smt->ntotal);
-  overhead = smt_compute_max_overhead(acc_threshold, variety);
-
-  if (variety <= 0.0) {
-    overhead = 1.0;
-  }
+  // overhead = smt_compute_overhead(min_accuracy, variety);
+  accuracy = smt_compute_accuracy(max_overhead, variety);
 
   // The number of accesses that is actually instrumented is
   // computed using the number of candidates and the overhead
   // (notice that we use `floor` because `overhead` is a maximum,
   // hence we cannot exceed that value.)
-  nchosen = ceil(overhead * smt->ncandidates);
+  nchosen = floor(max_overhead * smt->ncandidates);
 
   // Index in the TLS buffer (block-level scope)
   index = 0;
 
-  hnotice(3, "Accuracy: %.02f; Overhead: %.02f; Variety: %.02f; (block %u)\n",
-    acc_threshold, overhead, variety, blk->id);
+  hnotice(3, "Accuracy: %.02f; Max overhead: %.02f; Variety: %.02f; (block %u)\n",
+    accuracy, max_overhead, variety, blk->id);
 
   // Keep instrumenting until there's no more overhead left...
   // (note that we instrument no more than `nchosen` accesses.)
@@ -1528,32 +1524,32 @@ static void smt_flush_accesses(unsigned int total, symbol *callfunc, insn_info *
     // };
 
     unsigned char instr[86] = {
-      0xf2, 0x0f, 0x11, 0x3c, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x34, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x2c, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x24, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x1c, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x14, 0x24,
-      0x48, 0x83, 0xec, 0x10,
-      0xf2, 0x0f, 0x11, 0x0c, 0x24,
+      0x9c,
+      0x50,
+      0x51,
+      0x52,
+      0x56,
+      0x57,
+      0x41, 0x50,
+      0x41, 0x51,
+      0x41, 0x52,
+      0x41, 0x53,
       0x48, 0x83, 0xec, 0x10,
       0xf2, 0x0f, 0x11, 0x04, 0x24,
       0x48, 0x83, 0xec, 0x10,
-      0x41, 0x53,
-      0x41, 0x52,
-      0x41, 0x51,
-      0x41, 0x50,
-      0x57,
-      0x56,
-      0x52,
-      0x51,
-      0x50,
-      0x9c,
+      0xf2, 0x0f, 0x11, 0x0c, 0x24,
+      0x48, 0x83, 0xec, 0x10,
+      0xf2, 0x0f, 0x11, 0x14, 0x24,
+      0x48, 0x83, 0xec, 0x10,
+      0xf2, 0x0f, 0x11, 0x1c, 0x24,
+      0x48, 0x83, 0xec, 0x10,
+      0xf2, 0x0f, 0x11, 0x24, 0x24,
+      0x48, 0x83, 0xec, 0x10,
+      0xf2, 0x0f, 0x11, 0x2c, 0x24,
+      0x48, 0x83, 0xec, 0x10,
+      0xf2, 0x0f, 0x11, 0x34, 0x24,
+      0x48, 0x83, 0xec, 0x10,
+      0xf2, 0x0f, 0x11, 0x3c, 0x24,
     };
 
     insert_instructions_at(pivot, instr, sizeof(instr), INSERT_AFTER, &current);
@@ -1670,36 +1666,40 @@ static void smt_flush_accesses(unsigned int total, symbol *callfunc, insn_info *
     // };
 
     unsigned char instr[86] = {
-      0x9d,
-      0x58,
-      0x59,
-      0x5a,
-      0x5e,
-      0x5f,
-      0x41, 0x58,
-      0x41, 0x59,
-      0x41, 0x5a,
-      0x41, 0x5b,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x04, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x0c, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x14, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x1c, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x24, 0x24,
-      0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x2c, 0x24,
+      0xf2, 0x0f, 0x10, 0x3c, 0x24,
       0x48, 0x83, 0xc4, 0x10,
       0xf2, 0x0f, 0x10, 0x34, 0x24,
       0x48, 0x83, 0xc4, 0x10,
-      0xf2, 0x0f, 0x10, 0x3c, 0x24,
+      0xf2, 0x0f, 0x10, 0x2c, 0x24,
+      0x48, 0x83, 0xc4, 0x10,
+      0xf2, 0x0f, 0x10, 0x24, 0x24,
+      0x48, 0x83, 0xc4, 0x10,
+      0xf2, 0x0f, 0x10, 0x1c, 0x24,
+      0x48, 0x83, 0xc4, 0x10,
+      0xf2, 0x0f, 0x10, 0x14, 0x24,
+      0x48, 0x83, 0xc4, 0x10,
+      0xf2, 0x0f, 0x10, 0x0c, 0x24,
+      0x48, 0x83, 0xc4, 0x10,
+      0xf2, 0x0f, 0x10, 0x04, 0x24,
+      0x48, 0x83, 0xc4, 0x10,
+      0x41, 0x5b,
+      0x41, 0x5a,
+      0x41, 0x59,
+      0x41, 0x58,
+      0x5f,
+      0x5e,
+      0x5a,
+      0x59,
+      0x58,
+      0x9d,
     };
 
-    insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, NULL);
+    insert_instructions_at(current, instr, sizeof(instr), INSERT_AFTER, &current);
   }
+
+  // TODO: Potrebbe servire aggiornare il puntatore dell'istruzione che
+  // sancisce fine del basic block, qualora essa cambi?
+
 }
 
 static size_t smt_instrument_block(block *blk, symbol *callfunc) {
@@ -1807,7 +1807,7 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 
   blk_score_threshold = atof(params[0]->value);
   chunk_size          = 1 << (atoi(params[1]->value));
-  acc_threshold       = atof(params[2]->value);
+  max_overhead        = atof(params[2]->value);
   scorefile           = params[3]->value;
   use_stack           = str_equal(params[4]->value, "true");
   simulated           = str_equal(params[5]->value, "true");
