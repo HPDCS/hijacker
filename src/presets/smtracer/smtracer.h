@@ -39,6 +39,7 @@
 typedef struct smt_access {
   size_t index;                   // Index in the TLS buffer
   size_t count;                   // Access count
+  size_t nequiv;
   double score;                   // Access instrumentation score
 
   char vtable[SMT_VTABLE_SIZE];   // Version table for general-purpose registers
