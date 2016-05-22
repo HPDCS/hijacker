@@ -45,10 +45,10 @@
 // Maximum length for the name of the TLS buffer symbol
 #define BUFFER_NAME_LEN   (1<<6)
 
-// Length of a single bin in the score distribution
-#define SCORE_BIN_LENGTH      10
-// Maximum length precision for a single score bin
-#define SCORE_BIN_PRECISION  1000
+// // Length of a single bin in the block scores distribution
+// #define SCORE_BIN_LENGTH     10
+// // Maximum length precision for a single block score bin
+// #define SCORE_BIN_PRECISION  1000
 
 // Experimental score triple to derive the instrumentation score
 // of a single memory access expression
@@ -472,243 +472,243 @@ static void smt_tls_init(void) {
 }
 
 
-static bool smt_collect_loop_headers(void *elem, void *data) {
-  block_edge *edge = elem;
-  linked_list *headers = data;
+// static bool smt_collect_loop_headers(void *elem, void *data) {
+//   block_edge *edge = elem;
+//   linked_list *headers = data;
 
-  if (edge->to->visited == false && edge->to->type == BLOCK_LOOP_HEADER) {
-    ll_push(headers, edge->to);
-  }
+//   if (edge->to->visited == false && edge->to->type == BLOCK_LOOP_HEADER) {
+//     ll_push(headers, edge->to);
+//   }
 
-  return true;
-}
-
-
-static bool smt_discover_loop_body(void *elem, void *data) {
-  block_edge *edge = elem;
-  block *header = data;
-
-  smt_data *smt;
-
-  smt = edge->from->smtracer;
-
-  // Stop the visit as soon as we're exiting the cycle
-  if (edge->to == header && edge->dir == EDGE_NEXT) {
-    return false;
-  }
-
-  // If the current block hasn't been visited yet, register its loop header
-  if (edge->from->visited == false && edge->from != header) {
-    smt->lheader = header;
-  }
-
-  // Do not enter inner loops, it will be done in a dedicated visit
-  if (edge->from->type == BLOCK_LOOP_HEADER && edge->from != header) {
-    return false;
-  }
-
-  return true;
-}
+//   return true;
+// }
 
 
-static void smt_compute_cycles(void) {
-  linked_list headers;
-  block *blk, *header;
-  smt_data *smt;
-  function *func;
-  ll_node *caller, *called;
+// static bool smt_discover_loop_body(void *elem, void *data) {
+//   block_edge *edge = elem;
+//   block *header = data;
 
-  // First step: collect loop headers
-  hnotice(3, "Collecting loop headers...\n");
+//   smt_data *smt;
 
-  ll_init(&headers);
+//   smt = edge->from->smtracer;
 
-  for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
-    graph_visit visit = {
-      .payload   = &headers,
-      .policy    = VISIT_DEPTH,
-      .dir       = VISIT_FORWARD,
-      .pre_func  = smt_collect_loop_headers,
-      .post_func = NULL
-    };
+//   // Stop the visit as soon as we're exiting the cycle
+//   if (edge->to == header && edge->dir == EDGE_NEXT) {
+//     return false;
+//   }
 
-    block_graph_visit(func->source->in.first->elem, &visit);
-  }
+//   // If the current block hasn't been visited yet, register its loop header
+//   if (edge->from->visited == false && edge->from != header) {
+//     smt->lheader = header;
+//   }
 
-  // Second step: discover loop bodies
-  hnotice(3, "Discovering loop bodies...\n");
+//   // Do not enter inner loops, it will be done in a dedicated visit
+//   if (edge->from->type == BLOCK_LOOP_HEADER && edge->from != header) {
+//     return false;
+//   }
 
-  while (!ll_empty(&headers)) {
-    header = ll_pop(&headers);
-
-    block_edge edge = { EDGE_INIT, EDGE_NEXT, header, NULL };
-    graph_visit visit = {
-      .payload   = header,
-      .policy    = VISIT_DEPTH,
-      .dir       = VISIT_BACKWARD,
-      .pre_func  = smt_discover_loop_body,
-      .post_func = NULL
-    };
-
-    block_graph_visit(&edge, &visit);
-  }
-
-  // Third step: compute the number of cycles a block participates to
-  hnotice(3, "Computing cycles feature...\n");
-
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
-
-    // A loop header participates in its own loop
-    if (blk->type == BLOCK_LOOP_HEADER) {
-      smt->cycles += 1;
-    }
-
-    header = smt->lheader;
-    while (header) {
-      smt->cycles += 1;
-      header = ((smt_data *)header->smtracer)->lheader;
-    }
-
-    hnotice(6, "Block #%u participates to %u cycles...\n", blk->id, smt->cycles);
-  }
-
-  // Fourth step: ride CALL instructions to see if some blocks actually
-  // participate to a higher number of cycles across function calls
-  hnotice(3, "Extending cycle feature to block across different functions...\n");
-
-  unsigned int hottest;
-  linked_list queue = { NULL, NULL };
-
-  for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
-    if (func->calledfrom.first == NULL) {
-      ll_push(&queue, func);
-    }
-  }
-
-  while(!ll_empty(&queue)) {
-    func = ll_pop(&queue);
-    hottest = 0;
-
-    if (func->visited == true) {
-      continue;
-    } else {
-      func->visited = true;
-    }
-
-    for (caller = func->calledfrom.first; caller; caller = caller->next) {
-      blk = caller->elem;
-      smt = blk->smtracer;
-
-      hnotice(4, "Caller block #%u for function '%s' participates to %u cycles\n",
-        blk->id, func->name, smt->cycles);
-
-      if (hottest < smt->cycles) {
-        hottest = smt->cycles;
-      }
-    }
-
-    hnotice(4, "Cycle feature will be extended by %u in func '%s'\n",
-      hottest, func->name);
-
-    for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
-      smt = blk->smtracer;
-
-      smt->cycles += hottest;
-    }
-
-    for (called = func->callto.first; called; called = called->next) {
-      ll_push(&queue, called->elem);
-    }
-  }
-
-  for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
-    func->visited = false;
-  }
-}
+//   return true;
+// }
 
 
-static void smt_compute_memratio(void) {
-  block *blk;
-  smt_data *smt;
+// static void smt_compute_cycles(void) {
+//   linked_list headers;
+//   block *blk, *header;
+//   smt_data *smt;
+//   function *func;
+//   ll_node *caller, *called;
 
-  insn_info *pivot;
-  bool is_relevant;
+//   // First step: collect loop headers
+//   hnotice(3, "Collecting loop headers...\n");
 
-  size_t memcount, highest;
+//   ll_init(&headers);
 
-  highest = 0;
+//   for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
+//     graph_visit visit = {
+//       .payload   = &headers,
+//       .policy    = VISIT_DEPTH,
+//       .dir       = VISIT_FORWARD,
+//       .pre_func  = smt_collect_loop_headers,
+//       .post_func = NULL
+//     };
 
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
-    memcount = 0;
+//     block_graph_visit(func->source->in.first->elem, &visit);
+//   }
 
-    for (pivot = blk->begin; pivot != blk->end->next; pivot = pivot->next) {
-      is_relevant = smt_is_relevant(pivot);
+//   // Second step: discover loop bodies
+//   hnotice(3, "Discovering loop bodies...\n");
 
-      if (is_relevant) {
-        memcount += 1;
-      }
-    }
+//   while (!ll_empty(&headers)) {
+//     header = ll_pop(&headers);
 
-    smt->memratio = memcount * memcount / blk->length;
+//     block_edge edge = { EDGE_INIT, EDGE_NEXT, header, NULL };
+//     graph_visit visit = {
+//       .payload   = header,
+//       .policy    = VISIT_DEPTH,
+//       .dir       = VISIT_BACKWARD,
+//       .pre_func  = smt_discover_loop_body,
+//       .post_func = NULL
+//     };
 
-    if (highest < memcount) {
-      highest = memcount;
-    }
-  }
+//     block_graph_visit(&edge, &visit);
+//   }
 
-  highest = highest > 0 ? highest : 1;
+//   // Third step: compute the number of cycles a block participates to
+//   hnotice(3, "Computing cycles feature...\n");
 
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
+//   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+//     smt = blk->smtracer;
 
-    smt->memratio /= highest;
-  }
-}
+//     // A loop header participates in its own loop
+//     if (blk->type == BLOCK_LOOP_HEADER) {
+//       smt->cycles += 1;
+//     }
+
+//     header = smt->lheader;
+//     while (header) {
+//       smt->cycles += 1;
+//       header = ((smt_data *)header->smtracer)->lheader;
+//     }
+
+//     hnotice(6, "Block #%u participates to %u cycles...\n", blk->id, smt->cycles);
+//   }
+
+//   // Fourth step: ride CALL instructions to see if some blocks actually
+//   // participate to a higher number of cycles across function calls
+//   hnotice(3, "Extending cycle feature to block across different functions...\n");
+
+//   unsigned int hottest;
+//   linked_list queue = { NULL, NULL };
+
+//   for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
+//     if (func->calledfrom.first == NULL) {
+//       ll_push(&queue, func);
+//     }
+//   }
+
+//   while(!ll_empty(&queue)) {
+//     func = ll_pop(&queue);
+//     hottest = 0;
+
+//     if (func->visited == true) {
+//       continue;
+//     } else {
+//       func->visited = true;
+//     }
+
+//     for (caller = func->calledfrom.first; caller; caller = caller->next) {
+//       blk = caller->elem;
+//       smt = blk->smtracer;
+
+//       hnotice(4, "Caller block #%u for function '%s' participates to %u cycles\n",
+//         blk->id, func->name, smt->cycles);
+
+//       if (hottest < smt->cycles) {
+//         hottest = smt->cycles;
+//       }
+//     }
+
+//     hnotice(4, "Cycle feature will be extended by %u in func '%s'\n",
+//       hottest, func->name);
+
+//     for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
+//       smt = blk->smtracer;
+
+//       smt->cycles += hottest;
+//     }
+
+//     for (called = func->callto.first; called; called = called->next) {
+//       ll_push(&queue, called->elem);
+//     }
+//   }
+
+//   for (func = PROGRAM(v_code)[PROGRAM(version)]; func; func = func->next) {
+//     func->visited = false;
+//   }
+// }
 
 
-static void smt_compute_features(void) {
-  block *blk;
-  smt_data *smt;
-  float highest;
+// static void smt_compute_memratio(void) {
+//   block *blk;
+//   smt_data *smt;
 
-  // Blocks are augmented with extra information
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    hnotice(6, "Allocating memory for smtracer at block #%u\n", blk->id);
+//   insn_info *pivot;
+//   bool is_relevant;
 
-    blk->smtracer = calloc(sizeof(smt_data), 1);
-  }
+//   size_t memcount, highest;
 
-  // Features are computed
-  smt_compute_cycles();
-  smt_compute_memratio();
+//   highest = 0;
 
-  // The total absolute score is computed for each block
-  highest = 0;
+//   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+//     smt = blk->smtracer;
+//     memcount = 0;
 
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
+//     for (pivot = blk->begin; pivot != blk->end->next; pivot = pivot->next) {
+//       is_relevant = smt_is_relevant(pivot);
 
-    smt->score = (smt->cycles + 1) * smt->memratio;
+//       if (is_relevant) {
+//         memcount += 1;
+//       }
+//     }
 
-    if (highest < smt->score) {
-      highest = smt->score;
-    }
-  }
+//     smt->memratio = memcount * memcount / blk->length;
 
-  // The total relative score is computed based on the highest absolute one
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
+//     if (highest < memcount) {
+//       highest = memcount;
+//     }
+//   }
 
-    if (highest <= 0) {
-      smt->score = 1.0;
-    }
-    else {
-      smt->score /= highest;
-    }
-  }
-}
+//   highest = highest > 0 ? highest : 1;
+
+//   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+//     smt = blk->smtracer;
+
+//     smt->memratio /= highest;
+//   }
+// }
+
+
+// static void smt_compute_features(void) {
+//   block *blk;
+//   smt_data *smt;
+//   float highest;
+
+//   // Blocks are augmented with extra information
+//   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+//     hnotice(6, "Allocating memory for smtracer at block #%u\n", blk->id);
+
+//     blk->smtracer = calloc(sizeof(smt_data), 1);
+//   }
+
+//   // Features are computed
+//   smt_compute_cycles();
+//   smt_compute_memratio();
+
+//   // The total absolute score is computed for each block
+//   highest = 0;
+
+//   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+//     smt = blk->smtracer;
+
+//     smt->score = (smt->cycles + 1) * smt->memratio;
+
+//     if (highest < smt->score) {
+//       highest = smt->score;
+//     }
+//   }
+
+//   // The total relative score is computed based on the highest absolute one
+//   for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+//     smt = blk->smtracer;
+
+//     if (highest <= 0) {
+//       smt->score = 1.0;
+//     }
+//     else {
+//       smt->score /= highest;
+//     }
+//   }
+// }
 
 
 void smt_init(void) {
@@ -743,20 +743,20 @@ void smt_init(void) {
   // address space
   smt_tls_init();
 
-  // Block-level features are computed to later instrument basic blocks according
-  // to user-defined blk_score_thresholds
-  smt_compute_features();
+  // // Block-level features are computed to later instrument basic blocks according
+  // // to user-defined blk_score_thresholds
+  // smt_compute_features();
 
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
+  // for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+  //   smt = blk->smtracer;
 
-    hnotice(2, "Block %u at <%#08llx> has score %0.3f\n",
-      blk->id, blk->begin->orig_addr, smt->score);
+  //   hnotice(2, "Block %u at <%#08llx> has score %0.3f\n",
+  //     blk->id, blk->begin->orig_addr, smt->score);
 
-    if (highest < smt->score) {
-      highest = smt->score;
-    }
-  }
+  //   if (highest < smt->score) {
+  //     highest = smt->score;
+  //   }
+  // }
 }
 
 
@@ -948,7 +948,7 @@ static void smt_detect_accesses(block *blk) {
       target->score /= smt->nrri;
     }
 
-    target->score *= target->nequiv;
+    // target->score *= target->nequiv;
 
     hnotice(4, "Access score for '%s' at <%#08llx> is '%0.2f'\n",
       target->insn->i.x86.mnemonic, target->insn->orig_addr, target->score);
@@ -1398,13 +1398,38 @@ static size_t smt_log_accesses(block *blk) {
   // computed using the number of candidates and the overhead
   // (notice that we use `floor` because `overhead` is a maximum,
   // hence we cannot exceed that value.)
-  nchosen = floor(max_overhead * smt->ncandidates);
+  nchosen = ceil(max_overhead * smt->ncandidates);
 
   // Index in the TLS buffer (block-level scope)
   index = 0;
 
   hnotice(3, "Accuracy: %.02f; Max overhead: %.02f; Variety: %.02f; (block %u)\n",
     accuracy, max_overhead, variety, blk->id);
+
+  while (index < nchosen) {
+    smt_access *highest;
+
+    for (access = highest = smt->candidates; access; access = access->next) {
+      if (highest->nequiv > access->nequiv && access->instrumented == false) {
+        break;
+      }
+    }
+
+    if (highest->nequiv == 1) {
+      break;
+    }
+
+    access->selected = true;
+    access->instrumented = true;
+    access->index = index;
+
+    smt_instrument_access(blk, access);
+
+    hnotice(4, "Instrumented access '%s' at <%#08llx> (index = %lu)\n",
+      access->insn->i.x86.mnemonic, access->insn->orig_addr, index);
+
+    index += 1;
+  }
 
   // Keep instrumenting until there's no more overhead left...
   // (note that we instrument no more than `nchosen` accesses.)
@@ -1812,42 +1837,42 @@ size_t smt_run(char *name, param **params, size_t numparams) {
   use_stack           = str_equal(params[4]->value, "true");
   simulated           = str_equal(params[5]->value, "true");
 
-  // ------------------------------------------------------------
-  // Generate block score distribution
-  // ------------------------------------------------------------
+  // // ------------------------------------------------------------
+  // // Generate block score distribution
+  // // ------------------------------------------------------------
 
-  numbins = 1 * SCORE_BIN_PRECISION / SCORE_BIN_LENGTH;
-  numblks = 0;
-  bins = calloc(numbins * sizeof(size_t), 1);
+  // numbins = 1 * SCORE_BIN_PRECISION / SCORE_BIN_LENGTH;
+  // numblks = 0;
+  // bins = calloc(numbins * sizeof(size_t), 1);
 
-  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
-    smt = blk->smtracer;
+  // for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+  //   smt = blk->smtracer;
 
-    binindex = smt->score * (SCORE_BIN_PRECISION / SCORE_BIN_LENGTH);
-    // This check is needed to cover the case of a block score = 1.0
-    // (it will certainly happen at least once on all runs, since
-    // the score is computed relative to the maximum absolute value)
-    binindex = binindex >= numbins ? numbins-1 : binindex;
+  //   binindex = smt->score * (SCORE_BIN_PRECISION / SCORE_BIN_LENGTH);
+  //   // This check is needed to cover the case of a block score = 1.0
+  //   // (it will certainly happen at least once on all runs, since
+  //   // the score is computed relative to the maximum absolute value)
+  //   binindex = binindex >= numbins ? numbins-1 : binindex;
 
-    bins[binindex] += 1;
-    numblks += 1;
-  }
+  //   bins[binindex] += 1;
+  //   numblks += 1;
+  // }
 
-  scoredump = fopen(scorefile, "w");
+  // scoredump = fopen(scorefile, "w");
 
-  if (scoredump == NULL) {
-    hinternal();
-  }
+  // if (scoredump == NULL) {
+  //   hinternal();
+  // }
 
-  for (binindex = 0; binindex < numbins; binindex += 1) {
-    fprintf(scoredump, "%lu %.05f %.05f\n",
-      binindex,
-      (double) binindex * SCORE_BIN_LENGTH / SCORE_BIN_PRECISION,
-      (double) bins[binindex] / numblks);
-  }
+  // for (binindex = 0; binindex < numbins; binindex += 1) {
+  //   fprintf(scoredump, "%lu %.05f %.05f\n",
+  //     binindex,
+  //     (double) binindex * SCORE_BIN_LENGTH / SCORE_BIN_PRECISION,
+  //     (double) bins[binindex] / numblks);
+  // }
 
-  fclose(scoredump);
-  free(bins);
+  // fclose(scoredump);
+  // free(bins);
 
   // ------------------------------------------------------------
   // Instrument the program
@@ -1883,10 +1908,10 @@ size_t smt_run(char *name, param **params, size_t numparams) {
     for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
       smt = blk->smtracer;
 
-      if (smt->score < blk_score_threshold && simulated == false) {
-        // When not in simulation mode, irrelevant blocks are skipped
-        continue;
-      }
+      // if (smt->score < blk_score_threshold && simulated == false) {
+      //   // When not in simulation mode, irrelevant blocks are skipped
+      //   continue;
+      // }
 
       blkcount = smt_instrument_block(blk, callfunc);
       funccount += blkcount;

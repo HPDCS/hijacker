@@ -39,7 +39,7 @@
 typedef struct smt_access {
   size_t index;                   // Index in the TLS buffer
   size_t count;                   // Access count
-  size_t nequiv;
+  size_t nequiv;                  // Number of equivalent accesses
   double score;                   // Access instrumentation score
 
   char vtable[SMT_VTABLE_SIZE];   // Version table for general-purpose registers
@@ -58,7 +58,6 @@ typedef struct smt_access {
 
 
 typedef struct {
-  double score;               // Relative score ranging in [0,1]
   smt_access *candidates;     // Candidates list
 
   size_t ncandidates;         // Total number of candidate memory instructions
@@ -66,9 +65,10 @@ typedef struct {
   size_t nrri;                // Number of candidate RRI memory instructions
   size_t ntotal;              // Total number of memory instructions
 
-  unsigned int cycles;        // Number of joined program cycles
-  block *lheader;             // Closest loop header
-  double memratio;            // Memory sensitivity
+  // double score;               // Relative score ranging in [0,1]
+  // unsigned int cycles;        // Number of joined program cycles
+  // block *lheader;             // Closest loop header
+  // double memratio;            // Memory sensitivity
 } smt_data;
 
 
