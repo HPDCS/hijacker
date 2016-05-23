@@ -738,6 +738,13 @@ void smt_init(void) {
 
   tls_buffer_size = highest;
 
+  // Blocks are augmented with extra information
+  for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
+    hnotice(6, "Allocating memory for smtracer at block #%u\n", blk->id);
+
+    blk->smtracer = calloc(sizeof(smt_data), 1);
+  }
+
   // The application's IBR is augmented with TLS-enabling sections and symbols
   // that allow the instrumented logic to store data into the application's
   // address space
