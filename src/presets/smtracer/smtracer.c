@@ -955,7 +955,7 @@ static void smt_detect_accesses(block *blk) {
       target->score /= smt->nrri;
     }
 
-    // target->score *= target->nequiv;
+    target->score *= target->nequiv;
 
     hnotice(4, "Access score for '%s' at <%#08llx> is '%0.2f'\n",
       target->insn->i.x86.mnemonic, target->insn->orig_addr, target->score);
@@ -1413,30 +1413,30 @@ static size_t smt_log_accesses(block *blk) {
   hnotice(3, "Accuracy: %.02f; Max overhead: %.02f; Variety: %.02f; (block %u)\n",
     accuracy, max_overhead, variety, blk->id);
 
-  while (index < nchosen) {
-    smt_access *highest;
+  // while (index < nchosen) {
+  //   smt_access *highest;
 
-    for (access = highest = smt->candidates; access; access = access->next) {
-      if (highest->nequiv > access->nequiv && access->instrumented == false) {
-        break;
-      }
-    }
+  //   for (access = highest = smt->candidates; access; access = access->next) {
+  //     if (access->nequiv > highest->nequiv && access->instrumented == false) {
+  //       highest = access;
+  //     }
+  //   }
 
-    if (highest->nequiv == 1) {
-      break;
-    }
+  //   if (highest->nequiv == 1) {
+  //     break;
+  //   }
 
-    access->selected = true;
-    access->instrumented = true;
-    access->index = index;
+  //   highest->selected = true;
+  //   highest->instrumented = true;
+  //   highest->index = index;
 
-    smt_instrument_access(blk, access);
+  //   smt_instrument_access(blk, highest);
 
-    hnotice(4, "Instrumented access '%s' at <%#08llx> (index = %lu)\n",
-      access->insn->i.x86.mnemonic, access->insn->orig_addr, index);
+  //   hnotice(4, "Instrumented access '%s' at <%#08llx> (index = %lu)\n",
+  //     highest->insn->i.x86.mnemonic, highest->insn->orig_addr, index);
 
-    index += 1;
-  }
+  //   index += 1;
+  // }
 
   // Keep instrumenting until there's no more overhead left...
   // (note that we instrument no more than `nchosen` accesses.)
