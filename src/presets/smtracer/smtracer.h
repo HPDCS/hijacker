@@ -65,7 +65,7 @@ typedef struct {
   size_t nrri;                // Number of candidate RRI memory instructions
   size_t ntotal;              // Total number of memory instructions
 
-  // double score;               // Relative score ranging in [0,1]
+  double score;               // Relative score ranging in [0,1]
   // unsigned int cycles;        // Number of joined program cycles
   // block *lheader;             // Closest loop header
   // double memratio;            // Memory sensitivity
