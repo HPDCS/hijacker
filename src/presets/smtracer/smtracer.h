@@ -33,42 +33,54 @@
 #define PRESET_SMTRACER "smtracer"
 
 // Number of general-purpose registers on x86-64
-#define SMT_VTABLE_SIZE 16
+#define SMT_X86_VTABLE_SIZE 16
+// Code number of the stack pointer register on x86-(64)
+#define SMT_X86_RBP         5
 
 
+// Selective memory tracer data for a single memory instruction
 typedef struct smt_access {
-  size_t index;                   // Index in the TLS buffer
-  size_t count;                   // Access count
-  size_t nequiv;                  // Number of equivalent accesses
-  double score;                   // Access instrumentation score
+	size_t index;                      // Index in the TLS buffer
+	size_t count;                      // Block-wise memory access count
+	size_t nequiv;                     // Number of equivalent accesses
+	double score;                      // Access instrumentation score
 
-  char vtable[SMT_VTABLE_SIZE];   // Version table for general-purpose registers
-  struct smt_access *original;    // Pointer to the original access
-  insn_info *insn;                // Instruction performing the access
+	insn_info *insn;                   // Instruction performing the access
+	char vtable[SMT_X86_VTABLE_SIZE];  // Version table for general-purpose registers
 
-  bool instrumented;              // True if the access was already picked in
-                                  // a previous iteration of the engine
-  bool selected;                  // True if the access would be selected by the
-                                  // engine in a non-simulated run
-  bool frozen;                    // True if the access is temporarily frozen
-                                  // and is therefore ignored by the engine
+	struct smt_access *original;       // Pointer to the original access
 
-  struct smt_access *next;
+	bool instrumented;                 // True if the access was already picked in
+	                                   // a previous iteration of the engine
+	bool selected;                     // True if the access would be selected by the
+	                                   // engine in a non-simulated run
+	bool frozen;                       // True if the access is temporarily frozen
+	                                   // and is therefore ignored by the engine
+
+	struct smt_access *next;
 } smt_access;
 
 
+// Selective memory tracer data for a single basic block
 typedef struct {
-  smt_access *candidates;     // Candidates list
+	bool selected;              // True if the block is selected by the engine
+	double score;               // Relative score ranging in [0,1]
+	double memratio;            // Memory sensitivity
+	unsigned int cycledepth;    // Total number of joined program cycles
 
-  size_t ncandidates;         // Total number of candidate memory instructions
-  size_t nirr;                // Number of candidate IRR memory instructions
-  size_t nrri;                // Number of candidate RRI memory instructions
-  size_t ntotal;              // Total number of memory instructions
+	block *lheader;             // Closest loop header
+	smt_access *uniques;        // Candidates list
 
-  double score;               // Relative score ranging in [0,1]
-  // unsigned int cycles;        // Number of joined program cycles
-  // block *lheader;             // Closest loop header
-  // double memratio;            // Memory sensitivity
+	double abserror;            // Absolute instrumentation error
+	double variety;             // Block variety
+	size_t nchosen;             // Total number of chosen uniques
+	size_t nirrsim;             // Total number of similar IRR uniques
+	size_t nrrisim;             // Total number of similar RRI uniques
+	size_t nunique;             // Total number of unique memory instructions
+	size_t nirrtot;             // Total number of unique IRR memory instructions
+	size_t nrritot;             // Total number of unique RRI memory instructions
+	size_t nmtotal;             // Total number of memory instructions
+	size_t nitotal;             // Total number of instructions
 } smt_data;
 
 
