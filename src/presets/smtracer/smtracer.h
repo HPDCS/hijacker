@@ -35,50 +35,50 @@
 // Number of general-purpose registers on x86-64
 #define SMT_X86_VTABLE_SIZE 16
 // Code number of the stack pointer register on x86-(64)
-#define SMT_X86_RSP         5
+#define SMT_X86_RBP         5
 
 
 // Selective memory tracer data for a single memory instruction
 typedef struct smt_access {
-  size_t index;                      // Index in the TLS buffer
-  size_t count;                      // Block-wise memory access count
-  size_t nequiv;                     // Number of equivalent accesses
-  double score;                      // Access instrumentation score
+	size_t index;                      // Index in the TLS buffer
+	size_t count;                      // Block-wise memory access count
+	size_t nequiv;                     // Number of equivalent accesses
+	double score;                      // Access instrumentation score
 
-  insn_info *insn;                   // Instruction performing the access
-  char vtable[SMT_X86_VTABLE_SIZE];  // Version table for general-purpose registers
+	insn_info *insn;                   // Instruction performing the access
+	char vtable[SMT_X86_VTABLE_SIZE];  // Version table for general-purpose registers
 
-  struct smt_access *original;       // Pointer to the original access
+	struct smt_access *original;       // Pointer to the original access
 
-  bool instrumented;                 // True if the access was already picked in
-                                     // a previous iteration of the engine
-  bool selected;                     // True if the access would be selected by the
-                                     // engine in a non-simulated run
-  bool frozen;                       // True if the access is temporarily frozen
-                                     // and is therefore ignored by the engine
+	bool instrumented;                 // True if the access was already picked in
+	                                   // a previous iteration of the engine
+	bool selected;                     // True if the access would be selected by the
+	                                   // engine in a non-simulated run
+	bool frozen;                       // True if the access is temporarily frozen
+	                                   // and is therefore ignored by the engine
 
-  struct smt_access *next;
+	struct smt_access *next;
 } smt_access;
 
 
 // Selective memory tracer data for a single basic block
 typedef struct {
-  bool selected;              // True if the block is selected by the engine
-  double score;               // Relative score ranging in [0,1]
-  double memratio;            // Memory sensitivity
-  unsigned int cycledepth;    // Total number of joined program cycles
+	bool selected;              // True if the block is selected by the engine
+	double score;               // Relative score ranging in [0,1]
+	double memratio;            // Memory sensitivity
+	unsigned int cycledepth;    // Total number of joined program cycles
 
-  block *lheader;             // Closest loop header
-  smt_access *uniques;        // Candidates list
+	block *lheader;             // Closest loop header
+	smt_access *uniques;        // Candidates list
 
-  double variety;             // Block variety
-  size_t nchosen;             // Total number of chosen uniques
-  size_t nirrsim;             // Total number of similar IRR uniques
-  size_t nrrisim;             // Total number of similar RRI uniques
-  size_t nunique;             // Total number of unique memory instructions
-  size_t nirrtot;             // Total number of unique IRR memory instructions
-  size_t nrritot;             // Total number of unique RRI memory instructions
-  size_t nmtotal;             // Total number of memory instructions
+	double variety;             // Block variety
+	size_t nchosen;             // Total number of chosen uniques
+	size_t nirrsim;             // Total number of similar IRR uniques
+	size_t nrrisim;             // Total number of similar RRI uniques
+	size_t nunique;             // Total number of unique memory instructions
+	size_t nirrtot;             // Total number of unique IRR memory instructions
+	size_t nrritot;             // Total number of unique RRI memory instructions
+	size_t nmtotal;             // Total number of memory instructions
 } smt_data;
 
 

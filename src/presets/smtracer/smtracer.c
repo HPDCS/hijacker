@@ -44,6 +44,9 @@
 // - Fast PUSHF/POPF
 // - FXSAVE/FXRSTOR
 
+// TODO: no_stack deve escludere anche gli spiazzamenti da %rsp
+// (attualmente solo %rbp)
+
 
 // Maximum name for a filename in characters
 #define MAX_NAME_LEN 2048
@@ -72,41 +75,66 @@ static symbol *tbss_sym;
 static symbol *tls_buffer_sym;
 static size_t tls_buffer_size;
 
-static struct {
-	size_t maxcycledepth;  // Maximum number of cycles in the program
-
-	size_t *nblktot;       // Cumulated number of basic blocks per cycle depth
-	size_t *nblksel;       // Cumulated number of selected basic blocks per cycle depth
-	size_t *nchosen;       // Cumulated number of chosen uniques per cycle depth
-	size_t *nirrsim;       // Cumulated number of similar IRR uniques per cycle depth
-	size_t *nrrisim;       // Cumulated number of similar RRI uniques per cycle depth
-	size_t *nunique;       // Cumulated number of unique memory instructions per cycle depth
-	size_t *nirrtot;       // Cumulated number of unique IRR memory instructions per cycle depth
-	size_t *nrritot;       // Cumulated number of unique RRI memory instructions per cycle depth
-	size_t *nmtotal;       // Cumulated number of memory instructions per cycle depth
-	size_t *nitotal;       // Cumulated number of instructions per cycle depth
-
-	double *achosen;       // Average number of chosen uniques per cycle depth
-	double *aunique;       // Average number of unique memory instructions per cycle depth
-	double *airrtot;       // Average number of unique IRR memory instructions per cycle depth
-	double *arritot;       // Average number of unique RRI memory instructions per cycle depth
-	double *amtotal;       // Average number of memory instructions per cycle depth
-} smt_stats_db;
-
 
 // Parameters
-static double blk_score_threshold;  // Minimum score that a block must possess
-                                    // in order to be considered for instrumentation
-static double instrument_factor;    // Cost-controlling instrumentation factor,
-                                    // with effects on both accuracy and overhead
-static size_t chunk_size;           // Chunk size granularity of memory tracing,
-                                    // as a base-2 exponent
-static char *testname;              // Name of this run of smtracer, used e.g.
-                                    // to generate statistical reports
-static bool simulate;               // If true, simulates a run of the selective
-                                    // engine but instruments all accesses
-static bool print_stats;            // If true, generates statistical reports
-static bool trace_stack;            // If false, discards tracing stack accesses
+static struct {
+	double block_threshold;      // Minimum score that a block must possess
+	                             // in order to be considered for instrumentation
+	double instrument_factor;    // Cost-controlling instrumentation factor,
+	                             // with effects on both accuracy and overhead
+	size_t chunk_size;           // Chunk size granularity of memory tracing,
+	                             // as a base-2 exponent
+	char *testname;              // Name of this run of smtracer, used e.g.
+	                             // to generate statistical reports
+	bool simulate;               // If true, simulates a run of the selective
+	                             // engine but instruments all accesses
+	bool print_stats;            // If true, generates statistical reports
+	bool trace_stack;            // If false, discards tracing stack accesses
+} smt_params;
+
+
+// Stats
+static struct {
+	// Globals
+	size_t maxcycledepth;  // Maximum number of cycles in the program
+
+	// Per-cycle-depth counters
+	double *nblkall;       // Cumulated number of all basic blocks per cycle depth
+	double *nblkmem;       // Cumulated number of memory-accessing basic blocks per cycle depth
+	double *nblksel;       // Cumulated number of selected basic blocks per cycle depth
+
+	// Per-cycle-depth averages over all blocks
+	struct {
+		double *aitotal;
+	} all;
+
+	// Per-cycle-depth averages over memory-accessing blocks
+	struct {
+		double *achosen;       // Average number of chosen uniques per cycle depth
+		double *airrsim;       // Average number of similar IRR uniques per cycle depth
+		double *arrisim;       // Average number of similar RRI uniques per cycle depth
+		double *aunique;       // Average number of unique memory instructions per cycle depth
+		double *avarity;       // Average variety per cycle depth
+		double *airrtot;       // Average number of unique IRR memory instructions per cycle depth
+		double *arritot;       // Average number of unique RRI memory instructions per cycle depth
+		double *amtotal;       // Average number of memory instructions per cycle depth
+		double *aitotal;       // Average number of instructions per cycle depth
+	} mem;
+
+	// Per-cycle-depth averages over selected blocks
+	struct {
+		double *achosen;       // Average number of chosen uniques per cycle depth
+		double *airrsim;       // Average number of similar IRR uniques per cycle depth
+		double *arrisim;       // Average number of similar RRI uniques per cycle depth
+		double *aunique;       // Average number of unique memory instructions per cycle depth
+		double *avarity;       // Average variety per cycle depth
+		double *airrtot;       // Average number of unique IRR memory instructions per cycle depth
+		double *arritot;       // Average number of unique RRI memory instructions per cycle depth
+		double *amtotal;       // Average number of memory instructions per cycle depth
+		double *aitotal;       // Average number of instructions per cycle depth
+	} sel;
+
+} smt_stats_db;
 
 
 inline static bool smt_is_relevant(insn_info *instr) {
@@ -116,14 +144,14 @@ inline static bool smt_is_relevant(insn_info *instr) {
 	// symbol *sym;
 
 	if (instr == NULL) {
-		return false;
+		hinternal();
 	}
 
 	target_x86 = &instr->i.x86;
 	// sym = instr_reference_weak(instr);
 
-	if (trace_stack == false) {
-		if (target_x86->has_base_register == true && target_x86->breg == SMT_X86_RSP) {
+	if (smt_params.trace_stack == false) {
+		if (target_x86->has_base_register == true && target_x86->breg == SMT_X86_RBP) {
 			return false;
 		}
 	}
@@ -174,17 +202,13 @@ inline static size_t smt_absdiff_sym(smt_access *target, smt_access *current) {
 	current_sec = find_section(current_sym->secnum);
 
 	if (target_sec == current_sec) {
-		// if (target_sym != current_sym) {
-			distance = target_sym->offset + target_sym->relocation.addend;
-			distance -= current_sym->offset + current_sym->relocation.addend;
+		distance = target_sym->offset + target_sym->relocation.addend;
+		distance -= current_sym->offset + current_sym->relocation.addend;
 
-			return abs(distance);
-		// } else {
-		//   return 0;
-		// }
+		return abs(distance);
 	}
 
-	return chunk_size;
+	return smt_params.chunk_size;
 }
 
 
@@ -202,7 +226,14 @@ inline static bool smt_same_breg(smt_access *target, smt_access *current) {
 		return same;
 	}
 
-	return false;
+	else if (target_x86->has_base_register == false
+	         && current_x86->has_base_register == false) {
+		return true;
+	}
+
+	else {
+		return false;
+	}
 }
 
 
@@ -224,7 +255,14 @@ inline static bool smt_same_ireg(smt_access *target, smt_access *current) {
 		return same;
 	}
 
-	return false;
+	else if (target_x86->has_index_register == false
+	         && current_x86->has_index_register == false) {
+		return true;
+	}
+
+	else {
+		return false;
+	}
 }
 
 
@@ -258,7 +296,7 @@ static size_t smt_distance_irr(smt_access *target, smt_access *current) {
 
 	score = 0;
 
-	if (smt_absdiff_sym(target, current) >= chunk_size) {
+	if (smt_absdiff_sym(target, current) >= smt_params.chunk_size) {
 		score += SCORE_3;
 
 		if (smt_same_breg(target, current) == false) {
@@ -285,7 +323,7 @@ static size_t smt_distance_rri(smt_access *target, smt_access *current) {
 
 	if (smt_same_breg(target, current)) {
 		if (smt_same_ireg(target, current)) {
-			if (smt_absdiff_imm(target, current) >= chunk_size) {
+			if (smt_absdiff_imm(target, current) >= smt_params.chunk_size) {
 				score += SCORE_3;
 			}
 		}
@@ -308,7 +346,7 @@ static size_t smt_distance_rri(smt_access *target, smt_access *current) {
 
 
 static bool smt_equal(smt_access *target, smt_access *current) {
-	bool same;
+	bool equal;
 
 	symbol *target_sym, *current_sym;
 
@@ -317,7 +355,7 @@ static bool smt_equal(smt_access *target, smt_access *current) {
 		return false;
 	}
 
-	same = true;
+	equal = true;
 
 	if (smt_is_irr(target)) {
 		// Statically-allocated objects
@@ -338,12 +376,12 @@ static bool smt_equal(smt_access *target, smt_access *current) {
 		// relocation type for equivalent accesses.
 		// This is also reflected in the ability to compare
 		// two different addends without committing mistakes
-		same = same && (target_sym->relocation.type == current_sym->relocation.type);
+		equal = equal && (target_sym->relocation.type == current_sym->relocation.type);
 
 		// We also need to check the addend, since it is
 		// directly aggregated into the displacement value
 		// produced by the linker
-		same = same && (target_sym->relocation.addend == current_sym->relocation.addend);
+		equal = equal && (target_sym->relocation.addend == current_sym->relocation.addend);
 
 		// Accesses to the same symbols, we now check relocation
 		// information to further discriminate
@@ -357,9 +395,9 @@ static bool smt_equal(smt_access *target, smt_access *current) {
 			// can still be specified within the expressions.
 
 			// Checking the base register
-			same = same && smt_same_breg(target, current);
+			equal = equal && smt_same_breg(target, current);
 			// Checking the index register and the scale
-			same = same && smt_same_ireg(target, current);
+			equal = equal && smt_same_ireg(target, current);
 		}
 		else if (target_sym->relocation.type == R_X86_64_PC32) {
 			// These accesses use the RIP-relative addressing mode,
@@ -367,7 +405,7 @@ static bool smt_equal(smt_access *target, smt_access *current) {
 			// to evaluate the equivalence of expressions
 		}
 
-		return same;
+		return equal;
 	}
 
 	else {
@@ -377,13 +415,13 @@ static bool smt_equal(smt_access *target, smt_access *current) {
 		// check for base, index and displacement equivalence
 
 		// Checking the base register
-		same = same && smt_same_breg(target, current);
+		equal = equal && smt_same_breg(target, current);
 		// Checking the index register and the scale
-		same = same && smt_same_ireg(target, current);
+		equal = equal && smt_same_ireg(target, current);
 		// Checking the displacement
-		same = same && smt_absdiff_imm(target, current) == 0;
+		equal = equal && (smt_absdiff_imm(target, current) == 0);
 
-		return same;
+		return equal;
 	}
 
 	return false;
@@ -399,24 +437,13 @@ static inline double smt_compute_variety(size_t nunique, size_t nmtotal) {
 }
 
 
-// static inline double smt_compute_overhead(double min_accuracy, double variety) {
-// 	if (variety <= 0.0) {
-// 		return (min_accuracy < 1.0 ? 0.0 : 1.0);
-// 	}
-// 	else {
-// 		return pow(min_accuracy, 1 / variety);
+// static inline double smt_compute_coverage(double variety) {
+// 	if (smt_params.instrument_factor <= 0.0) {
+// 		return 0.0;
+// 	} else {
+// 		return pow(smt_params.instrument_factor, variety);
 // 	}
 // }
-
-
-static inline double smt_compute_accuracy(double variety) {
-	if (instrument_factor <= 0.0) {
-		return 0.0;
-	} else {
-		return pow(instrument_factor, variety);
-	}
-}
-
 
 
 static void smt_tls_init(void) {
@@ -813,7 +840,6 @@ static smt_access *smt_resolve_access(block *blk, insn_info *instr, char *vtable
 	target->count = 1;
 	target->nequiv = 1;
 	target->insn = instr;
-
 	target->instrumented = false;
 	target->selected = false;
 	target->frozen = false;
@@ -823,22 +849,26 @@ static smt_access *smt_resolve_access(block *blk, insn_info *instr, char *vtable
 			 prev = current, current = current->next) {
 
 		if (smt_equal(target, current)) {
-			current->nequiv += 1;
 			target->original = current;
 			prev = current;
 			break;
 		}
 	}
 
-	if (target->original != NULL && simulate == false) {
-		// Increment the access count of the original access
-		// (the duplicate is not linked to the chain of accesses
-		// since we're not in simulation mode)
+	if (target->original != NULL) {
+		// The size of the equivalence class is always updated
+		// when a duplicate is found
+		target->original->nequiv += 1;
+	}
+	else if (target->original != NULL && smt_params.simulate == false) {
+		// In real mode, the access count of the original access
+		// is incremented too (the duplicate is not linked to the
+		// chain of accesses since we're not in simulation mode)
 		target->original->count += 1;
 	}
 	else {
 		// Append the access to the list of uniques, including
-		// duplicates (we're in simulation mode)
+		// duplicates if we are in simulation mode
 		if (smt->uniques == NULL) {
 			smt->uniques = target;
 		} else {
@@ -893,7 +923,7 @@ static void smt_resolve_uniques(block *blk) {
 				hnotice(5, "Found duplicate '%s' at <%#08llx>\n",
 					target->original->insn->i.x86.mnemonic, target->original->insn->orig_addr);
 
-				if (simulate == false) {
+				if (smt_params.simulate == false) {
 					free(target);
 				}
 			}
@@ -1429,9 +1459,7 @@ static size_t smt_log_accesses(block *blk) {
 
 	// The number of accesses that is actually instrumented is
 	// computed using the number of uniques and the overhead
-	// (notice that we use `floor` because `overhead` is a maximum,
-	// hence we cannot exceed that value.)
-	smt->nchosen = ceil(instrument_factor * smt->nunique);
+	smt->nchosen = ceil(smt_params.instrument_factor * smt->nunique);
 
 	// Index in the TLS buffer (block-level scope)
 	index = 0;
@@ -1487,11 +1515,12 @@ static size_t smt_log_accesses(block *blk) {
 		index += 1;
 	}
 
-	if (simulate == true) {
+	if (smt_params.simulate == true) {
 		// In simulation mode we instrument all the remaining accesses,
 		// which are the union of all duplicate accesses and original
-		// non-instrumented ones (possibly frozen). In doing this, we
-		// keep track of the fact that they were not selected.
+		// non-instrumented ones (possibly frozen).
+		// In doing this, we also keep track of the fact that they
+		// were not actually selected.
 		for (access = smt->uniques; access; access = access->next) {
 			if (access->instrumented == true) {
 				// Already-instrumented accesses aren't selected again
@@ -1516,7 +1545,7 @@ static size_t smt_log_accesses(block *blk) {
 
 			smt_instrument_access(blk, access);
 
-			hnotice(4, "Instrumented simulate access '%s' at <%#08llx> (index = %lu)\n",
+			hnotice(4, "Instrumented smt_params.simulate access '%s' at <%#08llx> (index = %lu)\n",
 				access->insn->i.x86.mnemonic, access->insn->orig_addr, index);
 
 			index += 1;
@@ -1777,7 +1806,7 @@ static size_t smt_instrument_block(block *blk, symbol *callfunc) {
 	count = 0;
 
 	hnotice(2, "Instrumenting block #%u (score %f [mode: %s])\n",
-		blk->id, smt->score, simulate == true ? "simulate" : "real");
+		blk->id, smt->score, smt_params.simulate == true ? "smt_params.simulate" : "real");
 
 	// Relevant accesses are detected and the set of unique
 	// instructions is created alongside
@@ -1840,184 +1869,203 @@ void smt_stats(void) {
 	block *blk;
 	smt_data *smt;
 
-	size_t nblktot, nblksel, nunique, nmtotal, nbins;
+	size_t nblkall, nblkmem, nblksel, nbins;
 
 	unsigned long binindex;
 
 	char *statsdumpname;
 	FILE *statsdump;
 
-	size_t npairs;
-
 	// ------------------------------------------------------------
 	// Initialize and populate the statistics DB
 	// ------------------------------------------------------------
-	nblktot = 0;
+	nblkall = 0;
+	nblkmem = 0;
 	nblksel = 0;
 
 	for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
 		smt = blk->smtracer;
 
-		smt_stats_db.maxcycledepth = (smt->cycledepth > smt_stats_db.maxcycledepth) \
-			? smt->cycledepth : smt_stats_db.maxcycledepth;
-		nblktot += 1;
-		nblksel += smt->selected;
-		nunique += smt->nunique;
-		nmtotal += smt->nmtotal;
+		if (smt->cycledepth > smt_stats_db.maxcycledepth) {
+			smt_stats_db.maxcycledepth = smt->cycledepth;
+		}
+
+		nblkall += 1;
+		nblkmem += (smt->nmtotal > 0);
+		nblksel += (smt->nmtotal > 0) && smt->selected;
 	}
 
-	hnotice(3, "Max cycle depth: %lu; Total number of selected blocks: %lu / %lu;"
-		"Total number of uniques: %lu / %lu (Variety = %.05f)\n",
-		smt_stats_db.maxcycledepth, nblksel, nblktot, nunique, nmtotal,
-			smt_compute_variety(nunique, nmtotal));
+	hnotice(3, "Max cycle depth: %lu; Total number of selected blocks: %lu / %lu / %lu\n",
+		smt_stats_db.maxcycledepth, nblksel, nblkmem, nblkall);
 
 	nbins = smt_stats_db.maxcycledepth + 1;
 
-	smt_stats_db.nblktot = calloc(nbins, sizeof(size_t));
-	smt_stats_db.nblksel = calloc(nbins, sizeof(size_t));
-	smt_stats_db.nchosen = calloc(nbins, sizeof(size_t));
-	smt_stats_db.nirrsim = calloc(nbins, sizeof(size_t));
-	smt_stats_db.nrrisim = calloc(nbins, sizeof(size_t));
-	smt_stats_db.nunique = calloc(nbins, sizeof(size_t));
-	smt_stats_db.nirrtot = calloc(nbins, sizeof(size_t));
-	smt_stats_db.nrritot = calloc(nbins, sizeof(size_t));
-	smt_stats_db.nmtotal = calloc(nbins, sizeof(size_t));
-	smt_stats_db.nitotal = calloc(nbins, sizeof(size_t));
+	smt_stats_db.nblkall = calloc(nbins, sizeof(double));
+	smt_stats_db.nblkmem = calloc(nbins, sizeof(double));
+	smt_stats_db.nblksel = calloc(nbins, sizeof(double));
 
-	smt_stats_db.achosen = calloc(nbins, sizeof(double));
-	smt_stats_db.aunique = calloc(nbins, sizeof(double));
-	smt_stats_db.airrtot = calloc(nbins, sizeof(double));
-	smt_stats_db.arritot = calloc(nbins, sizeof(double));
-	smt_stats_db.amtotal = calloc(nbins, sizeof(double));
+	smt_stats_db.all.aitotal = calloc(nbins, sizeof(double));
+
+	smt_stats_db.mem.achosen = calloc(nbins, sizeof(double));
+	smt_stats_db.mem.airrsim = calloc(nbins, sizeof(double));
+	smt_stats_db.mem.arrisim = calloc(nbins, sizeof(double));
+	smt_stats_db.mem.aunique = calloc(nbins, sizeof(double));
+	smt_stats_db.mem.avarity = calloc(nbins, sizeof(double));
+	smt_stats_db.mem.airrtot = calloc(nbins, sizeof(double));
+	smt_stats_db.mem.arritot = calloc(nbins, sizeof(double));
+	smt_stats_db.mem.amtotal = calloc(nbins, sizeof(double));
+	smt_stats_db.mem.aitotal = calloc(nbins, sizeof(double));
+
+	smt_stats_db.sel.achosen = calloc(nbins, sizeof(double));
+	smt_stats_db.sel.airrsim = calloc(nbins, sizeof(double));
+	smt_stats_db.sel.arrisim = calloc(nbins, sizeof(double));
+	smt_stats_db.sel.aunique = calloc(nbins, sizeof(double));
+	smt_stats_db.sel.avarity = calloc(nbins, sizeof(double));
+	smt_stats_db.sel.airrtot = calloc(nbins, sizeof(double));
+	smt_stats_db.sel.arritot = calloc(nbins, sizeof(double));
+	smt_stats_db.sel.amtotal = calloc(nbins, sizeof(double));
+	smt_stats_db.sel.aitotal = calloc(nbins, sizeof(double));
 
 	for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
 		smt = blk->smtracer;
 
-		smt_stats_db.nblktot[smt->cycledepth] += 1;
-		smt_stats_db.nblksel[smt->cycledepth] += smt->selected;
-		smt_stats_db.nchosen[smt->cycledepth] += smt->nchosen;
-		smt_stats_db.nirrsim[smt->cycledepth] += smt->nirrsim;
-		smt_stats_db.nrrisim[smt->cycledepth] += smt->nrrisim;
-		smt_stats_db.nunique[smt->cycledepth] += smt->nunique;
-		smt_stats_db.nirrtot[smt->cycledepth] += smt->nirrtot;
-		smt_stats_db.nrritot[smt->cycledepth] += smt->nrritot;
-		smt_stats_db.nmtotal[smt->cycledepth] += smt->nmtotal;
-		smt_stats_db.nitotal[smt->cycledepth] += blk->length;
+		smt_stats_db.nblkall[smt->cycledepth] += 1;
+		smt_stats_db.nblkmem[smt->cycledepth] += (smt->nmtotal > 0);
+		smt_stats_db.nblksel[smt->cycledepth] += (smt->nmtotal > 0) && smt->selected;
+
+		smt_stats_db.all.aitotal[smt->cycledepth] += blk->length;
+
+		if (smt->nmtotal > 0) {
+			smt_stats_db.mem.achosen[smt->cycledepth] += smt->nchosen / smt->nunique;
+			smt_stats_db.mem.aunique[smt->cycledepth] += smt->nunique / smt->nmtotal;
+			smt_stats_db.mem.avarity[smt->cycledepth] += smt_compute_variety(smt->nunique, smt->nmtotal);
+			smt_stats_db.mem.airrtot[smt->cycledepth] += smt->nirrtot / smt->nunique;
+			smt_stats_db.mem.arritot[smt->cycledepth] += smt->nrritot / smt->nunique;
+			smt_stats_db.mem.amtotal[smt->cycledepth] += smt->nmtotal;
+			smt_stats_db.mem.aitotal[smt->cycledepth] += blk->length;
+		}
+
+		if (smt->nirrtot > 1) {
+			smt_stats_db.mem.airrsim[smt->cycledepth] += smt->nirrsim * 2 / smt->nirrtot / (smt->nirrtot - 1);
+		}
+
+		if (smt->nrritot > 1) {
+			smt_stats_db.mem.arrisim[smt->cycledepth] += smt->nrrisim * 2 / smt->nrritot / (smt->nrritot - 1);
+		}
 
 		if (smt->selected) {
-			smt_stats_db.achosen[smt->cycledepth] += (double) smt->nchosen / smt->nmtotal;
-			smt_stats_db.aunique[smt->cycledepth] += (double) smt_compute_variety(smt->nunique, smt->nmtotal);
-			smt_stats_db.airrtot[smt->cycledepth] += (double) smt->nirrtot / smt->nunique;
-			smt_stats_db.arritot[smt->cycledepth] += (double) smt->nrritot / smt->nunique;
-			smt_stats_db.amtotal[smt->cycledepth] += (double) smt->nmtotal / blk->length;
+			if (smt->nmtotal > 0) {
+				smt_stats_db.sel.achosen[smt->cycledepth] += smt->nchosen / smt->nunique;
+				smt_stats_db.sel.aunique[smt->cycledepth] += smt->nunique / smt->nmtotal;
+				smt_stats_db.sel.avarity[smt->cycledepth] += smt_compute_variety(smt->nunique, smt->nmtotal);
+				smt_stats_db.sel.airrtot[smt->cycledepth] += smt->nirrtot / smt->nunique;
+				smt_stats_db.sel.arritot[smt->cycledepth] += smt->nrritot / smt->nunique;
+				smt_stats_db.sel.amtotal[smt->cycledepth] += smt->nmtotal;
+				smt_stats_db.sel.aitotal[smt->cycledepth] += blk->length;
+			}
+
+			if (smt->nirrtot > 1) {
+				smt_stats_db.sel.airrsim[smt->cycledepth] += smt->nirrsim * 2 / smt->nirrtot / (smt->nirrtot - 1);
+			}
+
+			if (smt->nrritot > 1) {
+				smt_stats_db.sel.arrisim[smt->cycledepth] += smt->nrrisim * 2 / smt->nrritot / (smt->nrritot - 1);
+			}
 		}
+	}
+
+	for (binindex = 0; binindex < nbins; binindex += 1) {
+		smt_stats_db.all.aitotal[binindex] /= smt_stats_db.nblkall[binindex];
+
+		smt_stats_db.mem.achosen[binindex] /= smt_stats_db.nblkmem[binindex];
+		smt_stats_db.mem.airrsim[binindex] /= smt_stats_db.nblkmem[binindex];
+		smt_stats_db.mem.arrisim[binindex] /= smt_stats_db.nblkmem[binindex];
+		smt_stats_db.mem.aunique[binindex] /= smt_stats_db.nblkmem[binindex];
+		smt_stats_db.mem.avarity[binindex] /= smt_stats_db.nblkmem[binindex];
+		smt_stats_db.mem.airrtot[binindex] /= smt_stats_db.nblkmem[binindex];
+		smt_stats_db.mem.arritot[binindex] /= smt_stats_db.nblkmem[binindex];
+		smt_stats_db.mem.amtotal[binindex] /= smt_stats_db.nblkmem[binindex];
+		smt_stats_db.mem.aitotal[binindex] /= smt_stats_db.nblkmem[binindex];
+
+		smt_stats_db.sel.achosen[binindex] /= smt_stats_db.nblksel[binindex];
+		smt_stats_db.sel.airrsim[binindex] /= smt_stats_db.nblksel[binindex];
+		smt_stats_db.sel.arrisim[binindex] /= smt_stats_db.nblksel[binindex];
+		smt_stats_db.sel.aunique[binindex] /= smt_stats_db.nblksel[binindex];
+		smt_stats_db.sel.avarity[binindex] /= smt_stats_db.nblksel[binindex];
+		smt_stats_db.sel.airrtot[binindex] /= smt_stats_db.nblksel[binindex];
+		smt_stats_db.sel.arritot[binindex] /= smt_stats_db.nblksel[binindex];
+		smt_stats_db.sel.amtotal[binindex] /= smt_stats_db.nblksel[binindex];
+		smt_stats_db.sel.aitotal[binindex] /= smt_stats_db.nblksel[binindex];
+
+		smt_stats_db.nblkall[binindex] /= nblkall;
+		smt_stats_db.nblkmem[binindex] /= nblkmem;
+		smt_stats_db.nblksel[binindex] /= nblksel;
 	}
 
 	statsdumpname = malloc(MAX_NAME_LEN);
 
 	// ------------------------------------------------------------
-	// Total number of blocks per cycle depth
+	// Total number of all/mem/sel blocks per cycle depth
 	// ------------------------------------------------------------
-	sprintf(statsdumpname, "%s_%s.stats", testname, "nblktot");
+	sprintf(statsdumpname, "%s_%s.stats", smt_params.testname, "nblk");
 
 	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
 		hinternal();
 	}
 
 	for (binindex = 0; binindex < nbins; binindex += 1) {
-		fprintf(statsdump, "%lu %.05f\n",
+		fprintf(statsdump, "%lu %.05f %.05f %.05f\n",
 			binindex,
-			(double) smt_stats_db.nblktot[binindex] / nblktot);
-	}
-
-	fclose(statsdump);
-
-	// ------------------------------------------------------------
-	// Total number of selected blocks per cycle depth
-	// ------------------------------------------------------------
-	sprintf(statsdumpname, "%s_%s.stats", testname, "nblksel");
-
-	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
-		hinternal();
-	}
-
-	for (binindex = 0; binindex < nbins; binindex += 1) {
-		fprintf(statsdump, "%lu %.05f\n",
-			binindex,
-			(double) smt_stats_db.nblksel[binindex] / nblksel);
-	}
-
-	fclose(statsdump);
-
-	// ------------------------------------------------------------
-	// Cumulated percentage of chosen uniques per cycle depth
-	// ------------------------------------------------------------
-	sprintf(statsdumpname, "%s_%s.stats", testname, "nchosen");
-
-	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
-		hinternal();
-	}
-
-	for (binindex = 0; binindex < nbins; binindex += 1) {
-		fprintf(statsdump, "%lu %.05f %.05f\n",
-			binindex,
-			(double) smt_stats_db.nchosen[binindex] / smt_stats_db.nmtotal[binindex],
-			(double) smt_stats_db.achosen[binindex] / smt_stats_db.nblksel[binindex]
+			smt_stats_db.nblkall[binindex],
+			smt_stats_db.nblkmem[binindex],
+			smt_stats_db.nblksel[binindex]
 		);
 	}
 
 	fclose(statsdump);
 
 	// ------------------------------------------------------------
-	// Cumulated percentage of similar IRR uniques per cycle depth
+	// Average percentage of chosen uniques per cycle depth
 	// ------------------------------------------------------------
-	sprintf(statsdumpname, "%s_%s.stats", testname, "nirrsim");
+	sprintf(statsdumpname, "%s_%s.stats", smt_params.testname, "achosen");
 
 	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
 		hinternal();
 	}
 
 	for (binindex = 0; binindex < nbins; binindex += 1) {
-		npairs = smt_stats_db.nirrtot[binindex];
-		npairs *= smt_stats_db.nirrtot[binindex] - 1;
-		npairs /= 2;
-
 		fprintf(statsdump, "%lu %.05f %.05f\n",
 			binindex,
-			(double) smt_stats_db.nirrsim[binindex] / npairs,
-			(double) smt_stats_db.nirrsim[binindex] / smt_stats_db.nblksel[binindex]
+			smt_stats_db.mem.achosen[binindex],
+			smt_stats_db.sel.achosen[binindex]
 		);
 	}
 
 	fclose(statsdump);
 
 	// ------------------------------------------------------------
-	// Cumulated percentage of similar RRI uniques per cycle depth
+	// Average percentage of similar IRR uniques per cycle depth
 	// ------------------------------------------------------------
-	sprintf(statsdumpname, "%s_%s.stats", testname, "nrrisim");
+	sprintf(statsdumpname, "%s_%s.stats", smt_params.testname, "airrsim");
 
 	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
 		hinternal();
 	}
 
 	for (binindex = 0; binindex < nbins; binindex += 1) {
-		npairs = smt_stats_db.nrritot[binindex];
-		npairs *= smt_stats_db.nrritot[binindex] - 1;
-		npairs /= 2;
-
 		fprintf(statsdump, "%lu %.05f %.05f\n",
 			binindex,
-			(double) smt_stats_db.nrrisim[binindex] / npairs,
-			(double) smt_stats_db.nrrisim[binindex] / smt_stats_db.nblksel[binindex]
+			smt_stats_db.mem.airrsim[binindex],
+			smt_stats_db.sel.airrsim[binindex]
 		);
 	}
 
 	fclose(statsdump);
 
 	// ------------------------------------------------------------
-	// Cumulated percentage of uniques per cycle depth (variety)
+	// Average percentage of similar RRI uniques per cycle depth
 	// ------------------------------------------------------------
-	sprintf(statsdumpname, "%s_%s.stats", testname, "variety");
+	sprintf(statsdumpname, "%s_%s.stats", smt_params.testname, "arrisim");
 
 	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
 		hinternal();
@@ -2026,17 +2074,17 @@ void smt_stats(void) {
 	for (binindex = 0; binindex < nbins; binindex += 1) {
 		fprintf(statsdump, "%lu %.05f %.05f\n",
 			binindex,
-			(double) smt_compute_variety(smt_stats_db.nunique[binindex], smt_stats_db.nmtotal[binindex]),
-			(double) smt_stats_db.aunique[binindex] / smt_stats_db.nblksel[binindex]
+			smt_stats_db.mem.arrisim[binindex],
+			smt_stats_db.sel.arrisim[binindex]
 		);
 	}
 
 	fclose(statsdump);
 
 	// ------------------------------------------------------------
-	// Cumulated percentage of IRR instructions per cycle depth
+	// Average percentage of uniques per cycle depth
 	// ------------------------------------------------------------
-	sprintf(statsdumpname, "%s_%s.stats", testname, "nirrtot");
+	sprintf(statsdumpname, "%s_%s.stats", smt_params.testname, "aunique");
 
 	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
 		hinternal();
@@ -2045,17 +2093,34 @@ void smt_stats(void) {
 	for (binindex = 0; binindex < nbins; binindex += 1) {
 		fprintf(statsdump, "%lu %.05f %.05f\n",
 			binindex,
-			(double) smt_stats_db.nirrtot[binindex] / smt_stats_db.nunique[binindex],
-			(double) smt_stats_db.airrtot[binindex] / smt_stats_db.nblksel[binindex]
+			smt_stats_db.mem.aunique[binindex],
+			smt_stats_db.sel.aunique[binindex]
+		);
+	}
+
+	// ------------------------------------------------------------
+	// Average variety per cycle depth (variety)
+	// ------------------------------------------------------------
+	sprintf(statsdumpname, "%s_%s.stats", smt_params.testname, "avarity");
+
+	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
+		hinternal();
+	}
+
+	for (binindex = 0; binindex < nbins; binindex += 1) {
+		fprintf(statsdump, "%lu %.05f %.05f\n",
+			binindex,
+			smt_stats_db.mem.avarity[binindex],
+			smt_stats_db.sel.avarity[binindex]
 		);
 	}
 
 	fclose(statsdump);
 
 	// ------------------------------------------------------------
-	// Cumulated percentage of RRI instructions per cycle depth
+	// Average percentage of IRR instructions per cycle depth
 	// ------------------------------------------------------------
-	sprintf(statsdumpname, "%s_%s.stats", testname, "nrritot");
+	sprintf(statsdumpname, "%s_%s.stats", smt_params.testname, "airrtot");
 
 	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
 		hinternal();
@@ -2064,17 +2129,17 @@ void smt_stats(void) {
 	for (binindex = 0; binindex < nbins; binindex += 1) {
 		fprintf(statsdump, "%lu %.05f %.05f\n",
 			binindex,
-			(double) smt_stats_db.nrritot[binindex] / smt_stats_db.nunique[binindex],
-			(double) smt_stats_db.arritot[binindex] / smt_stats_db.nblksel[binindex]
+			smt_stats_db.mem.airrtot[binindex],
+			smt_stats_db.sel.airrtot[binindex]
 		);
 	}
 
 	fclose(statsdump);
 
 	// ------------------------------------------------------------
-	// Cumulated percentage of memory instructions per cycle depth
+	// Average percentage of RRI instructions per cycle depth
 	// ------------------------------------------------------------
-	sprintf(statsdumpname, "%s_%s.stats", testname, "nmtotal");
+	sprintf(statsdumpname, "%s_%s.stats", smt_params.testname, "arritot");
 
 	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
 		hinternal();
@@ -2083,8 +2148,27 @@ void smt_stats(void) {
 	for (binindex = 0; binindex < nbins; binindex += 1) {
 		fprintf(statsdump, "%lu %.05f %.05f\n",
 			binindex,
-			(double) smt_stats_db.nmtotal[binindex] / smt_stats_db.nitotal[binindex],
-			(double) smt_stats_db.amtotal[binindex] / smt_stats_db.nblksel[binindex]
+			smt_stats_db.mem.arritot[binindex],
+			smt_stats_db.sel.arritot[binindex]
+		);
+	}
+
+	fclose(statsdump);
+
+	// ------------------------------------------------------------
+	// Average number of memory instructions per cycle depth
+	// ------------------------------------------------------------
+	sprintf(statsdumpname, "%s_%s.stats", smt_params.testname, "amtotal");
+
+	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
+		hinternal();
+	}
+
+	for (binindex = 0; binindex < nbins; binindex += 1) {
+		fprintf(statsdump, "%lu %.05f %.05f\n",
+			binindex,
+			smt_stats_db.mem.amtotal[binindex],
+			smt_stats_db.sel.amtotal[binindex]
 		);
 	}
 
@@ -2093,39 +2177,48 @@ void smt_stats(void) {
 	// ------------------------------------------------------------
 	// Average number of instructions per cycle depth
 	// ------------------------------------------------------------
-	sprintf(statsdumpname, "%s_%s.stats", testname, "nitotal");
+	sprintf(statsdumpname, "%s_%s.stats", smt_params.testname, "aitotal");
 
 	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
 		hinternal();
 	}
 
 	for (binindex = 0; binindex < nbins; binindex += 1) {
-		fprintf(statsdump, "%lu %.05f\n",
+		fprintf(statsdump, "%lu %.05f %.05f %.05f\n",
 			binindex,
-			(double) smt_stats_db.nitotal[binindex] / smt_stats_db.nblksel[binindex]);
+			smt_stats_db.all.aitotal[binindex],
+			smt_stats_db.mem.aitotal[binindex],
+			smt_stats_db.sel.aitotal[binindex]
+		);
 	}
 
 	fclose(statsdump);
 
-
 	free(statsdumpname);
 
-	free(smt_stats_db.nblktot);
+	free(smt_stats_db.nblkall);
+	free(smt_stats_db.nblkmem);
 	free(smt_stats_db.nblksel);
-	free(smt_stats_db.nchosen);
-	free(smt_stats_db.nirrsim);
-	free(smt_stats_db.nrrisim);
-	free(smt_stats_db.nunique);
-	free(smt_stats_db.nirrtot);
-	free(smt_stats_db.nrritot);
-	free(smt_stats_db.nmtotal);
-	free(smt_stats_db.nitotal);
 
-	free(smt_stats_db.achosen);
-	free(smt_stats_db.aunique);
-	free(smt_stats_db.airrtot);
-	free(smt_stats_db.arritot);
-	free(smt_stats_db.amtotal);
+	free(smt_stats_db.all.aitotal);
+
+	free(smt_stats_db.mem.achosen);
+	free(smt_stats_db.mem.airrsim);
+	free(smt_stats_db.mem.arrisim);
+	free(smt_stats_db.mem.aunique);
+	free(smt_stats_db.mem.airrtot);
+	free(smt_stats_db.mem.arritot);
+	free(smt_stats_db.mem.amtotal);
+	free(smt_stats_db.mem.aitotal);
+
+	free(smt_stats_db.sel.achosen);
+	free(smt_stats_db.sel.airrsim);
+	free(smt_stats_db.sel.arrisim);
+	free(smt_stats_db.sel.aunique);
+	free(smt_stats_db.sel.airrtot);
+	free(smt_stats_db.sel.arritot);
+	free(smt_stats_db.sel.amtotal);
+	free(smt_stats_db.sel.aitotal);
 }
 
 
@@ -2151,13 +2244,13 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 		hinternal();
 	}
 
-	blk_score_threshold = atof(params[0]->value);
-	instrument_factor   = atof(params[1]->value);
-	chunk_size          = 1 << (atoi(params[2]->value));
-	testname            = params[3]->value;
-	simulate            = str_equal(params[4]->value, "true");
-	print_stats         = str_equal(params[5]->value, "true");
-	trace_stack         = str_equal(params[6]->value, "true");
+	smt_params.block_threshold    = atof(params[0]->value);
+	smt_params.instrument_factor  = atof(params[1]->value);
+	smt_params.chunk_size         = 1 << (atoi(params[2]->value));
+	smt_params.testname           = params[3]->value;
+	smt_params.simulate           = str_equal(params[4]->value, "true");
+	smt_params.print_stats        = str_equal(params[5]->value, "true");
+	smt_params.trace_stack        = str_equal(params[6]->value, "true");
 
 	// ------------------------------------------------------------
 	// Instrument the program
@@ -2187,7 +2280,7 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 
 		for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
 			smt = blk->smtracer;
-			if (smt->score < blk_score_threshold && simulate == false) {
+			if (smt->score < smt_params.block_threshold && smt_params.simulate == false) {
 				// When not in simulation mode, irrelevant blocks are skipped
 				continue;
 			}
@@ -2243,7 +2336,7 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 	// Generate statistics
 	// ------------------------------------------------------------
 
-	if (print_stats == true) {
+	if (smt_params.print_stats == true) {
 		smt_stats();
 	}
 
