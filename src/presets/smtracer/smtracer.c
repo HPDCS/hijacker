@@ -366,9 +366,11 @@ static bool smt_equal(smt_access *target, smt_access *current) {
 		target_sym = instr_reference_weak(target->insn);
 		current_sym = instr_reference_weak(current->insn);
 
-		if (target_sym != current_sym) {
+		if (str_equal(target_sym->name, current_sym->name) == false) {
 			// Different existing symbols mean non-equivalent accesses
 			// NOTE: The target symbol is implicitly non-NULL here
+			// NOTE: We compare names rather than pointers due to the
+			// peculiar way Hijacker handles relocations and symbols
 			return false;
 		}
 
@@ -991,6 +993,9 @@ static void smt_resolve_uniques(block *blk) {
 				} else {
 					smt->nrrisim += 1;
 				}
+				hnotice(5, "'%s' at <%#08llx> and '%s' at <%#08llx> are similar\n",
+					target->insn->i.x86.mnemonic, target->insn->orig_addr,
+					current->insn->i.x86.mnemonic, current->insn->orig_addr);
 			}
 
 			distance[i][j] += dist;
