@@ -48,6 +48,8 @@
 // (attualmente solo %rbp)
 
 
+#define ROUNDING floor
+
 // Maximum name for a filename in characters
 #define MAX_NAME_LEN 2048
 
@@ -94,47 +96,27 @@ static struct {
 
 
 // Stats
+typedef struct {
+	double *numblks;       // Percentage number of basic blocks per cycle depth
+	double *achosen;       // Average number of chosen uniques per cycle depth
+	double *airrsim;       // Average number of similar IRR uniques per cycle depth
+	double *arrisim;       // Average number of similar RRI uniques per cycle depth
+	double *aunique;       // Average number of unique memory instructions per cycle depth
+	double *avarity;       // Average variety per cycle depth
+	double *airrtot;       // Average number of unique IRR memory instructions per cycle depth
+	double *arritot;       // Average number of unique RRI memory instructions per cycle depth
+	double *amtotal;       // Average number of memory instructions per cycle depth
+	double *aitotal;       // Average number of instructions per cycle depth
+} smt_stats_record;
+
 static struct {
-	// Globals
 	size_t maxcycledepth;  // Maximum number of cycles in the program
 
-	// Per-cycle-depth counters
-	double *nblkall;       // Cumulated number of all basic blocks per cycle depth
-	double *nblkmem;       // Cumulated number of memory-accessing basic blocks per cycle depth
-	double *nblksel;       // Cumulated number of selected basic blocks per cycle depth
-
-	// Per-cycle-depth averages over all blocks
-	struct {
-		double *aitotal;
-	} all;
-
-	// Per-cycle-depth averages over memory-accessing blocks
-	struct {
-		double *achosen;       // Average number of chosen uniques per cycle depth
-		double *airrsim;       // Average number of similar IRR uniques per cycle depth
-		double *arrisim;       // Average number of similar RRI uniques per cycle depth
-		double *aunique;       // Average number of unique memory instructions per cycle depth
-		double *avarity;       // Average variety per cycle depth
-		double *airrtot;       // Average number of unique IRR memory instructions per cycle depth
-		double *arritot;       // Average number of unique RRI memory instructions per cycle depth
-		double *amtotal;       // Average number of memory instructions per cycle depth
-		double *aitotal;       // Average number of instructions per cycle depth
-	} mem;
-
-	// Per-cycle-depth averages over selected blocks
-	struct {
-		double *achosen;       // Average number of chosen uniques per cycle depth
-		double *airrsim;       // Average number of similar IRR uniques per cycle depth
-		double *arrisim;       // Average number of similar RRI uniques per cycle depth
-		double *aunique;       // Average number of unique memory instructions per cycle depth
-		double *avarity;       // Average variety per cycle depth
-		double *airrtot;       // Average number of unique IRR memory instructions per cycle depth
-		double *arritot;       // Average number of unique RRI memory instructions per cycle depth
-		double *amtotal;       // Average number of memory instructions per cycle depth
-		double *aitotal;       // Average number of instructions per cycle depth
-	} sel;
-
+	smt_stats_record all; // Per-cycle-depth averages over all blocks
+	smt_stats_record mem; // Per-cycle-depth averages over memory-accessing blocks
+	smt_stats_record sel; // Per-cycle-depth averages over selected blocks
 } smt_stats_db;
+
 
 
 inline static bool smt_is_relevant(insn_info *instr) {
@@ -909,6 +891,10 @@ static void smt_resolve_uniques(block *blk) {
 		// Update the general-purpose register version table
 		smt_update_vtable(instr, vtable);
 
+		// Increment the total number of instructions in the
+		// basic block
+		smt->nitotal += 1;
+
 		// Check if the access is relevant and create an access entry
 		if (smt_is_relevant(instr)) {
 			hnotice(4, "Resolving instruction '%s' at <%#08llx>\n",
@@ -973,18 +959,26 @@ static void smt_resolve_uniques(block *blk) {
 				continue;
 			}
 
-			if (target == current || distance[i][j] > 0) {
+			if (target == current) {
+				continue;
+			}
+
+			if (distance[i][j] > 0) {
 				// If distance[i][j] is greater than zero, then we have
 				// already computed the dual case previously
 				continue;
 			}
 
-			if (smt_same_template(target, current)) {
-				if (smt_is_irr(target)) {
-					dist = smt_distance_irr(target, current);
-				} else {
-					dist = smt_distance_rri(target, current);
-				}
+			if (smt_same_template(target, current) == false) {
+				// We cannot compute distances for accesses which belong
+				// to different templates
+				continue;
+			}
+
+			if (smt_is_irr(target)) {
+				dist = smt_distance_irr(target, current);
+			} else {
+				dist = smt_distance_rri(target, current);
 			}
 
 			if (dist == SCORE_EQUAL) {
@@ -993,6 +987,7 @@ static void smt_resolve_uniques(block *blk) {
 				} else {
 					smt->nrrisim += 1;
 				}
+
 				hnotice(5, "'%s' at <%#08llx> and '%s' at <%#08llx> are similar\n",
 					target->insn->i.x86.mnemonic, target->insn->orig_addr,
 					current->insn->i.x86.mnemonic, current->insn->orig_addr);
@@ -1464,7 +1459,7 @@ static size_t smt_log_accesses(block *blk) {
 
 	// The number of accesses that is actually instrumented is
 	// computed using the number of uniques and the overhead
-	smt->nchosen = ceil(smt_params.instrument_factor * smt->nunique);
+	smt->nchosen = ROUNDING(smt_params.instrument_factor * smt->nunique);
 
 	// Index in the TLS buffer (block-level scope)
 	index = 0;
@@ -1560,6 +1555,10 @@ static size_t smt_log_accesses(block *blk) {
 	if (index > smt->nmtotal) {
 		// We can instrument at most the entirety of memory accesses
 		// within the basic block...
+		hinternal();
+	}
+
+	if (((double) index)/smt->nunique < smt_params.instrument_factor) {
 		hinternal();
 	}
 
@@ -1870,6 +1869,71 @@ static size_t smt_instrument_block(block *blk, symbol *callfunc) {
 }
 
 
+void smt_stats_record_init(smt_stats_record *record, size_t nbins) {
+	record->numblks = calloc(nbins, sizeof(double));
+	record->achosen = calloc(nbins, sizeof(double));
+	record->airrsim = calloc(nbins, sizeof(double));
+	record->arrisim = calloc(nbins, sizeof(double));
+	record->aunique = calloc(nbins, sizeof(double));
+	record->avarity = calloc(nbins, sizeof(double));
+	record->airrtot = calloc(nbins, sizeof(double));
+	record->arritot = calloc(nbins, sizeof(double));
+	record->amtotal = calloc(nbins, sizeof(double));
+	record->aitotal = calloc(nbins, sizeof(double));
+}
+
+
+void smt_stats_record_update(smt_stats_record *record, smt_data *smt) {
+	size_t npairs;
+
+	record->numblks[smt->cycledepth] += 1;
+	record->achosen[smt->cycledepth] += (double) smt->nchosen / smt->nunique;
+	record->aunique[smt->cycledepth] += (double) smt->nunique / smt->nmtotal;
+	record->avarity[smt->cycledepth] += (double) smt_compute_variety(smt->nunique, smt->nmtotal);
+	record->airrtot[smt->cycledepth] += (double) smt->nirrtot / smt->nunique;
+	record->arritot[smt->cycledepth] += (double) smt->nrritot / smt->nunique;
+	record->amtotal[smt->cycledepth] += (double) smt->nmtotal;
+	record->aitotal[smt->cycledepth] += (double) smt->nitotal;
+
+	if (smt->nirrtot > 1) {
+		npairs = smt->nirrtot * (smt->nirrtot - 1) / 2;
+		record->airrsim[smt->cycledepth] += (double) smt->nirrsim / npairs;
+	}
+
+	if (smt->nrritot > 1) {
+		npairs = smt->nrritot * (smt->nrritot - 1) / 2;
+		record->arrisim[smt->cycledepth] += (double) smt->nrrisim / npairs;
+	}
+}
+
+
+void smt_stats_record_scale(smt_stats_record *record, unsigned int binindex, size_t ntot) {
+	record->achosen[binindex] /= record->numblks[binindex];
+	record->airrsim[binindex] /= record->numblks[binindex];
+	record->arrisim[binindex] /= record->numblks[binindex];
+	record->aunique[binindex] /= record->numblks[binindex];
+	record->avarity[binindex] /= record->numblks[binindex];
+	record->airrtot[binindex] /= record->numblks[binindex];
+	record->arritot[binindex] /= record->numblks[binindex];
+	record->amtotal[binindex] /= record->numblks[binindex];
+	record->aitotal[binindex] /= record->numblks[binindex];
+	record->numblks[binindex] /= ntot;
+}
+
+
+void smt_stats_record_fini(smt_stats_record *record) {
+	free(record->numblks);
+	free(record->achosen);
+	free(record->airrsim);
+	free(record->arrisim);
+	free(record->aunique);
+	free(record->airrtot);
+	free(record->arritot);
+	free(record->amtotal);
+	free(record->aitotal);
+}
+
+
 void smt_stats(void) {
 	block *blk;
 	smt_data *smt;
@@ -1905,106 +1969,28 @@ void smt_stats(void) {
 
 	nbins = smt_stats_db.maxcycledepth + 1;
 
-	smt_stats_db.nblkall = calloc(nbins, sizeof(double));
-	smt_stats_db.nblkmem = calloc(nbins, sizeof(double));
-	smt_stats_db.nblksel = calloc(nbins, sizeof(double));
-
-	smt_stats_db.all.aitotal = calloc(nbins, sizeof(double));
-
-	smt_stats_db.mem.achosen = calloc(nbins, sizeof(double));
-	smt_stats_db.mem.airrsim = calloc(nbins, sizeof(double));
-	smt_stats_db.mem.arrisim = calloc(nbins, sizeof(double));
-	smt_stats_db.mem.aunique = calloc(nbins, sizeof(double));
-	smt_stats_db.mem.avarity = calloc(nbins, sizeof(double));
-	smt_stats_db.mem.airrtot = calloc(nbins, sizeof(double));
-	smt_stats_db.mem.arritot = calloc(nbins, sizeof(double));
-	smt_stats_db.mem.amtotal = calloc(nbins, sizeof(double));
-	smt_stats_db.mem.aitotal = calloc(nbins, sizeof(double));
-
-	smt_stats_db.sel.achosen = calloc(nbins, sizeof(double));
-	smt_stats_db.sel.airrsim = calloc(nbins, sizeof(double));
-	smt_stats_db.sel.arrisim = calloc(nbins, sizeof(double));
-	smt_stats_db.sel.aunique = calloc(nbins, sizeof(double));
-	smt_stats_db.sel.avarity = calloc(nbins, sizeof(double));
-	smt_stats_db.sel.airrtot = calloc(nbins, sizeof(double));
-	smt_stats_db.sel.arritot = calloc(nbins, sizeof(double));
-	smt_stats_db.sel.amtotal = calloc(nbins, sizeof(double));
-	smt_stats_db.sel.aitotal = calloc(nbins, sizeof(double));
+	smt_stats_record_init(&smt_stats_db.all, nbins);
+	smt_stats_record_init(&smt_stats_db.mem, nbins);
+	smt_stats_record_init(&smt_stats_db.sel, nbins);
 
 	for (blk = PROGRAM(blocks)[PROGRAM(version)]; blk; blk = blk->next) {
 		smt = blk->smtracer;
 
-		smt_stats_db.nblkall[smt->cycledepth] += 1;
-		smt_stats_db.nblkmem[smt->cycledepth] += (smt->nmtotal > 0);
-		smt_stats_db.nblksel[smt->cycledepth] += (smt->nmtotal > 0) && smt->selected;
-
-		smt_stats_db.all.aitotal[smt->cycledepth] += blk->length;
+		smt_stats_record_update(&smt_stats_db.all, smt);
 
 		if (smt->nmtotal > 0) {
-			smt_stats_db.mem.achosen[smt->cycledepth] += smt->nchosen / smt->nunique;
-			smt_stats_db.mem.aunique[smt->cycledepth] += smt->nunique / smt->nmtotal;
-			smt_stats_db.mem.avarity[smt->cycledepth] += smt_compute_variety(smt->nunique, smt->nmtotal);
-			smt_stats_db.mem.airrtot[smt->cycledepth] += smt->nirrtot / smt->nunique;
-			smt_stats_db.mem.arritot[smt->cycledepth] += smt->nrritot / smt->nunique;
-			smt_stats_db.mem.amtotal[smt->cycledepth] += smt->nmtotal;
-			smt_stats_db.mem.aitotal[smt->cycledepth] += blk->length;
-		}
+			smt_stats_record_update(&smt_stats_db.mem, smt);
 
-		if (smt->nirrtot > 1) {
-			smt_stats_db.mem.airrsim[smt->cycledepth] += smt->nirrsim * 2 / smt->nirrtot / (smt->nirrtot - 1);
-		}
-
-		if (smt->nrritot > 1) {
-			smt_stats_db.mem.arrisim[smt->cycledepth] += smt->nrrisim * 2 / smt->nrritot / (smt->nrritot - 1);
-		}
-
-		if (smt->selected) {
-			if (smt->nmtotal > 0) {
-				smt_stats_db.sel.achosen[smt->cycledepth] += smt->nchosen / smt->nunique;
-				smt_stats_db.sel.aunique[smt->cycledepth] += smt->nunique / smt->nmtotal;
-				smt_stats_db.sel.avarity[smt->cycledepth] += smt_compute_variety(smt->nunique, smt->nmtotal);
-				smt_stats_db.sel.airrtot[smt->cycledepth] += smt->nirrtot / smt->nunique;
-				smt_stats_db.sel.arritot[smt->cycledepth] += smt->nrritot / smt->nunique;
-				smt_stats_db.sel.amtotal[smt->cycledepth] += smt->nmtotal;
-				smt_stats_db.sel.aitotal[smt->cycledepth] += blk->length;
-			}
-
-			if (smt->nirrtot > 1) {
-				smt_stats_db.sel.airrsim[smt->cycledepth] += smt->nirrsim * 2 / smt->nirrtot / (smt->nirrtot - 1);
-			}
-
-			if (smt->nrritot > 1) {
-				smt_stats_db.sel.arrisim[smt->cycledepth] += smt->nrrisim * 2 / smt->nrritot / (smt->nrritot - 1);
+			if (smt->selected == true) {
+				smt_stats_record_update(&smt_stats_db.sel, smt);
 			}
 		}
 	}
 
 	for (binindex = 0; binindex < nbins; binindex += 1) {
-		smt_stats_db.all.aitotal[binindex] /= smt_stats_db.nblkall[binindex];
-
-		smt_stats_db.mem.achosen[binindex] /= smt_stats_db.nblkmem[binindex];
-		smt_stats_db.mem.airrsim[binindex] /= smt_stats_db.nblkmem[binindex];
-		smt_stats_db.mem.arrisim[binindex] /= smt_stats_db.nblkmem[binindex];
-		smt_stats_db.mem.aunique[binindex] /= smt_stats_db.nblkmem[binindex];
-		smt_stats_db.mem.avarity[binindex] /= smt_stats_db.nblkmem[binindex];
-		smt_stats_db.mem.airrtot[binindex] /= smt_stats_db.nblkmem[binindex];
-		smt_stats_db.mem.arritot[binindex] /= smt_stats_db.nblkmem[binindex];
-		smt_stats_db.mem.amtotal[binindex] /= smt_stats_db.nblkmem[binindex];
-		smt_stats_db.mem.aitotal[binindex] /= smt_stats_db.nblkmem[binindex];
-
-		smt_stats_db.sel.achosen[binindex] /= smt_stats_db.nblksel[binindex];
-		smt_stats_db.sel.airrsim[binindex] /= smt_stats_db.nblksel[binindex];
-		smt_stats_db.sel.arrisim[binindex] /= smt_stats_db.nblksel[binindex];
-		smt_stats_db.sel.aunique[binindex] /= smt_stats_db.nblksel[binindex];
-		smt_stats_db.sel.avarity[binindex] /= smt_stats_db.nblksel[binindex];
-		smt_stats_db.sel.airrtot[binindex] /= smt_stats_db.nblksel[binindex];
-		smt_stats_db.sel.arritot[binindex] /= smt_stats_db.nblksel[binindex];
-		smt_stats_db.sel.amtotal[binindex] /= smt_stats_db.nblksel[binindex];
-		smt_stats_db.sel.aitotal[binindex] /= smt_stats_db.nblksel[binindex];
-
-		smt_stats_db.nblkall[binindex] /= nblkall;
-		smt_stats_db.nblkmem[binindex] /= nblkmem;
-		smt_stats_db.nblksel[binindex] /= nblksel;
+		smt_stats_record_scale(&smt_stats_db.all, binindex, nblkall);
+		smt_stats_record_scale(&smt_stats_db.mem, binindex, nblkmem);
+		smt_stats_record_scale(&smt_stats_db.sel, binindex, nblksel);
 	}
 
 	statsdumpname = malloc(MAX_NAME_LEN);
@@ -2021,9 +2007,9 @@ void smt_stats(void) {
 	for (binindex = 0; binindex < nbins; binindex += 1) {
 		fprintf(statsdump, "%lu %.05f %.05f %.05f\n",
 			binindex,
-			smt_stats_db.nblkall[binindex],
-			smt_stats_db.nblkmem[binindex],
-			smt_stats_db.nblksel[binindex]
+			smt_stats_db.all.numblks[binindex],
+			smt_stats_db.mem.numblks[binindex],
+			smt_stats_db.sel.numblks[binindex]
 		);
 	}
 
@@ -2201,29 +2187,9 @@ void smt_stats(void) {
 
 	free(statsdumpname);
 
-	free(smt_stats_db.nblkall);
-	free(smt_stats_db.nblkmem);
-	free(smt_stats_db.nblksel);
-
-	free(smt_stats_db.all.aitotal);
-
-	free(smt_stats_db.mem.achosen);
-	free(smt_stats_db.mem.airrsim);
-	free(smt_stats_db.mem.arrisim);
-	free(smt_stats_db.mem.aunique);
-	free(smt_stats_db.mem.airrtot);
-	free(smt_stats_db.mem.arritot);
-	free(smt_stats_db.mem.amtotal);
-	free(smt_stats_db.mem.aitotal);
-
-	free(smt_stats_db.sel.achosen);
-	free(smt_stats_db.sel.airrsim);
-	free(smt_stats_db.sel.arrisim);
-	free(smt_stats_db.sel.aunique);
-	free(smt_stats_db.sel.airrtot);
-	free(smt_stats_db.sel.arritot);
-	free(smt_stats_db.sel.amtotal);
-	free(smt_stats_db.sel.aitotal);
+	smt_stats_record_fini(&smt_stats_db.all);
+	smt_stats_record_fini(&smt_stats_db.mem);
+	smt_stats_record_fini(&smt_stats_db.sel);
 }
 
 

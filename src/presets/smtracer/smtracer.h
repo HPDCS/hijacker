@@ -79,6 +79,7 @@ typedef struct {
 	size_t nirrtot;             // Total number of unique IRR memory instructions
 	size_t nrritot;             // Total number of unique RRI memory instructions
 	size_t nmtotal;             // Total number of memory instructions
+	size_t nitotal;             // Total number of instructions
 } smt_data;
 
 
