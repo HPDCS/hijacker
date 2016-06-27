@@ -71,6 +71,7 @@ typedef struct {
 	block *lheader;             // Closest loop header
 	smt_access *uniques;        // Candidates list
 
+	double abserror;            // Absolute instrumentation error
 	double variety;             // Block variety
 	size_t nchosen;             // Total number of chosen uniques
 	size_t nirrsim;             // Total number of similar IRR uniques

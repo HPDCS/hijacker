@@ -107,6 +107,7 @@ typedef struct {
 	double *arritot;       // Average number of unique RRI memory instructions per cycle depth
 	double *amtotal;       // Average number of memory instructions per cycle depth
 	double *aitotal;       // Average number of instructions per cycle depth
+	double *aabserr;       // Average absolute error per cycle depth
 } smt_stats_record;
 
 static struct {
@@ -180,17 +181,27 @@ inline static size_t smt_absdiff_sym(smt_access *target, smt_access *current) {
 	target_sym = instr_reference_weak(target->insn);
 	current_sym = instr_reference_weak(current->insn);
 
-	target_sec = find_section(target_sym->secnum);
-	current_sec = find_section(current_sym->secnum);
+	target_sec = target_sym->sec;
+	current_sec = current_sym->sec;
 
-	if (target_sec == current_sec) {
+	distance = smt_params.chunk_size;
+
+	if (target_sec == NULL || current_sec == NULL) {
+		// NOTE: At least one of them is either UNDEFINED, COMMON
+		// or even ABSOLUTE.
+		// We treat all these cases in the same way, although more
+		// thought should be put into them.
+		return distance;
+	}
+
+	if (str_equal(target_sec->name, current_sec->name)) {
 		distance = target_sym->offset + target_sym->relocation.addend;
 		distance -= current_sym->offset + current_sym->relocation.addend;
 
 		return abs(distance);
 	}
 
-	return smt_params.chunk_size;
+	return distance;
 }
 
 
@@ -984,9 +995,16 @@ static void smt_resolve_uniques(block *blk) {
 			if (dist == SCORE_EQUAL) {
 				if (smt_is_irr(target)) {
 					smt->nirrsim += 1;
+					if (smt_params.chunk_size <= 1) {
+					hnotice(3, "'%s' at <%#08llx> and '%s' at <%#08llx> are similar\n",
+						target->insn->i.x86.mnemonic, target->insn->orig_addr,
+						current->insn->i.x86.mnemonic, current->insn->orig_addr);
+						hinternal();
+					}
 				} else {
 					smt->nrrisim += 1;
 				}
+
 
 				hnotice(5, "'%s' at <%#08llx> and '%s' at <%#08llx> are similar\n",
 					target->insn->i.x86.mnemonic, target->insn->orig_addr,
@@ -1447,6 +1465,9 @@ static size_t smt_log_accesses(block *blk) {
 	smt_data *smt;
 	smt_access *access;
 
+	size_t nchosen_floor, nchosen_ceil;
+	double err_floor, err_ceil, old_abserror;
+
 	size_t index;
 
 	smt = blk->smtracer;
@@ -1457,9 +1478,55 @@ static size_t smt_log_accesses(block *blk) {
 
 	hnotice(3, "Variety: %.02f; (block %u)\n", smt->variety, blk->id);
 
+	if (smt->nunique == 0) {
+		// No memory instructions, we can safely skip the block even
+		// when we are in simulation mode because there's nothing to
+		// simulate at all...
+		return 0;
+	}
+
 	// The number of accesses that is actually instrumented is
 	// computed using the number of uniques and the overhead
-	smt->nchosen = ROUNDING(smt_params.instrument_factor * smt->nunique);
+	// The instrumentation error is further used in subsequent
+	// invocations of the algorithm in order to adjust for it
+
+	nchosen_ceil = ceil(smt_params.instrument_factor * smt->nunique);
+	nchosen_floor = floor(smt_params.instrument_factor * smt->nunique);
+
+	err_floor = (double) nchosen_floor / smt->nunique - smt_params.instrument_factor;
+	err_ceil  = (double)  nchosen_ceil / smt->nunique - smt_params.instrument_factor;
+
+	old_abserror = smt->abserror;
+
+	if (fabs(err_floor + smt->abserror) < fabs(err_ceil + smt->abserror)) {
+		smt->nchosen = nchosen_floor;
+		smt->abserror = err_floor + smt->abserror;
+	} else {
+		smt->nchosen = nchosen_ceil;
+		smt->abserror = err_ceil + smt->abserror;
+	}
+
+	hnotice(3, "Floor error: %.2f; Ceiling error: %.2f"
+	           "Old absolute error: %.2f; New absolute error: %.2f\n",
+		err_floor, err_ceil, old_abserror, smt->abserror);
+
+	// smt->nchosen = ROUNDING((smt_params.instrument_factor) * smt->nunique);
+
+	// if (smt->nunique == 0) {
+	// 	smt->nchosen = 0;
+	// }
+	// else if (smt_params.instrument_factor - smt->abserror < 0) {
+	// 	smt->nchosen = 0;
+	// 	smt->abserror -= smt_params.instrument_factor;
+	// }
+	// else if (smt_params.instrument_factor - smt->abserror > 1) {
+	// 	smt->nchosen = smt->nunique;
+	// 	smt->abserror += (1-smt_params.instrument_factor);
+	// }
+	// else {
+	// 	smt->nchosen = ROUNDING((smt_params.instrument_factor + smt->abserror) * smt->nunique);
+	// 	smt->abserror = smt_params.instrument_factor - ((double) smt->nchosen / smt->nunique);
+	// }
 
 	// Index in the TLS buffer (block-level scope)
 	index = 0;
@@ -1558,13 +1625,13 @@ static size_t smt_log_accesses(block *blk) {
 		hinternal();
 	}
 
-	if (((double) index)/smt->nunique < smt_params.instrument_factor) {
-		hinternal();
-	}
+	// if (((double) index)/smt->nunique < smt_params.instrument_factor) {
+	// 	hinternal();
+	// }
 
 	hnotice(2, "Instrumented uniques: %lu; Chosen uniques: %lu; "
-		"Total uniques: %lu; Total accesses: %lu\n",
-		index, smt->nchosen, smt->nunique, smt->nmtotal);
+		"Total uniques: %lu; Total accesses: %lu; Abserror: %.2f\n",
+		index, smt->nchosen, smt->nunique, smt->nmtotal, smt->abserror);
 
 	return index;
 }
@@ -1880,6 +1947,7 @@ void smt_stats_record_init(smt_stats_record *record, size_t nbins) {
 	record->arritot = calloc(nbins, sizeof(double));
 	record->amtotal = calloc(nbins, sizeof(double));
 	record->aitotal = calloc(nbins, sizeof(double));
+	record->aabserr = calloc(nbins, sizeof(double));
 }
 
 
@@ -1894,6 +1962,7 @@ void smt_stats_record_update(smt_stats_record *record, smt_data *smt) {
 	record->arritot[smt->cycledepth] += (double) smt->nrritot / smt->nunique;
 	record->amtotal[smt->cycledepth] += (double) smt->nmtotal;
 	record->aitotal[smt->cycledepth] += (double) smt->nitotal;
+	record->aabserr[smt->cycledepth] += (double) smt->abserror;
 
 	if (smt->nirrtot > 1) {
 		npairs = smt->nirrtot * (smt->nirrtot - 1) / 2;
@@ -1917,6 +1986,7 @@ void smt_stats_record_scale(smt_stats_record *record, unsigned int binindex, siz
 	record->arritot[binindex] /= record->numblks[binindex];
 	record->amtotal[binindex] /= record->numblks[binindex];
 	record->aitotal[binindex] /= record->numblks[binindex];
+	record->aabserr[binindex] /= record->numblks[binindex];
 	record->numblks[binindex] /= ntot;
 }
 
@@ -1931,6 +2001,7 @@ void smt_stats_record_fini(smt_stats_record *record) {
 	free(record->arritot);
 	free(record->amtotal);
 	free(record->aitotal);
+	free(record->aabserr);
 }
 
 
@@ -2185,6 +2256,26 @@ void smt_stats(void) {
 
 	fclose(statsdump);
 
+	// ------------------------------------------------------------
+	// Average absolute error per cycle depth
+	// ------------------------------------------------------------
+	sprintf(statsdumpname, "%s_%s.stats", smt_params.testname, "aabserr");
+
+	if ((statsdump = fopen(statsdumpname, "w")) == NULL) {
+		hinternal();
+	}
+
+	for (binindex = 0; binindex < nbins; binindex += 1) {
+		fprintf(statsdump, "%lu %.05f %.05f\n",
+			binindex,
+			smt_stats_db.mem.aabserr[binindex],
+			smt_stats_db.sel.aabserr[binindex]
+		);
+	}
+
+	fclose(statsdump);
+
+
 	free(statsdumpname);
 
 	smt_stats_record_fini(&smt_stats_db.all);
@@ -2200,7 +2291,7 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 	function *func;
 
 	block *blk;
-	smt_data *smt;
+	smt_data *smt, *smt_next;
 
 	size_t count, funccount, blkcount;
 
@@ -2251,6 +2342,7 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 
 		for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
 			smt = blk->smtracer;
+
 			if (smt->score < smt_params.block_threshold && smt_params.simulate == false) {
 				// When not in simulation mode, irrelevant blocks are skipped
 				continue;
@@ -2261,6 +2353,13 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 
 			if (smt->nmtotal > 0) {
 				smt->selected = true;
+			}
+
+			if (blk->next != func->end_blk->next) {
+				// Propagate the absolute error
+				// TODO: Propagate also when BT!=100
+				smt_next = blk->next->smtracer;
+				smt_next->abserror = smt->abserror;
 			}
 		}
 
