@@ -214,7 +214,7 @@ inline static bool smt_same_breg(smt_access *target, smt_access *current) {
 
 	if (target_x86->has_base_register && current_x86->has_base_register) {
 		same = target_x86->breg == current_x86->breg;
-		same = same && target->vtable[target_x86->breg] == current->vtable[target_x86->breg];
+		same = same && target->vtable[target_x86->breg] == current->vtable[current_x86->breg];
 
 		return same;
 	}
@@ -239,7 +239,7 @@ inline static bool smt_same_ireg(smt_access *target, smt_access *current) {
 
 	if (target_x86->has_index_register && current_x86->has_index_register) {
 		same = target_x86->ireg == current_x86->ireg;
-		same = same && target->vtable[target_x86->ireg] == current->vtable[target_x86->ireg];
+		same = same && target->vtable[target_x86->ireg] == current->vtable[current_x86->ireg];
 
 		if (target_x86->has_scale && current_x86->has_scale) {
 			same = same && target_x86->scale == current_x86->scale;
@@ -291,7 +291,8 @@ static size_t smt_distance_irr(smt_access *target, smt_access *current) {
 
 	if (smt_absdiff_sym(target, current) >= smt_params.chunk_size) {
 		score += SCORE_3;
-
+	}
+	else {
 		if (smt_same_breg(target, current) == false) {
 			score += SCORE_1;
 		}
@@ -995,16 +996,16 @@ static void smt_resolve_uniques(block *blk) {
 			if (dist == SCORE_EQUAL) {
 				if (smt_is_irr(target)) {
 					smt->nirrsim += 1;
+
 					if (smt_params.chunk_size <= 1) {
-					hnotice(3, "'%s' at <%#08llx> and '%s' at <%#08llx> are similar\n",
-						target->insn->i.x86.mnemonic, target->insn->orig_addr,
-						current->insn->i.x86.mnemonic, current->insn->orig_addr);
-						hinternal();
+						herror(true, "'%s' at <%#08llx> and '%s' at <%#08llx> should be equal!\n",
+							target->insn->i.x86.mnemonic, target->insn->orig_addr,
+							current->insn->i.x86.mnemonic, current->insn->orig_addr);
 					}
+
 				} else {
 					smt->nrrisim += 1;
 				}
-
 
 				hnotice(5, "'%s' at <%#08llx> and '%s' at <%#08llx> are similar\n",
 					target->insn->i.x86.mnemonic, target->insn->orig_addr,
@@ -2356,6 +2357,7 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 			}
 
 			if (blk->next != func->end_blk->next) {
+			// if (blk->next != NULL) {
 				// Propagate the absolute error
 				// TODO: Propagate also when BT!=100
 				smt_next = blk->next->smtracer;
