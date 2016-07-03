@@ -92,6 +92,7 @@ static struct {
 	                             // engine but instruments all accesses
 	bool print_stats;            // If true, generates statistical reports
 	bool trace_stack;            // If false, discards tracing stack accesses
+	char *flush_policy;
 } smt_params;
 
 
@@ -836,6 +837,7 @@ static smt_access *smt_resolve_access(block *blk, insn_info *instr, char *vtable
 	target->count = 1;
 	target->nequiv = 1;
 	target->insn = instr;
+
 	target->instrumented = false;
 	target->selected = false;
 	target->frozen = false;
@@ -846,23 +848,32 @@ static smt_access *smt_resolve_access(block *blk, insn_info *instr, char *vtable
 
 		if (smt_equal(target, current)) {
 			target->original = current;
+
 			prev = current;
 			break;
 		}
 	}
 
 	if (target->original != NULL) {
+		hnotice(5, "Found duplicate '%s' at <%#08llx>\n",
+			target->original->insn->i.x86.mnemonic, target->original->insn->orig_addr);
+
 		// The size of the equivalence class is always updated
-		// when a duplicate is found
+		// when a duplicate is found (this is the one used as score)
 		target->original->nequiv += 1;
-	}
-	else if (target->original != NULL && smt_params.simulate == false) {
-		// In real mode, the access count of the original access
-		// is incremented too (the duplicate is not linked to the
-		// chain of accesses since we're not in simulation mode)
-		target->original->count += 1;
+
+		if (smt_params.simulate == false) {
+			// In real mode, the access count of the original access
+			// is incremented too (this is the one used for traces)
+			target->original->count += 1;
+		}
 	}
 	else {
+		hnotice(5, "Found unique '%s' at <%#08llx>\n",
+			target->insn->i.x86.mnemonic, target->insn->orig_addr);
+	}
+
+	if (target->original == NULL || smt_params.simulate == true) {
 		// Append the access to the list of uniques, including
 		// duplicates if we are in simulation mode
 		if (smt->uniques == NULL) {
@@ -871,13 +882,17 @@ static smt_access *smt_resolve_access(block *blk, insn_info *instr, char *vtable
 			target->next = prev->next;
 			prev->next = target;
 		}
+
+		return target;
 	}
 
-	return target;
+	free(target);
+
+	return NULL;
 }
 
 
-static void smt_resolve_uniques(block *blk) {
+static void smt_compute_uniques(block *blk) {
 	insn_info *instr;
 
 	char vtable[SMT_X86_VTABLE_SIZE];
@@ -919,18 +934,7 @@ static void smt_resolve_uniques(block *blk) {
 
 			target = smt_resolve_access(blk, instr, vtable);
 
-			if (target->original != NULL) {
-				hnotice(5, "Found duplicate '%s' at <%#08llx>\n",
-					target->original->insn->i.x86.mnemonic, target->original->insn->orig_addr);
-
-				if (smt_params.simulate == false) {
-					free(target);
-				}
-			}
-			else {
-				hnotice(5, "Found unique '%s' at <%#08llx>\n",
-					target->insn->i.x86.mnemonic, target->insn->orig_addr);
-
+			if (target != NULL && target->original == NULL) {
 				// Updating counters for duplicate accesses is wrong,
 				// since they don't contribute to the instrumentation
 				// discipline (despite being actually instrumented)
@@ -943,7 +947,6 @@ static void smt_resolve_uniques(block *blk) {
 				}
 			}
 		}
-
 	}
 
 	// ------------------------------------------------------------
@@ -963,11 +966,13 @@ static void smt_resolve_uniques(block *blk) {
 	// (despite being actually instrumented)
 	for (i = 0, target = smt->uniques; target; target = target->next, ++i) {
 		if (target->original != NULL) {
+			--i;
 			continue;
 		}
 
 		for (j = 0, current = smt->uniques; current; current = current->next, ++j) {
 			if (current->original != NULL) {
+				--j;
 				continue;
 			}
 
@@ -1031,7 +1036,7 @@ static void smt_resolve_uniques(block *blk) {
 			target->score /= smt->nrritot;
 		}
 
-		target->score *= target->nequiv;
+		// target->score *= target->nequiv;
 
 		hnotice(4, "Access score for '%s' at <%#08llx> is '%0.2f'\n",
 			target->insn->i.x86.mnemonic, target->insn->orig_addr, target->score);
@@ -1395,11 +1400,7 @@ static inline smt_access *smt_pick_next_access(smt_access *uniques) {
 	// Find the next access to instrument according to its score
 	for (highest = NULL, access = uniques; access; access = access->next) {
 		if (access->original != NULL) {
-			// While in simulation mode, duplicate accesses will have
-			// an average score equal to 0. This is a problem when
-			// another original (i.e., not having a duplicate) access
-			// has score 0. To avoid confusion between them, we skip
-			// all the duplicates.
+			// While in simulation mode, we skip all duplicates.
 			continue;
 		}
 		else if (access->frozen == true) {
@@ -1424,7 +1425,14 @@ static inline smt_access *smt_pick_next_access(smt_access *uniques) {
 			// We have a found a better feasible choice along the way
 			// (notice that we use strict inequality here, since our
 			// bias is the instructions order within the basic block)
-			highest = (access->score > highest->score) ? access : highest;
+			if (access->nequiv > highest->nequiv) {
+				highest = access;
+			}
+			else if (access->nequiv == highest->nequiv) {
+				if (access->score > highest->score) {
+					highest = access;
+				}
+			}
 		}
 	}
 
@@ -1442,7 +1450,7 @@ static inline smt_access *smt_pick_next_access(smt_access *uniques) {
 		}
 		if (smt_same_template(highest, access) == false) {
 			// Accesses belonging to different templates cannot be
-			// compared, so we skip them
+			// compared, so we skip them...
 			continue;
 		}
 		else if (smt_is_irr(highest) == true
@@ -1477,7 +1485,8 @@ static size_t smt_log_accesses(block *blk) {
 	// accesses and the user-defined instrumentation factor
 	smt->variety = smt_compute_variety(smt->nunique, smt->nmtotal);
 
-	hnotice(3, "Variety: %.02f; (block %u)\n", smt->variety, blk->id);
+	hnotice(3, "Variety: %.02f; Uniques (RRI + IRR): %lu + %lu = %lu; Memory: %lu; Total: %lu\n",
+		smt->variety, smt->nrritot, smt->nirrtot, smt->nunique, smt->nmtotal, smt->nitotal);
 
 	if (smt->nunique == 0) {
 		// No memory instructions, we can safely skip the block even
@@ -1507,55 +1516,12 @@ static size_t smt_log_accesses(block *blk) {
 		smt->abserror = err_ceil + smt->abserror;
 	}
 
-	hnotice(3, "Floor error: %.2f; Ceiling error: %.2f"
+	hnotice(3, "Floor error: %.2f; Ceiling error: %.2f; "
 	           "Old absolute error: %.2f; New absolute error: %.2f\n",
 		err_floor, err_ceil, old_abserror, smt->abserror);
 
-	// smt->nchosen = ROUNDING((smt_params.instrument_factor) * smt->nunique);
-
-	// if (smt->nunique == 0) {
-	// 	smt->nchosen = 0;
-	// }
-	// else if (smt_params.instrument_factor - smt->abserror < 0) {
-	// 	smt->nchosen = 0;
-	// 	smt->abserror -= smt_params.instrument_factor;
-	// }
-	// else if (smt_params.instrument_factor - smt->abserror > 1) {
-	// 	smt->nchosen = smt->nunique;
-	// 	smt->abserror += (1-smt_params.instrument_factor);
-	// }
-	// else {
-	// 	smt->nchosen = ROUNDING((smt_params.instrument_factor + smt->abserror) * smt->nunique);
-	// 	smt->abserror = smt_params.instrument_factor - ((double) smt->nchosen / smt->nunique);
-	// }
-
 	// Index in the TLS buffer (block-level scope)
 	index = 0;
-
-	// while (index < smt->nchosen) {
-	// 	smt_access *highest;
-
-	// 	for (access = highest = smt->uniques; access; access = access->next) {
-	// 		if (access->nequiv > highest->nequiv && access->instrumented == false) {
-	// 			highest = access;
-	// 		}
-	// 	}
-
-	// 	if (highest->nequiv == 1) {
-	// 		break;
-	// 	}
-
-	// 	highest->selected = true;
-	// 	highest->instrumented = true;
-	// 	highest->index = index;
-
-	// 	smt_instrument_access(blk, highest);
-
-	// 	hnotice(4, "Instrumented access '%s' at <%#08llx> (index = %lu)\n",
-	// 		highest->insn->i.x86.mnemonic, highest->insn->orig_addr, index);
-
-	// 	index += 1;
-	// }
 
 	// Keep instrumenting until there's no more overhead left...
 	// (note that we instrument no more than `nchosen` accesses.)
@@ -1878,11 +1844,11 @@ static size_t smt_instrument_block(block *blk, symbol *callfunc) {
 	count = 0;
 
 	hnotice(2, "Instrumenting block #%u (score %f [mode: %s])\n",
-		blk->id, smt->score, smt_params.simulate == true ? "smt_params.simulate" : "real");
+		blk->id, smt->score, smt_params.simulate == true ? "simulated" : "real");
 
 	// Relevant accesses are detected and the set of unique
 	// instructions is created alongside
-	smt_resolve_uniques(blk);
+	smt_compute_uniques(blk);
 
 	// A subset of relevant accesses is actually instrumented
 	// according to the requested accuracy factor
