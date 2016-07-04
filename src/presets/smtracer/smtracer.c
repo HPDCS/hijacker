@@ -88,8 +88,10 @@ static struct {
 	                             // as a base-2 exponent
 	char *testname;              // Name of this run of smtracer, used e.g.
 	                             // to generate statistical reports
+	bool selective;              // If true, instruments clusters in place of
+	                             // single accesses
 	bool simulate;               // If true, simulates a run of the selective
-	                             // engine but instruments all accesses
+	                             // engine but instruments all clusters/accesses
 	bool print_stats;            // If true, generates statistical reports
 	bool trace_stack;            // If false, discards tracing stack accesses
 	char *flush_policy;
@@ -429,7 +431,7 @@ static inline double smt_compute_variety(size_t nunique, size_t nmtotal) {
 	if (nmtotal == 1) {
 		return 1.0;
 	} else {
-		return (nunique - 1) / (nmtotal - 1);
+		return (double) (nunique - 1) / (nmtotal - 1);
 	}
 }
 
@@ -862,9 +864,9 @@ static smt_access *smt_resolve_access(block *blk, insn_info *instr, char *vtable
 		// when a duplicate is found (this is the one used as score)
 		target->original->nequiv += 1;
 
-		if (smt_params.simulate == false) {
-			// In real mode, the access count of the original access
-			// is incremented too (this is the one used for traces)
+		if (smt_params.selective == true) {
+			// In selective mode, the access count of the original
+			// access is incremented (this is the one used for traces)
 			target->original->count += 1;
 		}
 	}
@@ -873,9 +875,9 @@ static smt_access *smt_resolve_access(block *blk, insn_info *instr, char *vtable
 			target->insn->i.x86.mnemonic, target->insn->orig_addr);
 	}
 
-	if (target->original == NULL || smt_params.simulate == true) {
+	if (target->original == NULL || smt_params.selective == false) {
 		// Append the access to the list of uniques, including
-		// duplicates if we are in simulation mode
+		// duplicates if we are in non-selective mode
 		if (smt->uniques == NULL) {
 			smt->uniques = target;
 		} else {
@@ -924,6 +926,7 @@ static void smt_compute_uniques(block *blk) {
 
 		// Check if the access is relevant and create an access entry
 		if (smt_is_relevant(instr)) {
+
 			hnotice(4, "Resolving instruction '%s' at <%#08llx>\n",
 				instr->i.x86.mnemonic, instr->orig_addr);
 
@@ -946,6 +949,7 @@ static void smt_compute_uniques(block *blk) {
 					smt->nrritot += 1;
 				}
 			}
+
 		}
 	}
 
@@ -1001,15 +1005,14 @@ static void smt_compute_uniques(block *blk) {
 			if (dist == SCORE_EQUAL) {
 				if (smt_is_irr(target)) {
 					smt->nirrsim += 1;
-
-					if (smt_params.chunk_size <= 1) {
-						herror(true, "'%s' at <%#08llx> and '%s' at <%#08llx> should be equal!\n",
-							target->insn->i.x86.mnemonic, target->insn->orig_addr,
-							current->insn->i.x86.mnemonic, current->insn->orig_addr);
-					}
-
 				} else {
 					smt->nrrisim += 1;
+				}
+
+				if (smt_params.chunk_size <= 1) {
+					herror(true, "'%s' at <%#08llx> and '%s' at <%#08llx> should be equal!\n",
+						target->insn->i.x86.mnemonic, target->insn->orig_addr,
+						current->insn->i.x86.mnemonic, current->insn->orig_addr);
 				}
 
 				hnotice(5, "'%s' at <%#08llx> and '%s' at <%#08llx> are similar\n",
@@ -1035,8 +1038,6 @@ static void smt_compute_uniques(block *blk) {
 		} else {
 			target->score /= smt->nrritot;
 		}
-
-		// target->score *= target->nequiv;
 
 		hnotice(4, "Access score for '%s' at <%#08llx> is '%0.2f'\n",
 			target->insn->i.x86.mnemonic, target->insn->orig_addr, target->score);
@@ -1488,10 +1489,7 @@ static size_t smt_log_accesses(block *blk) {
 	hnotice(3, "Variety: %.02f; Uniques (RRI + IRR): %lu + %lu = %lu; Memory: %lu; Total: %lu\n",
 		smt->variety, smt->nrritot, smt->nirrtot, smt->nunique, smt->nmtotal, smt->nitotal);
 
-	if (smt->nunique == 0) {
-		// No memory instructions, we can safely skip the block even
-		// when we are in simulation mode because there's nothing to
-		// simulate at all...
+	if (smt->nmtotal == 0) {
 		return 0;
 	}
 
@@ -1550,11 +1548,10 @@ static size_t smt_log_accesses(block *blk) {
 	}
 
 	if (smt_params.simulate == true) {
-		// In simulation mode we instrument all the remaining accesses,
-		// which are the union of all duplicate accesses and original
-		// non-instrumented ones (possibly frozen).
+		// In simulated mode we instrument all remaining accesses.
 		// In doing this, we also keep track of the fact that they
 		// were not actually selected.
+
 		for (access = smt->uniques; access; access = access->next) {
 			if (access->instrumented == true) {
 				// Already-instrumented accesses aren't selected again
@@ -1579,11 +1576,12 @@ static size_t smt_log_accesses(block *blk) {
 
 			smt_instrument_access(blk, access);
 
-			hnotice(4, "Instrumented smt_params.simulate access '%s' at <%#08llx> (index = %lu)\n",
+			hnotice(4, "Instrumented extra access '%s' at <%#08llx> (index = %lu)\n",
 				access->insn->i.x86.mnemonic, access->insn->orig_addr, index);
 
 			index += 1;
 		}
+
 	}
 
 	if (index > smt->nmtotal) {
@@ -1592,9 +1590,23 @@ static size_t smt_log_accesses(block *blk) {
 		hinternal();
 	}
 
-	// if (((double) index)/smt->nunique < smt_params.instrument_factor) {
-	// 	hinternal();
-	// }
+	if (smt_params.selective == true) {
+		if (smt_params.simulate == true) {
+			if (index != smt->nunique) {
+				hinternal();
+			}
+		}
+		else {
+			if (index != smt->nchosen) {
+				hinternal();
+			}
+		}
+	}
+	else {
+		if (index != smt->nmtotal) {
+			hinternal();
+		}
+	}
 
 	hnotice(2, "Instrumented uniques: %lu; Chosen uniques: %lu; "
 		"Total uniques: %lu; Total accesses: %lu; Abserror: %.2f\n",
@@ -1843,8 +1855,8 @@ static size_t smt_instrument_block(block *blk, symbol *callfunc) {
 	// Number of instrumented instructions in this basic block
 	count = 0;
 
-	hnotice(2, "Instrumenting block #%u (score %f [mode: %s])\n",
-		blk->id, smt->score, smt_params.simulate == true ? "simulated" : "real");
+	hnotice(2, "Instrumenting block #%u (score %f)\n",
+		blk->id, smt->score);
 
 	// Relevant accesses are detected and the set of unique
 	// instructions is created alongside
@@ -2269,7 +2281,7 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 	// - Avoid positional fetching of parameters
 	// - Implement default values
 	// - Validate parameters
-	if (numparams != 7) {
+	if (numparams != 8) {
 		hinternal();
 	}
 
@@ -2277,9 +2289,10 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 	smt_params.instrument_factor  = atof(params[1]->value);
 	smt_params.chunk_size         = 1 << (atoi(params[2]->value));
 	smt_params.testname           = params[3]->value;
-	smt_params.simulate           = str_equal(params[4]->value, "true");
-	smt_params.print_stats        = str_equal(params[5]->value, "true");
-	smt_params.trace_stack        = str_equal(params[6]->value, "true");
+	smt_params.selective          = str_equal(params[4]->value, "true");
+	smt_params.simulate           = str_equal(params[5]->value, "true");
+	smt_params.print_stats        = str_equal(params[6]->value, "true");
+	smt_params.trace_stack        = str_equal(params[7]->value, "true");
 
 	// ------------------------------------------------------------
 	// Instrument the program
@@ -2310,9 +2323,12 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 		for (blk = func->begin_blk; blk != func->end_blk->next; blk = blk->next) {
 			smt = blk->smtracer;
 
-			if (smt->score < smt_params.block_threshold && smt_params.simulate == false) {
-				// When not in simulation mode, irrelevant blocks are skipped
-				continue;
+			if (smt->score < smt_params.block_threshold) {
+				if (smt_params.simulate == false) {
+					// If we don't want to simulate our engine, we discard
+					// blocks whose scores don't satisfy the threshold
+					continue;
+				}
 			}
 
 			blkcount = smt_instrument_block(blk, callfunc);
