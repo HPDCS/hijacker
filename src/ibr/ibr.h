@@ -55,9 +55,14 @@ typedef enum {
 	SUBSTITUTE
 } insn_insert_mode;
 
+
+#define instr_reference_weak(instr) \
+  ((instr)->reference.first ? (instr)->reference.first->elem : NULL)
+
+
 struct _instruction {
+	unsigned int index;
 	unsigned long   flags;
-	unsigned long long base_addr;
 	unsigned long long  orig_addr;
 	unsigned long long  new_addr;
 	unsigned int    size;
@@ -83,8 +88,16 @@ struct _instruction {
 	// as the target of a jump instruction.
 	struct _instruction *virtual;
 
-	struct _symbol *reference;
-	struct _symbol *pointedby;
+	linked_list reference;
+	linked_list pointedby;
+
+	// struct _symbol *reference;
+	// struct _symbol *pointedby;
+	bool written;		// Tell if the current instruction has been currently emitted
+
+	// Parent instruction in the previous IBR version
+	struct _instruction *parent;
+
 	struct _instruction *prev;  // Instructions are organized in a chain
 	struct _instruction *next;
 };
@@ -204,7 +217,7 @@ struct _symbol {
 	symbol_bind bind;     /// The hijacker's local bind specification of the symbol
 
 	unsigned int index;   /// Symbol's index within the symbol table
-	unsigned char *name;  /// Pointer to the buffer holding the symbol's name
+	char *name;  /// Pointer to the buffer holding the symbol's name
 	unsigned int size;    /// Size of the symbol, could be zero (e.g. for SYMBOL_UNDEF)
 
 	unsigned int secnum;  /// Index of the section the symbol belongs to
@@ -252,6 +265,8 @@ struct _reloc {
 /* Functions */
 
 struct _function {
+	char   *name;
+
 	block *begin_blk;        // [SE]
 	block *end_blk;          // [SE]
 
@@ -261,15 +276,19 @@ struct _function {
 	linked_list callto;      // List of functions that are called by this function
 	bool visited;            // True if the function was already met in the current visit
 
-	int     passes;
-	unsigned char   *name;
-	unsigned long long  orig_addr;
-	unsigned long long  new_addr;
+	bool overload;
+	linked_list alias;		// A list of possible aliases of this function
+
 	insn_info   *begin_insn;
 	insn_info   *end_insn;
 	symbol      *symbol;  // [DC] Added reference to the relative symbol
+
 	struct _function *next;
 };
+
+#define functions_overlap(a, b)\
+	(a && b && a->symbol->sec == b->symbol->sec\
+		&& a->begin_insn->new_addr == b->begin_insn->new_addr)
 
 
 /* Sections and relocation entries */
@@ -289,7 +308,7 @@ extern const char *section_type_str[];
 struct _section {
 	section_type type;
 	unsigned int index;
-	unsigned char *name;
+	char *name;
 	unsigned long long offset;
 
 	void *payload;  // In-memory section contents
@@ -313,16 +332,15 @@ insn_info *find_last_insn(function *functions);
 void parse_instruction_bytes(unsigned char *bytes, unsigned long int *pos, insn_info **final);
 int insert_instructions_at(insn_info *target, unsigned char *binary, size_t size,
 	insn_insert_mode mode, insn_info **last);
-int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size,
-	insn_info **last);
+int substitute_instruction_with(insn_info *target, unsigned char *binary, size_t size);
 insn_info *clone_instruction(insn_info *insn);
 insn_info *clone_instruction_list(insn_info *insn);
-void add_call_instruction(insn_info *target, unsigned char *func, insn_insert_mode mode, insn_info **instr);
-void add_jump_instruction(insn_info *target, unsigned char *name, insn_insert_mode mode, insn_info **instr);
+void add_call_instruction(insn_info *target, char *func, insn_insert_mode mode, insn_info **instr);
+void add_jump_instruction(insn_info *target, char *name, insn_insert_mode mode, insn_info **instr);
 void set_jumpto_reference(insn_info *jump, insn_info *target);
 void set_jumptable_entry(insn_info *jump, insn_info *entry, unsigned int idx);
 void set_virtual_reference(insn_info *target, insn_info *virtual);
-void link_jump_instructions(function *func);
+void link_jump_instructions(void);
 void update_instruction_addresses(int version);
 void update_jump_displacements(int version);
 void set_call_displacement(insn_info *jump, insn_info *target);
@@ -330,8 +348,8 @@ void set_call_displacement(insn_info *jump, insn_info *target);
 /* symbol.c */
 
 symbol *find_symbol(size_t index);
-symbol *find_symbol_by_name(unsigned char *name);
-symbol *create_symbol_node(unsigned char *name, symbol_type type, symbol_bind bind, int size);
+symbol *find_symbol_by_name(char *name);
+symbol *create_symbol_node(char *name, symbol_type type, symbol_bind bind, int size);
 symbol *symbol_create(char *name, symbol_type type, symbol_bind bind,
 	section *sec, size_t size);
 symbol *symbol_create_from_ELF(Elf_Sym *elfsym);
@@ -347,10 +365,11 @@ symbol *symbol_rela_clone(symbol *sym);
 
 /* function.c */
 
+function *find_func_cool(section *sec, unsigned long long addr);
 function *find_func_from_instr(insn_info *instr, insn_address_type type);
 function *find_func_from_addr(unsigned long long addr);
-function *function_create_from_insn(char *name, insn_info *code);
-function *function_create_from_bytes(char *name, unsigned char *code, size_t size);
+function *function_create_from_insn(char *name, insn_info *code, section *sec);
+function *function_create_from_bytes(char *name, unsigned char *code, size_t size, section *sec);
 function *clone_function(function *func, char *suffix);
 function *clone_function_list(function *func, char *suffix);
 // function *clone_function_descriptor(function *original, char *name);
@@ -358,7 +377,7 @@ function *clone_function_list(function *func, char *suffix);
 /* section.c */
 
 section *find_section(unsigned int idx);
-section *find_section_by_name(unsigned char *name);
+section *find_section_by_name(char *name, int version);
 // reloc *find_reloc(section *sec, unsigned long offset);
 section *section_create(char *name, section_type type, void *payload);
 section *section_create_from_ELF(size_t index, section_type type);
@@ -373,7 +392,7 @@ block *block_find(insn_info *instr);
 void block_link(block *from, block *to, block_edge_type type);
 void block_tree_dump(char *filename, char *mode);
 void block_graph_dump(function *func, char *filename, char *mode);
-block *block_graph_create(function *functions);
+block *block_graph_create(void);
 void block_graph_visit(block_edge *edge, graph_visit *visit);
 
 

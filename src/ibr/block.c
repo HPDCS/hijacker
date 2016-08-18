@@ -145,7 +145,7 @@ static void block_tree_rebalance(block *orig, block *new) {
 
 	while (parent) {
 		block_tree_balance_update(parent);
-		hnotice(5, "Checking whether block #%u needs re-balancing (balance %d)\n", parent->id, parent->balance);
+		hnotice(6, "Checking whether block #%u needs re-balancing (balance %d)\n", parent->id, parent->balance);
 
 		if (parent->balance >= 2) {
 			// LEFT RIGHT case
@@ -181,24 +181,32 @@ block *block_find(insn_info *instr) {
 	block *blk;
 
 	if (!instr) {
-		return NULL;
+		hinternal();
 	}
 
-	blk = root[PROGRAM(version)];
-
-	while(blk) {
-		if (blk->begin->orig_addr > instr->orig_addr) {
-			blk = blk->left;
-		}
-		else if (blk->end->orig_addr < instr->orig_addr) {
-			blk = blk->right;
-		}
-		else {
-			break;
+	for (blk = PROGRAM(blocks[PROGRAM(version)]); blk; blk = blk->next) {
+		if (blk->begin->index <= instr->index & blk->end->index >= instr->index) {
+			return blk;
 		}
 	}
 
-	return blk;
+	return NULL;
+
+	// blk = root[PROGRAM(version)];
+
+	// while(blk) {
+	// 	if (blk->begin->index > instr->index) {
+	// 		blk = blk->left;
+	// 	}
+	// 	else if (blk->end->index < instr->index) {
+	// 		blk = blk->right;
+	// 	}
+	// 	else {
+	// 		break;
+	// 	}
+	// }
+
+	// return blk;
 }
 
 block *block_split(block *blk, insn_info *breakpoint, block_split_mode mode) {
@@ -258,7 +266,7 @@ block *block_split(block *blk, insn_info *breakpoint, block_split_mode mode) {
 		new_blk->id, new_blk->begin->orig_addr, new_blk->end->orig_addr);
 
 	// We maintain a balanced tree of blocks for fast lookup
-	block_tree_rebalance(blk, new_blk);
+	// block_tree_rebalance(blk, new_blk);
 
 	return new_blk;
 }
@@ -272,7 +280,7 @@ void block_link(block *from, block *to, block_edge_type type) {
 	}
 
 	if (from == to) {
-		hnotice(4, "Skipping block #%u auto-linking\n", from->id, to->id);
+		hnotice(4, "Skipping block #%u auto-linking\n", from->id);
 		return;
 	}
 
@@ -297,6 +305,9 @@ void block_tree_dump(char *filename, char *mode) {
 	FILE *f;
 	block *blk;
 	linked_list *queue, *queue_temp;
+
+	// FIXME: Disabled for now
+	return;
 
 	if (!root[PROGRAM(version)]) {
 		return;
@@ -564,41 +575,47 @@ static bool block_graph_complete_post(void *elem, void *data) {
 	return true;
 }
 
-block *block_graph_create(function *functions) {
-	function *func, *next, *prev, *callee;
+block *block_graph_create(void) {
+	function *first, *func, *next, *prev, *callee;
 	insn_info *instr;
 	block *blocks, *current_blk, *new_blk, *temp_blk, *temp_new_blk;
+
+	symbol *sym;
+
+	hnotice(1, "Resolving CFG...\n");
+
+	first = PROGRAM(v_code)[PROGRAM(version)];
 
 	// The first block comprises the entire program, then it will be
 	// progressively split until we obtain basic blocks
 	current_blk = block_create();
-	current_blk->begin = functions->begin_insn;
-	current_blk->end = find_last_insn(functions);
+	current_blk->begin = first->begin_insn;
+	current_blk->end = find_last_insn(first);
 
 	hnotice(4, "Program block #%u created from <%#08llx> to <%#08llx>\n",
 		current_blk->id, current_blk->begin->orig_addr, current_blk->end->orig_addr);
 
-	blocks = current_blk;
+	blocks = PROGRAM(blocks)[PROGRAM(version)] = current_blk;
 
 	// For each instruction in each function, we begin iteratively
 	// splitting current blocks into smaller and smaller chunks
-	for (prev = NULL, func = functions; func; prev = func, func = func->next) {
+	for (prev = NULL, func = first; func; prev = func, func = func->next) {
 
 		hnotice(2, "Resolving CFG for function '%s' at <%#08llx>\n",
 			func->name, func->begin_insn->orig_addr);
 
-		if (prev != NULL && func->orig_addr == prev->orig_addr) {
-			// Handle the case of overlapping functions
+		// if (functions_overlap(prev, func)) {
+		// 	// Handle the case of overlapping functions
 
-			func->begin_blk = prev->begin_blk;
-			func->end_blk = prev->end_blk;
+		// 	func->begin_blk = prev->begin_blk;
+		// 	func->end_blk = prev->end_blk;
 
-			func->source = prev->source;
-			func->calledfrom = prev->calledfrom;
-			func->callto = prev->callto;
+		// 	func->source = prev->source;
+		// 	func->calledfrom = prev->calledfrom;
+		// 	func->callto = prev->callto;
 
-			continue;
-		}
+		// 	continue;
+		// }
 
 		// Beginning of a function
 		hnotice(3, "Function '%s' begin breakpoint at <%#08llx>\n",
@@ -620,7 +637,7 @@ block *block_graph_create(function *functions) {
 
 			// We've moved to a block which was already created during
 			// a previous iteration
-			if (instr->orig_addr > current_blk->end->orig_addr) {
+			if (instr->index > current_blk->end->index) {
 				current_blk = current_blk->next;
 
 				// Every instruction of the program must be mapped to its own block
@@ -661,6 +678,11 @@ block *block_graph_create(function *functions) {
 					hnotice(3, "Jump target breakpoint (jumptable) at <%#08llx>\n", target->orig_addr);
 
 					temp_blk = block_find(target);
+
+					if (!temp_blk) {
+						hinternal();
+					}
+
 					temp_new_blk = block_split(temp_blk, target, SPLIT_FIRST);
 
 					// If the instruction *before* the target one is not a jump,
@@ -693,6 +715,11 @@ block *block_graph_create(function *functions) {
 				hnotice(3, "Jump target breakpoint at <%#08llx>\n", instr->jumpto->orig_addr);
 
 				temp_blk = block_find(instr->jumpto);
+
+				if (!temp_blk) {
+					hinternal();
+				}
+
 				temp_new_blk = block_split(temp_blk, instr->jumpto, SPLIT_FIRST);
 
 				// If the instruction *before* the target one is not a jump,
@@ -739,9 +766,6 @@ block *block_graph_create(function *functions) {
 						// TODO: Da evitare di inserire se era già presente
 						ll_push(&callee->calledfrom, current_blk);
 						ll_push(&func->callto, callee);
-
-						// TODO: Va fatto da un'altra parte
-						// symbol_instr_rela_create(callee->symbol, instr, RELOC_PCREL_32);
 					}
 				}
 
@@ -766,9 +790,6 @@ block *block_graph_create(function *functions) {
 							// TODO: Da evitare di inserire se era già presente
 							ll_push(&callee->calledfrom, current_blk);
 							ll_push(&func->callto, callee);
-
-							// TODO: Va fatto da un'altra parte
-							// symbol_instr_rela_create(callee->symbol, instr, RELOC_PCREL_32);
 						}
 
 						idx = idx + 1;
@@ -780,8 +801,14 @@ block *block_graph_create(function *functions) {
 			}
 
 			else if (IS_CALL(instr)) {
+				sym = instr_reference_weak(instr);
+
+				if (sym == NULL) {
+					hinternal();
+				}
+
 				hnotice(3, "Call instruction breakpoint at <%#08llx> to function %s\n",
-					instr->orig_addr, instr->reference->name);
+					instr->orig_addr, sym->name);
 
 				new_blk = block_split(current_blk, instr, SPLIT_LAST);
 
@@ -800,9 +827,6 @@ block *block_graph_create(function *functions) {
 						// TODO: Da evitare di inserire se era già presente
 						ll_push(&callee->calledfrom, current_blk);
 						ll_push(&func->callto, callee);
-
-						// TODO: Va fatto da un'altra parte
-						// symbol_instr_rela_create(callee->symbol, instr, RELOC_PCREL_32);
 					}
 				}
 
@@ -822,11 +846,12 @@ block *block_graph_create(function *functions) {
 		// function... the first non-overlapping function is temporarily
 		// linked with the current one in terms of instructions
 		// TODO: Find a better way
-		for (next = func->next; next; next = next->next) {
-			if (func->orig_addr != next->orig_addr) {
-				break;
-			}
-		}
+		// for (next = func->next; next; next = next->next) {
+		// 	if (!functions_overlap(func, next)) {
+		// 		break;
+		// 	}
+		// }
+		next = func->next;
 
 		if (next) {
 			instr->next = next->begin_insn;
@@ -862,7 +887,7 @@ block *block_graph_create(function *functions) {
 				instr = instr->next;
 			}
 
-			hnotice(4, "Block #%u has length %u\n", current_blk->id, current_blk->length);
+			// hnotice(4, "Block #%u has length %u\n", current_blk->id, current_blk->length);
 		}
 
 		// Let's complete the graph by inferring program loops
@@ -875,6 +900,11 @@ block *block_graph_create(function *functions) {
 		};
 
 		block_graph_visit(func->source->in.first->elem, &loop_visit);
+	}
+
+	if (config.verbose > 6) {
+		block_tree_dump("treedump.txt", "a+");
+		block_graph_dump(PROGRAM(v_code)[PROGRAM(version)], "graphdump.txt", "a+");
 	}
 
 	return blocks;

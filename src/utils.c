@@ -43,7 +43,7 @@ void hexdump (void *addr, int len) {
 	int i;
 	int count;
 	unsigned char buff[17];
-	unsigned char *pc = (unsigned char*)addr;
+	unsigned char *pc;
 
 	if (len <= 0) {
 		return;
@@ -52,26 +52,32 @@ void hexdump (void *addr, int len) {
 	printf ("       Address                     Hexadecimal values                      Printable     \n" );
 	printf ("   ----------------  ------------------------------------------------  ------------------\n" );
 
-	// Process every byte in the data.
-	if (len % 16 != 0 && len > 16)
+	// Dumped output must be a multiple of 16
+	if (len % 16 != 0) {
 		count = ((len / 16) + 1) * 16;
-	else
+	} else {
 		count = len;
+	}
+
+	// Process every byte in the data.
+	pc = (unsigned char*) addr;
 
 	for (i = 0; i < count; i++) {
 
 		// Multiple of 8 means mid-line (add a mid-space)
 		if ((i % 8) == 0) {
-			if (i != 0)
+			if (i != 0) {
 				printf(" ");
+			}
 		}
 
 		if (i < len) {
 			// Multiple of 16 means new line (with line offset).
 			if ((i % 16) == 0) {
 				// Just don't print ASCII for the zeroth line.
-				if (i != 0)
+				if (i != 0) {
 					printf (" |%s|\n", buff);
+				}
 
 				// Output the offset.
 				printf ("   (%5d) %08x ", i, i);
@@ -81,16 +87,17 @@ void hexdump (void *addr, int len) {
 			printf (" %02x", pc[i]);
 
 			// And store a printable ASCII character for later.
-			if ((pc[i] < 0x20) || (pc[i] > 0x7e))
+			if ((pc[i] < 0x20) || (pc[i] > 0x7e)) {
 				buff[i % 16] = '.';
-			else
+			} else {
 				buff[i % 16] = pc[i];
+			}
+
 			buff[(i % 16) + 1] = '\0';
 		}
 
 		// Pad out last line if not exactly 16 characters.
 		else {
-
 			// Add a three-char long space for the missing character in the second column.
 			printf("   ");
 
@@ -215,4 +222,19 @@ void *ll_pop_first(linked_list *list) {
 	}
 
 	return elem;
+}
+
+char *add_suffix(char *base, char *delim, char *suffix) {
+	char *new_string;
+	int length;
+
+	length = strlen(base) + strlen(suffix) + strlen(delim) + 1;
+	
+	// Create a zero'ed destination buffer
+	new_string = malloc(length);
+	bzero(new_string, length);
+	
+	sprintf(new_string, "%s%s%s", base, delim, suffix);
+
+	return new_string;
 }

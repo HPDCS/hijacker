@@ -54,7 +54,7 @@ section *section_create(char *name, section_type type, void *payload) {
 
 	sec = (section *) calloc(sizeof(section), 1);
 
-	sec->name = (char *) malloc(strlen((const char *) name) + 1);
+	sec->name = malloc(strlen((const char *) name) + 1);
 	strcpy(sec->name, name);
 
 	sec->type = type;
@@ -128,7 +128,9 @@ void section_append(section *sec, section **head) {
 
 
 /**
- * Looks for the section with the index specified.
+ * Look for the section with the index specified.
+ *
+ * @param index The index of the section to look for
  *
  * @return Returns the pointer to the section found, if any, NULL otherwise.
  */
@@ -145,10 +147,10 @@ inline section *find_section(unsigned int index) {
 }
 
 
-section *find_section_by_name(unsigned char *name) {
+section *find_section_by_name(char *name, int version) {
 	section *sec;
 
-	for (sec = PROGRAM(sections)[PROGRAM(version)]; sec; sec = sec->next) {
+	for (sec = PROGRAM(sections)[version]; sec; sec = sec->next) {
 		if (str_equal(sec->name, name)) {
 			return sec;
 		}
@@ -156,6 +158,7 @@ section *find_section_by_name(unsigned char *name) {
 
 	return NULL;
 }
+
 
 section *section_clone(section *sec, char *suffix) {
 	section *clone;
@@ -177,15 +180,15 @@ section *section_clone(section *sec, char *suffix) {
 	clone->index = section_id(0, false);
 	clone->next = NULL;
 
-	// Compose the function name
-	length = strlen((const char *)sec->name) + strlen(suffix) + 2; // one is \0, one is '_'
-	name = malloc(sizeof(char) * length);
-	bzero(name, length);
-	strcpy(name, (const char *)sec->name);
-	strcat(name, ".");
-	strcat(name, suffix);
+	// Compose the section name
+	// // 2: '.' + '\0'
+	// length = strlen(sec->name) + strlen(suffix) + 2;
+	// name = malloc(length);
+	// bzero(name, length);
+	// sprintf(name, "%s.%s", sec->name, suffix);
+	name = add_suffix(sec->name, ".", suffix);
 
-	clone->name = (unsigned char *)name;
+	clone->name = name;
 
 	// Create a new symbol
 	clone->sym = symbol_create(name, SYMBOL_SECTION, SYMBOL_LOCAL, clone, sec->sym->size);

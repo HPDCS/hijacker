@@ -45,28 +45,9 @@
  * @param tagInject Pointer to the Ibject XML tag descriptor
  */
 static void apply_rule_link (char *filename) {
-	//~char *objname;
-	//~char *path;
 
 	hnotice(2, "Entering Inject scope: compiling and linking module '%s'\n", filename);
 
-	// Note that 'filename' is the assembly source
-	// therefore it must be firstly translated into
-	// a binary file in order to pass it to disassemble function
-
-	// Check if the file really exists and compile the assmbly into the 'bin' file
-	//~len = strlen(filename) + 1;
-
-	//~objname = malloc(len * sizeof(char));
-	//~strcpy(objname, filename);
-	//~objname[len-1] = 'o';
-
-	//~path = malloc(64 * sizeof(char));
-	//~bzero(path, 64 * sizeof(char));
-	//~strcpy(path, TEMP_PATH);
-	//~strcat(path, objname);
-
-	//~hnotice(6, "Compiling file in '%s'\n", path);
 	if(!file_exists(filename)) {
 		herror(true, "The XML rules file has specified a file that does not exists!\n");
 	}
@@ -141,7 +122,7 @@ static void apply_rule_inject (char *filename, insn_info *target, insn_insert_mo
 	// TODO: verificare la correttezza del contenuto rispetto alle specifiche (architettura, sintassi, convenzioni, etc.)
 
 	if(where == SUBSTITUTE)
-		substitute_instruction_with(target, fcontent, fsize, &insn);
+		substitute_instruction_with(target, fcontent, fsize);
 	else
 		insert_instructions_at(target, fcontent, fsize, where, &insn);
 
@@ -222,10 +203,8 @@ static void apply_rule_addcall (Call *tagCall, insn_info *target) {
 
 			// Prepare the trampoline structure on the stack
 			trampoline_prepare(target, (unsigned char *)tagCall->function, where);
-
-			// Creates and adds a new CALL to the trampoline function with respect to the 'target' one
-			//add_call_instruction(target, (unsigned char *)"trampoline", where);
 		}
+
 	} else {
 		// Creates and adds a new CALL  with respect to the 'target' one
 		add_call_instruction(target, (unsigned char *)tagCall->function, where, &target);
@@ -385,12 +364,22 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
 
 static void hijack_main(unsigned char *entry_point) {
 	// Find the current main function
-	symbol *sym_main, *sym;
+	symbol *sym_main, *sym_text, *sym;
 	function *main;
+	section *text;
+
 	unsigned char code[1] = {0x90};
 	unsigned char code2[1] = {0xc3};
 	unsigned char code2bis[1] = {0xc9};
-	unsigned char code3[4] = {0x48, 0x89, 0xe5, 0x55};
+	unsigned char code3[5] = {0x48, 0x89, 0xe5, 0x55};
+
+	sym_text = find_symbol_by_name(".text.instr");
+
+	if (sym_text == NULL) {
+		hinternal();
+	}
+
+	text = sym_text->sec;
 
 	sym_main = find_symbol_by_name("main");
 
@@ -409,14 +398,14 @@ static void hijack_main(unsigned char *entry_point) {
 	}
 
 	// Creates a new stub function that acts as the new main
-	main = function_create_from_bytes("main", code, sizeof(code));
+	main = function_create_from_bytes("main", code2, sizeof(code2), text);
 
 	// Adds the jump to the new entry point
-	insert_instructions_at(main->begin_insn, code2, sizeof(code2), INSERT_AFTER, &(main->begin_insn));	
-	insert_instructions_at(main->begin_insn, code2bis, sizeof(code2), INSERT_BEFORE, &(main->begin_insn));	
+	//insert_instructions_at(main->begin_insn, code2, sizeof(code2), INSERT_AFTER, &(main->begin_insn));
+	insert_instructions_at(main->begin_insn, code2bis, sizeof(code2bis), INSERT_BEFORE, &(main->begin_insn));
 	add_call_instruction(main->begin_insn, "dump", INSERT_BEFORE, &(main->begin_insn));
 	add_call_instruction(main->begin_insn, entry_point, INSERT_BEFORE, &(main->begin_insn));
-	insert_instructions_at(main->begin_insn, code3, sizeof(code3), INSERT_BEFORE, &(main->begin_insn));	
+	insert_instructions_at(main->begin_insn, code3, sizeof(code3), INSERT_BEFORE, &(main->begin_insn));
 
 }
 
@@ -493,7 +482,8 @@ void apply_rules(void) {
 			hnotice(3, "Looking for the instruction with flags %x\n", tagInstruction->flags);
 			func = PROGRAM(code);
 			while(func) {
-				hnotice(3, "Instrumenting function '%s' <%#08llx>\n", func->symbol->name, func->new_addr);
+				hnotice(3, "Instrumenting function '%s' <%#08llx>\n",
+					func->symbol->name, func->begin_insn->new_addr);
 				instrumented += apply_rule_instruction(exec, tagInstruction, func);
 				func = func->next;
 			}
@@ -512,13 +502,6 @@ void apply_rules(void) {
 			hnotice(1, "A new entry point has been detected to function'%s'\n", exec->entryPoint);
 			hijack_main(exec->entryPoint);
 		}
-
-		// if (version != 0 && instrumented) {
-			// [SE] If some actual instrumentation has been carried out, first update
-			// instruction addresses and then recompute jump displacements
-			update_instruction_addresses(version);
-			update_jump_displacements(version);
-		// }
 
 		hnotice(1, "Instrumentation of executable version %d terminated: %d instructions have been instrumented\n",
 			version, instrumented);

@@ -32,7 +32,7 @@
 #include <elf/emit-elf.h>
 
 
-long write_x86_code(function *func, section *text, section *relocation) {
+/* long write_x86_code(function *func, section *text, section *relocation) {
 	insn_info *instr;
 	insn_info_x86 *x86;
 	symbol *sym;
@@ -70,4 +70,4 @@ long write_x86_code(function *func, section *text, section *relocation) {
 	}
 
 	return (long)((char *)text->ptr - (char *)ptr);
-}
+} */

@@ -329,7 +329,7 @@ static void elf_string_section(int secndx) {
 	pos = 0;
 	size = sec_size(secndx);
 
-	stringtab = (char *) malloc(sizeof(char) * size);
+	stringtab = malloc(sizeof(char) * size);
 
 	while(pos < size){
 		name = (sec_content(secndx) + pos);
@@ -353,6 +353,7 @@ static function *resolve_function_symbol(symbol *sym) {
 	function *func;
 	section *sec;
 	insn_info *instr;
+	unsigned int offset;
 
 	// Check if the section the symbol belongs to exists
 	// and is actually a section containing code
@@ -391,16 +392,18 @@ static function *resolve_function_symbol(symbol *sym) {
 	// the beginning of the section, plus the offset of the section
 	// from the beginning of the file object. This value is later used
 	// to re-compute the addresses of all the instructions.
-	func->orig_addr = func->new_addr = sym->offset + sec->offset;
+	// func->orig_addr = func->new_addr = sym->offset + sec->offset;
 
 	hnotice(2, "Function '%s' (%d bytes long) :: <%#08llx> (<%#08llx>)\n",
-		sym->name, sym->size, sym->offset, func->orig_addr);
+		sym->name, sym->size, sym->offset, func->begin_insn->orig_addr);
 
 	func->symbol = sym;
 	sym->func = func;
 
 	return func;
 }
+
+
 
 static void resolve_variable_symbol(symbol *sym) {
 	// We discard SHN_COMMON symbols because they refer to unallocated symbols,
@@ -426,6 +429,7 @@ static void resolve_variable_symbol(symbol *sym) {
 		hdump(5, sym->name, sym->payload, sym->size);
 	}
 }
+
 
 static void resolve_section_symbol(symbol *sym) {
 	section *sec;
@@ -485,13 +489,44 @@ static void resolve_symbols(void) {
 
 				if (func) {
 					// We maintain an ordered list of functions according to their
-					// absolute addresses.
+					// parent sections and their *absolute* addresses (computed by
+					// adding the section's offset)
 					for (prev = NULL, curr = first; curr; prev = curr, curr = curr->next) {
-						if (func->orig_addr <= curr->orig_addr) {
+						// NOTE: if the check is '<=' then `curr` will hold a possible alias
+						// otherwise in case of '<' (strict check) `prev` will do
+						if (func->begin_insn->orig_addr + func->symbol->sec->offset
+							< curr->begin_insn->orig_addr + curr->symbol->sec->offset) {
 							break;
 						}
 					}
 
+					// Check whether the current `func` is an alias of another one;
+					// if this is the case, just throw it away and skip the creation
+					// of the current function descriptor; the symbol alone is sufficient.
+					// NOTE: `prev` is guaranteed to be the alias (if there is any)
+					// because of the way functions were appended to the list.
+					if (prev != NULL && func->begin_insn == prev->begin_insn) {
+
+						ll_push(&(prev->alias), sym);
+
+						// // The alias function's instructions must be cloned
+						// func->begin_insn = clone_instruction_list(prev->begin_insn);
+
+						// hprint("Cloned alias '%s' of '%s'\n", func->name, prev->name);
+
+						// The alias symbol must to point the concrete function's
+						// descriptor
+						sym->func = prev;
+						sym->offset = prev->symbol->offset;
+
+						hprint("Alias '%s' of '%s' at offset <%llx>\n",
+							func->name, prev->name, sym->offset);
+
+						free(func);
+						break;
+					}
+
+					// Add the function to the list at the right place
 					if (prev == NULL) {
 						first = func;
 						func->next = curr;
@@ -500,7 +535,6 @@ static void resolve_symbols(void) {
 						func->next = curr;
 					}
 				}
-
 				break;
 
 			case SYMBOL_VARIABLE:
@@ -541,26 +575,53 @@ static void resolve_symbols(void) {
 	}
 
 	for (instr = prev->begin_insn; instr->next; instr = instr->next);
-
 	prev->end_insn = instr;
 
-	// Update instruction addresses so to take into account
-	// multiple '.text' sections
-	for (prev = NULL, func = first; func; prev = func, func = func->next) {
+	// for (func = first; func != NULL; func = func->next) {
+	// 	hprint("Function '%s' (section '%s')\n", func->name, func->symbol->sec->name);
+	// }
 
-		// Avoid updating instruction addresses multiple times.
-		// This check is needed because in some cases (e.g., C++ files)
-		// it is possible to have overlapping functions, that is functions
-		// whose base addresses are the same.
-		if (prev != NULL && func->orig_addr == prev->orig_addr) {
-			continue;
-		}
 
-		for (instr = func->begin_insn; instr; instr = instr->next) {
-			instr->orig_addr += func->symbol->sec->offset;
-			instr->new_addr = instr->orig_addr;
-		}
-	}
+	// // If this is a alias of an yet existing function
+	// // we simply clone all its instructions
+	// if (find_func_from_addr(sym->offset) != NULL) {
+	// 	// We can use `clone_instruction_list` here without to be aware
+	// 	// of all the relocation
+	// 	instr = clone_instruction_list(instr);
+
+	// 	// This step will realign the instruction addresses to the bottom the the current
+	// 	// `.text` section. This is mandatory in order to avoid problems in the
+	// 	// reloction resolution step, which grounds on the original offset within
+	// 	// the code section to points correct instructions.
+	// 	for (offset = 0 ; instr; instr = instr->next, offset += instr->size) {
+	// 		instr->orig_addr = instr->new_addr = sec->sym->size + offset;
+
+	// 		switch(PROGRAM(insn_set)) {
+
+	// 			case X86_INSN:
+	// 				instr->i.x86.initial = instr->orig_addr;
+	// 				break;
+
+	// 			default:
+	// 				herror(true, "Instruction set not supported\n");
+	// 				break;
+	// 		}
+	// 	}
+
+	// 	sym->offset = sec->sym->size;
+
+	// 	// TODO: verificare che sia sicuro (e necessario) aggiornare il valore
+	// 	// di dimensione della sezione originale
+	// 	sec->sym->size += sym->size;
+	// }
+
+	// for (sym = sec->payload; sym != NULL; sym = sym->next) {
+	// 	hprint("Symbol '%s'\n", sym->name);
+	// }
+
+	// for (func = first; func != NULL; func = func->next) {
+	// 	hprint("Function $llx in '%s'\n", func->name, func->symbol->sec->name);
+	// }
 
 	PROGRAM(symbols) = sec->payload;
 	PROGRAM(code) = first;
@@ -595,23 +656,23 @@ static void resolve_relocation(void) {
 
 	hnotice(1, "Resolving relocations...\n\n");
 
-	// Cycle through relocation sections
+	// Cycle through all the relocation sections
 	for (sec = PROGRAM(sections)[0]; sec; sec = sec->next) {
-
 		if (sec->type != SECTION_RELOC) {
 			continue;
 		}
 
 		hnotice(2, "Parsing relocation section '%s'\n", sec_name(sec->index));
 
-		// Retrieve target section object
+		// Retrieve target section object from the knowledge of the
+		// target section's index of the current relocation
 		target = find_section(sec_field(sec->index, sh_info));
 
 		if (target == NULL) {
 			hinternal();
 		}
 
-		// Cycle through relocation entries
+		// Cycle through all the relocation entries in `sec`
 		for (rel = sec->payload; rel; rel = rel->next) {
 
 			if (rel->symnum == 0) {
@@ -621,34 +682,30 @@ static void resolve_relocation(void) {
 
 			rel->sec = target;
 
-			hnotice(3, "Parsing relocation at '%s' + <%#08llx> + %d to [%d]\n",
-				rel->sec->name, rel->offset, rel->addend, rel->symnum);
-
-			// We look for the symbol pointed to by the relocation
+			// We look for the symbol pointed by the relocation `rel`
 			sym = find_symbol(rel->symnum);
 
 			if (!sym) {
 				hinternal();
 			}
 
-			// Symbol found, we can proceed to perform further analysis
 			rel->sym = sym;
 
-			hnotice(4, "Symbol found: '%s' [%u] [%s]\n",
-				sym->name, rel->symnum, symbol_type_str[sym->type]);
+			hnotice(3, "Parsing relocation at '%s' + <%#08llx> + %d to %s [%d]\n",
+				rel->sec->name, rel->offset, rel->addend, sym->name, rel->symnum);
 
+			// Create a "relocation symbol" to the target object
 			rela = symbol_rela_create_from_ELF(rel);
 
 			if (rel->sec->type == SECTION_CODE) {
-				// The relocation applies to an instruction, so it is a SECTION->CODE
-				// kind of relocation.
+				// The relocation applies to an instruction, so it is a CODE->*
+				// kind of relocation ({where}->{to})
 
-				addr = rel->sec->offset + rel->offset;
-
-				func = find_func_from_addr(addr);
+				addr = rel->offset;
+				func = find_func_cool(rel->sec, addr);
 
 				if (!func) {
-					hinternal();
+					herror(true, "No function found at address <%llx>\n", addr);
 				}
 
 				instr = find_insn_cool(func->begin_insn, addr);
@@ -662,9 +719,16 @@ static void resolve_relocation(void) {
 
 				// The instruction object will be bound to the proper symbol.
 				// This reference is read by the specific machine code emitter
-				// that is in charge to proper handle the relocation.
+				// that is in charge to handle the relocation
 				rela->relocation.target_insn = instr;
-				instr->reference = rela;
+
+				// This relocation applies to the current instruction towards some symbol,
+				// therefore we must to add a new reference in the instruction's descriptor
+				// in order to keep track of it. The reference will be lately resolved by
+				// the specific emitter in the emit phase.
+				// Note: we use a list since there may be more relocations that applies to
+				// the same instruction.
+				ll_push(&instr->reference, rela);
 
 				// hnotice(2, "Added symbol reference to '%s' + <%#08llx> + %d\n\n",
 				// 	sym->relocation.sec->name, rel->offset, rel->addend);
@@ -675,35 +739,46 @@ static void resolve_relocation(void) {
 				// the relocation does not apply to an instruction but to another symbol;
 				// e.g. a SECTION symbol, in case of generic references (.data, .bss, .rodata)
 
-				// If we are here, the relocation is SECTION->SECTION, otherwise
+				// If we are here, the relocation is *->CODE, otherwise
 				// an instruction would be found in the previous branch.
 
-				addr = rel->sym->sec->offset + rel->addend;
+				// addr = rel->sym->sec->offset + rel->addend;
+				addr = rel->addend;
 
-				func = find_func_from_addr(addr);
+				func = find_func_cool(rel->sym->sec, addr);
 
 				if (!func) {
+					// Relocation points to a ghost function!
 					hinternal();
 				}
 
 				instr = find_insn_cool(func->begin_insn, addr);
 
 				if (!instr) {
+					// Relocation points to a ghost instruction!
 					hinternal();
 				}
 
 				hnotice(4, "Instruction pointed to by relocation: <%#08llx> '%s'\n",
 					instr->orig_addr, instr->i.x86.mnemonic);
 
+				// Add the reference to the found instruction in the current relocation's
+				// descriptor
 				rela->relocation.target_insn = instr;
-				instr->pointedby = rela;
+
+				// Add the reference that the currently found instruction has been referenced
+				// by a relocation.
+				// Note: we use list because one instruction can be referenced by more than
+				// one relocation entry
+				ll_push(&instr->pointedby, rela);
 
 				// hnotice(2, "Added symbol reference to '%s' + <%#08llx> + %d\n\n",
 				// 	sym->relocation.sec->name, rel->offset, rel->addend);
 			}
 
 			else {
-				hinternal();
+				herror(false, "Relocation entry does not match any case\n");
+				// hinternal();
 			}
 		}
 	}
@@ -714,16 +789,7 @@ static void resolve_relocation(void) {
 
 
 static void resolve_jumps(void) {
-	function *func, *prev;
-
-	hnotice(1, "Resolving jump and call instructions...\n\n");
-
-	for (prev = NULL, func = PROGRAM(code); func; prev = func, func = func->next) {
-		if (prev != NULL && func->orig_addr == prev->orig_addr) {
-			continue;
-		}
-		link_jump_instructions(func);
-	}
+	link_jump_instructions();
 
 	hsuccess();
 }
@@ -731,20 +797,7 @@ static void resolve_jumps(void) {
 
 
 static void resolve_blocks(void) {
-	block *blocks;
-
-	hnotice(1, "Resolving blocks...\n\n");
-
-	blocks = block_graph_create(PROGRAM(code));
-
-	// We spit out some boring textual representation of both the balanced tree
-	// and the final flow graph
-	if (config.verbose > 2) {
-		block_tree_dump("treedump.txt", "w+");
-		block_graph_dump(PROGRAM(code), "graphdump.txt", "w+");
-	}
-
-	PROGRAM(blocks)[0] = blocks;
+	PROGRAM(blocks)[0] = block_graph_create();
 
 	hsuccess();
 }
@@ -791,9 +844,11 @@ void elf_create_map(void) {
 		switch(sec_type(secndx)) {
 			case SHT_PROGBITS:
 				if(sec_test_flag(secndx, SHF_EXECINSTR)) {
+					// Filter out debug code sections
+					// FIXME: Se si decommentano hijacker crasha perché
+					// trova dei simboli di sezione senza la rispettiva
+					// sezione...
 					// if (str_prefix(sec_name(secndx), ".text")) {
-						// Filter out debug code sections
-						// FIXME: Eventually they should be taken into account
 						elf_code_section(secndx);
 					// }
 				} else {
@@ -815,17 +870,23 @@ void elf_create_map(void) {
 				break;
 
 			case SHT_RELA:
+				// We need to include relocations toward unconventional text/data sections
 				if(str_prefix(sec_name(secndx), ".rela.text")) {
-					// We need to include relocations toward unconventional text sections
 					elf_rela_section(secndx);
 				}
-				else if(!strcmp(sec_name(secndx), ".rela.data")) {
+				else if(str_prefix(sec_name(secndx), ".rela.data")) {
 					elf_rela_section(secndx);
 				}
-				else if(!strcmp(sec_name(secndx), ".rela.rodata")) {
+				else if(str_prefix(sec_name(secndx), ".rela.rodata")) {
 					elf_rela_section(secndx);
 				}
-				else if(!strcmp(sec_name(secndx), ".rela.bss")) {
+				else if(str_prefix(sec_name(secndx), ".rela.bss")) {
+					elf_rela_section(secndx);
+				}
+				else if(str_equal(sec_name(secndx), ".rela.init_array")) {
+					elf_rela_section(secndx);
+				}
+				else if(str_equal(sec_name(secndx), ".rela.fini_array")) {
 					elf_rela_section(secndx);
 				}
 				break;
@@ -839,18 +900,27 @@ void elf_create_map(void) {
 			case SHT_DYNSYM:
 				elf_raw_section(secndx);
 				break;
+
+			case SHT_INIT_ARRAY:
+			case SHT_FINI_ARRAY:
+				elf_raw_section(secndx);
+
+			default:
+				// Do nothing...
+				break;
 		}
 	}
 
 	// Ultimates the binary representation
 	resolve_symbols();
 	resolve_relocation();
+
+	// update_instruction_addresses(0);
+	// update_jump_displacements(0);
+
 	resolve_jumps();
 	resolve_blocks();
 
-	// Updates the binary representation's pointers
-
-	PROGRAM(rawdata) = 0;
 	PROGRAM(versions)++;
 
 	hnotice(1, "ELF parsing terminated\n");
