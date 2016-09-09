@@ -175,7 +175,10 @@ void x86_trampoline_prepare(insn_info *target, char *function_name, int where) {
 	// which (should) be the last MOV that should pushes the calling address on the stack
 	hnotice(4, "Push the function pointer to '%s' in the trampoline structure\n", function_name);
 
-	sym = symbol_create(function_name, SYMBOL_UNDEF, SYMBOL_GLOBAL, sec, 0);
+	sym = find_symbol_by_name(function_name);
+    if (sym == NULL)
+        sym = symbol_create(function_name, SYMBOL_UNDEF, SYMBOL_GLOBAL, sec, 0);
+	
 	symbol_instr_rela_create(sym, instr->prev, RELOC_ABS_64);
 
 
@@ -185,7 +188,10 @@ void x86_trampoline_prepare(insn_info *target, char *function_name, int where) {
 	insert_instructions_at(target, call, sizeof(call), where, &instr);
 
 	// Checks and creates the symbol name that will be the target of the call
-	sym = symbol_create("trampoline", SYMBOL_UNDEF, SYMBOL_GLOBAL, sec, 0);
+	sym = find_symbol_by_name("trampoline");
+    if (sym == NULL)
+		sym = symbol_create("trampoline", SYMBOL_UNDEF, SYMBOL_GLOBAL, sec, 0);
+	
 	symbol_instr_rela_create(sym, instr, RELOC_PCREL_32);
 
 	// in order to align the stack pointer we need to insert an ADD instruction
