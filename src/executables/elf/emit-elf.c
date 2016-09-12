@@ -1199,7 +1199,7 @@ static void elf_fill_sections(void) {
 
 			memcpy(content, sec->payload, sec_size(sec->index));
 
-			elf_write_data(rodata, sec->payload, size);
+			elf_write_data(rodata, content, size);
 		}
 
 		else if (str_equal(sec->name, ".bss")) {
