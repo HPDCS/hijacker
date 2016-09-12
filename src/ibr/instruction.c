@@ -1215,7 +1215,7 @@ static void shift_instruction_addresses(insn_info *pivot, int shift) {
 				rela->relocation.offset += shift;
 			}
 
-			for (rela_node = instr->reference.first; rela_node; rela_node = rela_node->next) {
+			for (rela_node = instr->pointedby.first; rela_node; rela_node = rela_node->next) {
 				rela = rela_node->elem;
 
 				if (str_prefix(rela->name, ".text")) {
