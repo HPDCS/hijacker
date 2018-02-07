@@ -168,7 +168,7 @@ static void register_presets(void) {
  * current working directory.
  */
 static void link_modules(void) {
-	hnotice(1, "Link additional modules in '%s' to the output instrumented file 'hijacked.o'\n", TEMP_PATH);
+	hnotice(1, "Link additional modules in '%s' to the output instrumented file 'hijacked.o using LIBDIR=%s'\n", TEMP_PATH, LIBDIR);
 
 	// Step 1: link libhijacker
 	link("__temp.o", "-r", "-L", LIBDIR, "-o", "__temp_libhijacked.o", "-lhijacker");

@@ -111,6 +111,8 @@ typedef struct Function {
 
 typedef struct Executable {
 	xmlChar		*entryPoint;					//! Where the program must start
+	xmlChar		*initFunc;						//! Function to be invoked after entering main
+	xmlChar		*finiFunc;						//! Function to be invoked before leaving main
 	xmlChar		*suffix;
 	int		nInjects;
 	xmlChar		*injectFiles[MAX_CHILDREN];

@@ -2273,26 +2273,71 @@ size_t smt_run(char *name, param **params, size_t numparams) {
 	smt_data *smt, *smt_next;
 
 	size_t count, funccount, blkcount;
+	unsigned int i;
 
 	// ------------------------------------------------------------
 	// Parse input parameters
 	// ------------------------------------------------------------
-	// FIXME: Fix a few things:
-	// - Avoid positional fetching of parameters
-	// - Implement default values
-	// - Validate parameters
-	if (numparams != 8) {
-		hinternal();
+
+	// Default values for all parameters
+	smt_params.block_threshold = 0.0;
+	smt_params.instrument_factor = 1.0;
+	smt_params.chunk_size = 0;
+	smt_params.testname = "";
+	smt_params.selective = true;
+	smt_params.simulate = false;
+	smt_params.print_stats = false;
+	smt_params.trace_stack = false;
+
+	// Read parameters from the rules file
+	for (i = 0; i < numparams; ++i) {
+		if (str_equal(params[i]->name, "blkthresh")) {
+			smt_params.block_threshold = atof(params[i]->value);
+		}
+		else if (str_equal(params[i]->name, "instrfact")) {
+			smt_params.instrument_factor = atof(params[i]->value);
+		}
+		else if (str_equal(params[i]->name, "chunksize")) {
+			smt_params.chunk_size = (atoi(params[i]->value));
+		}
+		else if (str_equal(params[i]->name, "testname")) {
+			smt_params.testname = params[i]->value;
+		}
+		else if (str_equal(params[i]->name, "selective")) {
+			smt_params.selective = str_equal(params[i]->value, "true");
+		}
+		else if (str_equal(params[i]->name, "simulate")) {
+			smt_params.simulate = str_equal(params[i]->value, "true");
+		}
+		else if (str_equal(params[i]->name, "printstats")) {
+			smt_params.print_stats = str_equal(params[i]->value, "true");
+		}
+		else if (str_equal(params[i]->name, "tracestack")) {
+			smt_params.trace_stack = str_equal(params[i]->value, "true");
+		}
+		else {
+			herror(false, "Unknown parameter '%s', ignored.\n", params[i]->name);
+		}
 	}
 
-	smt_params.block_threshold    = atof(params[0]->value);
-	smt_params.instrument_factor  = atof(params[1]->value);
-	smt_params.chunk_size         = 1 << (atoi(params[2]->value));
-	smt_params.testname           = params[3]->value;
-	smt_params.selective          = str_equal(params[4]->value, "true");
-	smt_params.simulate           = str_equal(params[5]->value, "true");
-	smt_params.print_stats        = str_equal(params[6]->value, "true");
-	smt_params.trace_stack        = str_equal(params[7]->value, "true");
+	// Validate parameters
+	if (smt_params.block_threshold < 0.0 || smt_params.block_threshold > 100.0) {
+		herror(false, "Invalid value '%d' for 'blkthresh', reset to '0.0'.\n", smt_params.block_threshold);
+		smt_params.block_threshold = 0.0;
+	}
+	if (smt_params.instrument_factor < 0.0 || smt_params.instrument_factor > 1.0) {
+		herror(false, "Invalid value '%d' for 'instrfact', reset to '1.0'.\n", smt_params.instrument_factor);
+		smt_params.instrument_factor = 1.0;
+	}
+	if (smt_params.chunk_size > 32) {
+		herror(false, "Invalid value '%d' for 'chunksize', reset to '0'.\n", smt_params.chunk_size);
+		smt_params.chunk_size = 0;
+	} else {
+		smt_params.chunk_size = 1 << smt_params.chunk_size;
+	}
+	if (smt_params.print_stats == true && str_equal(smt_params.testname, "")) {
+		herror(true, "Invalid empty value for testname, please provide a valid file prefix.\n");
+	}
 
 	// ------------------------------------------------------------
 	// Instrument the program

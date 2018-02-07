@@ -479,6 +479,8 @@ static int parseExecutable(char *filename, Executable ***rules) {
 
 		// Get and store the executable's attributes, if any
 		exec->entryPoint = xmlGetProp(execNode, (const xmlChar *)"entryPoint");
+		exec->initFunc = xmlGetProp(execNode, (const xmlChar *)"initFunc");
+		exec->finiFunc = xmlGetProp(execNode, (const xmlChar *)"finiFunc");
 		exec->suffix = xmlGetProp(execNode, (const xmlChar *)"suffix");
 		if(!strcmp((const char *)exec->suffix, "")) {
 			herror(true, "Suffix cannot be empty\n");

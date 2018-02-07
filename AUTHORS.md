@@ -8,8 +8,9 @@ Hijacker could not have been possible without the help of many.
 Current Maintainers
 -------------------
 
- * Alessandro Pellegrini <pellegrini@dis.uniroma1.it>
- * Davide Cingolani <cingodvd@gmail.com>
+ * Alessandro Pellegrini <pellegrini@diag.uniroma1.it>
+ * Davide Cingolani <cingolani@diag.uniroma.it>
+ * Simone Economo <economo@diag.uniroma.it>
 
 
 

@@ -362,19 +362,17 @@ static int apply_rule_function (Executable *exec, Function *tagFunction) {
 }
 
 
-static void hijack_main(unsigned char *entry_point) {
+static void hijack_main(unsigned char *entry_point, unsigned char *init_func, unsigned char *fini_func) {
 	// Find the current main function
 	symbol *sym_main, *sym_text, *sym;
 	function *main;
 	section *text;
 
-	unsigned char code[1] = {0x90};
-	unsigned char code2[1] = {0xc3};
-	unsigned char code2bis[1] = {0xc9};
-	unsigned char code3[5] = {0x48, 0x89, 0xe5, 0x55};
+	unsigned char retq[1] = {0xc3};
+	unsigned char leaveq[1] = {0xc9};
+	unsigned char stack_preamble[5] = {0x48, 0x89, 0xe5, 0x55};
 
 	sym_text = find_symbol_by_name(".text.instr");
-
 	if (sym_text == NULL) {
 		hinternal();
 	}
@@ -382,7 +380,6 @@ static void hijack_main(unsigned char *entry_point) {
 	text = sym_text->sec;
 
 	sym_main = find_symbol_by_name("main");
-
 	if (sym_main == NULL) {
 		hinternal();
 	}
@@ -398,15 +395,25 @@ static void hijack_main(unsigned char *entry_point) {
 	}
 
 	// Creates a new stub function that acts as the new main
-	main = function_create_from_bytes("main", code2, sizeof(code2), text);
+	main = function_create_from_bytes("main", retq, sizeof(retq), text);
+	insert_instructions_at(main->begin_insn, leaveq, sizeof(leaveq), INSERT_BEFORE, &(main->begin_insn));
 
-	// Adds the jump to the new entry point
-	//insert_instructions_at(main->begin_insn, code2, sizeof(code2), INSERT_AFTER, &(main->begin_insn));
-	insert_instructions_at(main->begin_insn, code2bis, sizeof(code2bis), INSERT_BEFORE, &(main->begin_insn));
-	add_call_instruction(main->begin_insn, "dump", INSERT_BEFORE, &(main->begin_insn));
-	add_call_instruction(main->begin_insn, entry_point, INSERT_BEFORE, &(main->begin_insn));
-	insert_instructions_at(main->begin_insn, code3, sizeof(code3), INSERT_BEFORE, &(main->begin_insn));
+	if (fini_func != NULL) {
+		add_call_instruction(main->begin_insn, fini_func, INSERT_BEFORE, &(main->begin_insn));
+	}
 
+	if (entry_point != NULL) {
+		add_call_instruction(main->begin_insn, entry_point, INSERT_BEFORE, &(main->begin_insn));
+	} else {
+		add_call_instruction(main->begin_insn, "original_main", INSERT_BEFORE, &(main->begin_insn));
+	}
+
+	if (init_func != NULL) {
+		add_call_instruction(main->begin_insn, init_func, INSERT_BEFORE, &(main->begin_insn));
+	}
+
+	insert_instructions_at(main->begin_insn, stack_preamble, sizeof(stack_preamble), INSERT_BEFORE, &(main->begin_insn));
+	main->begin_insn = main->begin_insn->next;
 }
 
 
@@ -428,8 +435,6 @@ void apply_rules(void) {
 	Function *tagFunction;
 
 	hprint("Start applying rules...\n\n");
-
-	unsigned char *entry_point;
 
 	// Create a temporary directory to place object files;
 	execute("mkdir", "-p", TEMP_PATH);
@@ -497,10 +502,21 @@ void apply_rules(void) {
 			instrumented += apply_rule_function(exec, tagFunction);
 		}
 
-		// Check for a new entry point to be selected, if any
-		if(exec->entryPoint != NULL) {
-			hnotice(1, "A new entry point has been detected to function'%s'\n", exec->entryPoint);
-			hijack_main(exec->entryPoint);
+		if (exec->entryPoint != NULL || exec->initFunc != NULL || exec->finiFunc != NULL) {
+			// Check for a new entry point to be selected, if any
+			if (exec->entryPoint != NULL) {
+				hnotice(1, "A new entry point has been detected to function '%s'\n", exec->entryPoint);
+			}
+			// Check for an init function, if any
+			if (exec->initFunc != NULL) {
+				hnotice(1, "A new init function has been detected to function '%s'\n", exec->initFunc);
+			}
+			// Check for a fini function, if any
+			if (exec->finiFunc != NULL) {
+				hnotice(1, "A new fini function has been detected to function '%s'\n", exec->finiFunc);
+			}
+
+			hijack_main(exec->entryPoint, exec->initFunc, exec->finiFunc);
 		}
 
 		hnotice(1, "Instrumentation of executable version %d terminated: %d instructions have been instrumented\n",
